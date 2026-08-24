@@ -2,24 +2,56 @@
 
 > **Audience:** whoever operates the NORA deployment on the production host.
 >
-> **Supersedes** the historical Azure-era runbook (deleted; ADR 0036 — Azure is gone, not being
-> decommissioned, so there is no shutdown procedure to link to).
-> The migration decision is in [ADR 0034](../adr/0034-azure-to-proxmox-migration.md); the substrate
-> correction — a single bare-metal host, not a VM on a hypervisor — is in
-> [ADR 0036](../adr/0036-substrate-is-a-single-bare-metal-host.md).
+> **Supersedes** the historical Azure-era runbook (deleted with ADR 0036, which believed Azure was
+> gone entirely). The migration off the Azure *managed services* is in
+> [ADR 0034](../adr/0034-azure-to-proxmox-migration.md); what the machine actually is — an Azure
+> VM, not the bare-metal host ADR 0036 recorded — is in
+> [ADR 0051](../adr/0051-the-substrate-is-an-azure-vm.md).
 >
-> **Prerequisites:** access to the production host, a Cloudflare account with the `nora.systems` zone,
-> `sops` + `age` on the operator's machine, and the `gh` CLI. **Nothing needs to be brought over from Azure:**
-> the subscription is gone and there was never an export, so a fresh deployment starts with an empty
-> database and Flyway creates the schema from scratch (ADR 0036 §"Azure is gone, not being decommissioned").
+> **Prerequisites:** access to the production host (see "The machine, and how to reach it" below),
+> a Cloudflare account with the `nora.systems` zone, `sops` + `age` on the operator's machine, and
+> the `gh` CLI. Nothing needs to be brought over from the *old* Azure resource group: `rg-nora-dev`
+> and its Container Apps were deleted without an export, so a fresh deployment starts with an empty
+> database and Flyway creates the schema from scratch.
 
 > **A single environment.** There is **one** live environment. There is no staging.
 
+## The machine, and how to reach it
+
+The host is `vm-nora-dev` — an Azure VM (`Standard_B2as_v2`, Ubuntu 24.04) in resource group
+`rg-nora-dev-cc`, region `canadacentral`, subscription "Azure for Students" (ADR 0051). Three ways
+in, in order of preference:
+
+1. **SSH over the tunnel** at `ssh.nora.systems`, behind Cloudflare Access (ADR 0037).
+2. **Direct SSH** to the public IP. The NSG rule `allow-ssh-from-maintainer` admits port 22 from
+   the maintainer's IP only — if your IP changed, update the rule, not the habit of opening 22
+   wide: `az network nsg rule update -g rg-nora-dev-cc --nsg-name vm-nora-devNSG -n allow-ssh-from-maintainer --source-address-prefixes <new-ip>`.
+3. **`az vm run-command invoke`** — needs neither the NSG nor an SSH key, only `az login` on an
+   account with rights to the VM. Slow (one round trip per invocation, ~30s) but it is the path
+   that still works when both SSH routes are broken, and it is how the machine was inspected and
+   recovered on 2026-08-24.
+
+Two lifecycle facts an operator must know, both from ADR 0051: the VM is **metered per hour**
+(~USD 55/month at this size, against a USD 100/month student credit), and a DevTestLab
+auto-shutdown schedule **used to power it off nightly at 04:00 UTC** — that schedule took the site
+down for six days in August before being deleted on 2026-08-24. If the site is down, check the
+VM's power state before anything else: `az vm get-instance-view -g rg-nora-dev-cc -n vm-nora-dev --query "instanceView.statuses[?starts_with(code,'PowerState')].displayStatus|[0]" -o tsv`.
+
 ## Overview
 
-A single bare-metal Ubuntu host, no hypervisor, runs the whole stack with Docker Compose (project
+A single Azure Ubuntu VM runs the whole stack with Docker Compose (project
 `nora`), defined in [`infra/host/docker-compose.yml`](../../infra/host/docker-compose.yml) — **that
 file is the source of truth**; this runbook is how to operate it.
+
+> **The live deployment does not yet follow this runbook, and pretending otherwise would make
+> this document dangerous.** Measured on the machine on 2026-08-24: the four product containers
+> run `ghcr.io/sf0rzin/nora-*:latest`, not the immutable `sha-<short>` tags `deploy.sh` promotes;
+> none of the `nora-*` systemd timers this runbook installs (deploy, backup off-host, restore
+> drill) are present; and the compose directory is not a git checkout, so `deploy.sh --sync` has
+> nothing to sync against. What brings the stack back after a boot is Docker's own
+> `restart: unless-stopped` and nothing else. Until someone runs the bootstrap below on the real
+> machine, treat every procedure in this file as *the intended state*, and the paragraph you are
+> reading as *the actual one*.
 
 ```
 Internet ──> Cloudflare edge ──(tunnel, egress-only)──> cloudflared
@@ -53,7 +85,7 @@ Replacement map, for those coming from Azure:
 | App Insights (`-javaagent`) | `opentelemetry-javaagent.jar` → `otel-collector` → `prometheus` |
 | Log Analytics (`appLogsConfiguration`) | `alloy` (Docker socket) → `loki` |
 | Workbook / Metrics Explorer | `grafana` at `grafana.<dom>` |
-| PITR 7 days | `backup` (hourly pg_dump, 14d retention) — the only leg; there is no off-host or hypervisor copy (ADR 0036) |
+| PITR 7 days | `backup` (hourly pg_dump, 14d retention) + `offsite-backup.sh` once its timer is installed; a VM disk snapshot is possible since ADR 0051 and unconfigured |
 | `deploy-infra.yml` (push, OIDC) | `scripts/deploy.sh` on the host (**PULL**) |
 
 ### Blockers before starting
@@ -343,19 +375,27 @@ is anything left to do.
 
 ### 1. The host
 
-**Verified by inspection on 2026-08-10 (ADR 0036):** one physical machine, Ubuntu 24.04.4 LTS,
-kernel 6.8, Docker Engine with Compose v2. `systemd-detect-virt` returns `none` — there is no
-hypervisor and no other guest. This runbook does not cover racking or ordering a machine; it
-starts from an Ubuntu (or Debian) host that already exists and is reachable over SSH, and assumes
-no inbound port other than SSH is open (the tunnel is the only ingress *for HTTP* — see Overview).
+**The machine changed under this section, and the two measurements disagree because they were
+taken on two different machines.** On 2026-08-10 ADR 0036 measured a host where
+`systemd-detect-virt` returned `none` — bare metal, and true on its date. The machine serving
+`nora.systems` today is `vm-nora-dev`, an Azure VM created 2026-08-17, where the same command
+returns `microsoft` (ADR 0051). Nothing in the repository records the move between them. Current
+facts: Ubuntu 24.04, Docker Engine with Compose v2, and the reachability rules in "The machine,
+and how to reach it" at the top of this runbook.
 
-> **Consequence worth stating rather than implying** (ADR 0036): on a VM, a host that survives can
-> restart the guest; here the host is the guest. There is no snapshot or clone to fall back on — see
-> §Rollback and §Restore drill below, both of which had to be redesigned around that fact.
+> **Consequence, updated by ADR 0051:** ADR 0036 reasoned that "here the host is the guest" — no
+> snapshot to fall back on. On an Azure VM that is no longer structurally true: the OS disk is a
+> snapshot-able resource. But no snapshot is *configured*, so until somebody sets one up, operate
+> as if the old constraint still held — see §Rollback and §Restore drill below, which were
+> designed around it and remain correct.
 
-#### No hypervisor-level backup exists, and none is planned
+#### No VM snapshot is configured — and until one is, operate as if it could not exist
 
-There is no hypervisor backup server, no VM snapshot and no second machine. What exists is the
+ADR 0036 wrote this heading as "no hypervisor-level backup exists, and none is planned", and on
+its bare-metal premise a snapshot was an impossibility rather than an omission. On the Azure VM
+(ADR 0051) it is merely *unconfigured*: an OS-disk snapshot is one `az snapshot create` away, and
+turning that into a scheduled policy is a decision nobody has taken yet. There is still no second
+machine. What exists is the
 `backup` service's hourly `pg_dump` (14-day retention, on the same host) — that is the **only**
 line of defense, and it covers loss of *data*, not loss of the *host*. ADR 0036 §3 records this as
 a deliberate, accepted asymmetry given the database holds only reproducible demo content: **the
@@ -577,6 +617,14 @@ sops updatekeys secrets.env.sops
 The compose's `TUNNEL_TOKEN` implies a **remotely managed tunnel**: the hostname configuration
 lives in the Cloudflare dashboard/API, not in a local `config.yml`.
 
+> This section is the **current** procedure for every hostname, `nora.systems` included. The DNS
+> cutover that put the root domain in front of the Azure deployment — when the web app had public
+> ingress and only the console came through a tunnel — is recorded in
+> [`web-custom-domain.md`](web-custom-domain.md), which is historical and says so in its own
+> banner. It is linked from here because nothing linked to it at all until 2026-08-23, and an
+> unreachable historical runbook is found by search at exactly the wrong moment: by somebody in a
+> hurry who does not read the banner.
+
 1. **Create the tunnel** (Zero Trust → Networks → Tunnels → Create a tunnel → *Cloudflared*), named
    `nora-prod`. Copy the **connector token** into `CLOUDFLARE_TUNNEL_TOKEN`.
 
@@ -629,10 +677,31 @@ Flags that matter:
 |---|---|
 | `--tag sha-xxxxxxx` | tag of the app images to bring up |
 | `--service api,web` | only these services (repeatable or a list) |
-| `--if-changed` | only deploys if the remote digest differs — this is what the systemd timer calls |
+| `--if-changed` | only deploys if the remote digest differs — half of what the systemd timer calls |
+| `--follow-release` | resolves `release/prod/current` and rolls out the `sha-<short>` it names. **Implies `--sync`**, because the pointer names a commit and images from one commit must not run against the compose of another. Refuses a pointer whose immutable sibling tag `release/prod/<short>` is missing — that tag is written only after the promotion has verified every announced manifest in GHCR and that the SHA descends from `main`, so following the pointer inherits both checks. The other half of what the timer calls |
+| `--sync` | `git pull --ff-only` on the host repo before anything else. Without it a deploy updates **images only**, and a change to the compose, the Caddyfile or the scripts stays in git and never reaches the machine |
 | `--rollback` | returns the selected services to the previous tag recorded in the state |
 | `--no-rollback` | on a health failure, leaves it broken for debugging |
 | `--dry-run` | shows what it would do |
+
+**The timer runs `deploy.sh --if-changed --follow-release`.** Until 2026-08-23 it passed no
+`--tag` and no `--follow-release`, so it re-probed the digest of the release already running —
+which never changes — and no published release ever reached the host by itself. If you are reading
+an older note that says rolling forward is manual, that is why.
+
+### The three timers `bootstrap-host.sh` installs
+
+The hourly database dump is not among them — it is the `nora-backup` **container** in the compose
+file, which is why it survives a host that has never run `bootstrap-host.sh`.
+
+| Unit | Cadence | Notes |
+|---|---|---|
+| `nora-deploy.timer` | every `PULL_INTERVAL` (default 5 min), 2 min after boot, with a 60 s randomised delay so it does not hit GHCR on the same second as everyone else | runs `deploy.sh --if-changed --follow-release` |
+| `nora-offsite-backup.timer` | hourly, at `:30` | **fails every run until `NORA_OFFSITE_TARGET` is set** in `/etc/nora/offsite.env`. That is deliberate: a backup leg that quietly does nothing is the failure it exists to prevent. `none` is the only way to disable it on purpose |
+| `nora-restore-drill.timer` | quarterly | runs `restore-drill.sh` unattended — it is safe to, because the drill restores into a disposable `--network none` container and never touches the live database |
+
+All three escalate through `nora-alert@`, which runs `scripts/notify-failure.sh`. Before
+2026-08-23 a failing unit was silent, which is the same defect as a backup that does nothing.
 
 The rollout state (current tag, previous tag, digest, timestamp) lives in
 `/srv/nora/state/deploy-state.env` — it is what makes rollback possible without your having
@@ -659,8 +728,9 @@ shred -u /dev/shm/nora.env
 ### 6. Restore data (from a backup)
 
 This procedure was originally written for the one-time restore of the Azure dumps during the
-2026-08-07 migration. There is nothing left to restore from Azure (no subscription, no export —
-ADR 0036), so today this is the general restore path: it is what the quarterly drill runs and
+2026-08-07 migration. There is nothing left to restore from the old `rg-nora-dev` resource group
+(deleted without an export; the live host is itself an Azure VM in `rg-nora-dev-cc` — ADR 0051),
+so today this is the general restore path: it is what the quarterly drill runs and
 what a Level 2/3 rollback follows, sourced from the `backup` service's hourly `pg_dump` instead.
 
 **Mandatory order.** If the API comes up before the restore, Flyway creates a virgin schema and
@@ -906,9 +976,10 @@ docker compose -p nora exec backup /usr/local/bin/run-backup.sh --once
 ls -lh /srv/nora/backups | tail
 ```
 
-> **A backup on the same host is not a backup.** There is no hypervisor snapshot and no off-host
-> copy of `/srv/nora/backups` (ADR 0036 §3 withdraws that leg rather than leave it on paper — there
-> is no substrate for it to run on). As long as the dumps only exist on this host, the real RPO for
+> **A backup on the same host is not a backup.** There is no off-host copy of `/srv/nora/backups`
+> beyond what `offsite-backup.sh` ships once its timer is installed — and no VM snapshot either:
+> ADR 0036 §3 withdrew that leg believing no substrate for it existed, ADR 0051 shows one does
+> (an Azure disk), and nobody has configured it yet. As long as the dumps only exist on this host, the real RPO for
 > a **host** loss is not the last hour, it is everything not committed to this repository. Syncing
 > the dumps to an external destination (`rclone`/`rsync`) would close that gap; it is not done
 > today, and ADR 0036 records the trigger for building it: the first tenant whose content is not
@@ -989,7 +1060,7 @@ rebuild-from-repo".
 **Quarterly**, inherited from ADR 0016 Gap 3. What changes: previously the RTO was guaranteed by the Flexible
 Server's PITR; now it is **a manual procedure**. An RTO that is never measured is a guess.
 
-There is no hypervisor to clone (ADR 0036), so `infra/host/scripts/restore-drill.sh` measures only
+No VM clone is configured (possible since ADR 0051, unconfigured — the drill predates it), so `infra/host/scripts/restore-drill.sh` measures only
 the **data recovery path** — bring up a disposable Postgres (`docker run --network none`, no
 compose project, no tunnel token, so it cannot reach or be reached by production), `pg_restore`
 the most recent dump into it, and validate counts/Flyway/GRANTs. It does **not** measure incident
@@ -1009,7 +1080,13 @@ second host to drill them on:
 
 | Date | Dump | Measured RTO | Findings |
 |---|---|---|---|
-| _(pending — first drill within 30 days after go-live)_ | | | |
+| _(pending — the quarterly timer exists since 2026-08-23; no drill has been executed)_ | | | |
+
+> **What "pending" means here, precisely.** The drill is real code, it is now scheduled
+> (`nora-restore-drill.timer`), and it has still never been run — so **the RTO floor has never been
+> measured.** ADR 0038 §6c deferred the cadence and the cadence now exists; what is left is a
+> single execution on the host. Until this table has a row, treat any RTO figure anywhere in this
+> repository as an estimate somebody wrote down, including the 2 h below.
 
 > Treat the number from this drill as the RTO **floor**, never as the RTO — see the script's own
 > header for what it deliberately does not measure. If the measured floor already exceeds 2h (the
@@ -1026,4 +1103,5 @@ not a retroactive edit of the two above it.
 |---|---|
 | 2026-08-07 | v1.0 — runbook created together with ADR 0034. Supersedes the historical Azure-era runbook. Covers VM provisioning, bootstrap, SOPS+age, Cloudflare Tunnel/Access, first deployment, restore coming from Azure, verification, the 9 self-hosting pitfalls, 3-level rollback and the quarterly restore drill. |
 | 2026-08-07 | v1.1 — reconciliation with the actual files in the infra directory: correct names (`postgres/init/01-roles-and-db.sql`, `R001__provision_app_roles.sql`), the real `deploy.sh` flags (`--platform`, `--tag`, `--service`, `--rollback`, `--if-changed`) in place of `--profile platform` and manual editing of `API_TAG`, rollout state in `/srv/nora/state/deploy-state.env`, tmpfs on `/dev/shm`, and separation of the two configuration planes (`env.defaults` vs. `secrets.env.sops`) in the secrets inventory. Reference to the restore-into-host script. |
+| 2026-08-23 | v1.3 — reconciled with the roll-forward and observability work of the same date. `deploy.sh` gained `--follow-release` and `--sync`, and the flag table and the timer description now say that the installed timer runs `--if-changed --follow-release` rather than re-probing the tag already running. Added the three systemd timers the bootstrap installs, with the note that the hourly dump is a compose service and not one of them, and that all three escalate to `nora-alert@` instead of failing silently. The restore-drill row says what "pending" now means: the cadence exists, the measurement does not. |
 | 2026-08-10 | v1.2 — reconciled with ADR 0036: the substrate is a single bare-metal host, no hypervisor. Removed the fictitious VM-provisioning walkthrough (and the host details it exposed), the hypervisor-backup / VM-snapshot rollback and drill, and every link to the deleted Azure runbooks. Rewrote Level 3 rollback and the restore drill around "rebuild from repo" and the disposable-container drill that `restore-drill.sh` actually runs. |

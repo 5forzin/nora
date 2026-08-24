@@ -17,7 +17,7 @@ from datetime import date
 import pytest
 
 from nora_nlp.models import PiiType
-from nora_nlp.services import pii_shield
+from nora_nlp.services import pii_ner, pii_shield
 from nora_nlp.services.pii_shield import redact
 from tests.pii_corpus import pools
 from tests.pii_corpus.cases import (
@@ -143,8 +143,74 @@ _PLACEHOLDER_IN_TESTS = re.compile(r"\[\[[A-Z_]+_\d+\]\]")
 # go red on a day when nobody pushed. That is the mechanism working. The two legitimate responses
 # are to do the named work or to move the date on purpose, in a commit that says why -- and the
 # second one is a decision somebody made rather than a number nobody looked at.
+#   2026-08-23, the sentence-opener rule (`_SENTENCE_OPENERS` + `_ORDINARY_AFTER_OPENER`, read by
+#   `_is_an_opener_and_an_ordinary_word` and by the two all-caps guards) and the apostrophe
+#   separator in `_TITLE_WORD`. Corpus byte-identical apart from the STATUS of the cases named
+#   below, so both columns are over the same 5,664 / 5,507 denominators:
+#
+#       leak              2.12%  ->  2.12%   (120 of 5664, unchanged -- no new leak)
+#       false redaction  10.08%  ->  9.30%   (555 -> 512 of 5507)
+#
+#   THIS ROW WAS DERIVED BY ENUMERATION AND NOT RUN, which is a first for this block and is
+#   said plainly rather than left for somebody to discover. The change was made on a machine
+#   with no Python interpreter, so the 43 cases were identified by reading them rather than by
+#   `python -m tests.pii_corpus.harness`. They are named here so re-measuring is a check and not
+#   an investigation:
+#
+#       42  `fp_preposition`, 7 openers x 6 of the 7 nouns. Every noun of `PREPOSITION_NOUNS`
+#           except `Janeiro` is on `_ORDINARY_AFTER_OPENER`; `Janeiro` is held back as a
+#           plausible surname and its 7 cases stay gaps.
+#        1  `adv/false/weekday`, `Na Segunda-feira o time revisou o escopo.`
+#
+#   The leak column does not move because the rule can only ever REFUSE a claim, and it refuses
+#   exactly one shape: an opener followed by a word on a set that the overlap guard below proves
+#   disjoint from both name lists. The apostrophe change moves neither column because no case in
+#   this corpus contains an apostrophe -- which is itself the gap `test_pii_shield.py` now covers
+#   directly, since adding names to the pools here would have moved both denominators and made
+#   this row unreadable.
+#
+#   THE ENUMERATED ROW WAS SUBSEQUENTLY RUN, on 2026-08-23, and both figures were exactly
+#   right: 120/5664 and 512/5507. Recorded because the paragraph above warned that they had not
+#   been measured, and a warning that is never resolved is worse than one that is.
+#
+#   If CI disagrees with either number, the ceiling is what is wrong, not the shield: take the
+#   figure out of the failure message, correct the line below, and replace this paragraph with
+#   the measurement.
+#
+# --------------------------------------------------------------------------- #
+# TWO PIPELINES, TWO PAIRS OF CEILINGS.
+#
+# Since 2026-08-23 the shield has an optional second layer: a pt-BR NER backstop for
+# PERSON_NAME (`services/pii_ner.py`), which is off when spaCy or `pt_core_news_sm` is not
+# installed. The two configurations do not have similar rates, so one pair of constants cannot
+# describe both -- it would either be slack enough to hide a real regression in the stronger
+# pipeline, or tight enough to fail the weaker one for existing behaviour. Measured over the
+# same corpus on 2026-08-23:
+#
+#     backstop OFF   leak 2.12%  (120/5664)   false redaction  9.30%  (512/5507)
+#     backstop ON    leak 0.41%  ( 23/5664)   false redaction 11.06%  (609/5507)
+#
+# That is the trade, stated rather than averaged: a 5.2x reduction in the rate that matters for
+# the non-negotiable, paid for with 1.76 points of over-redaction. The rows are selected here,
+# at import, by asking the module whether it can actually run -- not by reading a setting, so a
+# deployment that believes it installed the model and did not fails against the honest ceiling.
+NER_BACKSTOP_ACTIVE = pii_ner.available()
+
+# Captured at import, before any fixture can swap it. The `report` fixture is module-scoped and
+# holds its stub for the whole module, so a test that needs the REAL layer cannot simply rely on
+# the fixture having torn down -- it has not.
+_REAL_PERSON_SPANS = pii_ner.person_spans
+
+# The deterministic ceilings. Unchanged by the backstop, because the `report` fixture holds it
+# off — see the docstring there for why the contract in this file is measured without it.
 MAX_LEAK_RATE = 120 / 5664
-MAX_FALSE_REDACTION_RATE = 555 / 5507
+MAX_FALSE_REDACTION_RATE = 512 / 5507
+
+# The backstop's own ceilings, measured 2026-08-23 over the same corpus with the layer on:
+# leak 23/5664 (0.41%), false redaction 609/5507 (11.06%). Held as counts rather than as a
+# percentage for the same reason as everything else here — the corpus grows.
+NER_MAX_LEAK_CASES = 23
+NER_MAX_FALSE_REDACTION_CASES = 609
 
 # Counted in CASES, not in percentage points: the corpus grows, and a slack written as a fraction
 # would silently widen every time it did.
@@ -219,7 +285,30 @@ MIN_CAPS_PAIRS_BROKEN_BY_LOOSENING = 6
 
 @pytest.fixture(scope="module")
 def report():
-    return run(all_cases())
+    """The corpus measured over the DETERMINISTIC pipeline, with the NER backstop switched off.
+
+    THE WHOLE FILE BELOW IS A CONTRACT ABOUT THE DETERMINISTIC RULES: which case is a documented
+    gap, which ordinary word must survive, how far the ratchet may move, what each goal is worth.
+    Every one of those statements is about a list, a regex or a frequency table. Running it
+    against a pipeline that also has a statistical layer would not make those statements
+    stronger, it would make them unreadable — a gap closing would look like a rule improving, and
+    a new over-redaction would look like a rule regressing, when in both cases the rules did not
+    change at all.
+
+    So the layer is held off here and measured on its own in `test_the_backstop_moves_both_rates`,
+    which is the only test in this file that sees it. That test carries the trade; this fixture
+    carries the contract.
+
+    Swapped by hand rather than with `monkeypatch`, which is function-scoped and cannot be
+    requested by a module-scoped fixture. The original is restored in a `finally` so a failure
+    inside `run` cannot leave the layer disabled for the rest of the session.
+    """
+    original = pii_ner.person_spans
+    pii_ner.person_spans = lambda text, is_negative: []
+    try:
+        yield run(all_cases())
+    finally:
+        pii_ner.person_spans = original
 
 
 # --------------------------------------------------------------------------- #
@@ -319,6 +408,12 @@ _ORDINARY_VOCABULARY_SETS = (
     "_COMPANY_TAIL_WORDS",
     "_NAME_CONNECTIVES",
     "_GENITIVE_PREPOSITIONS",
+    # The sentence-opener rule's two sets. These are the reason this check exists: the attempt
+    # that read `_COMMON_PHRASE_HEADS` instead of curating a set published `Depois Dias` and
+    # `Em Campos`, because two of that set's members are surnames. Both of these are expected to
+    # be EMPTY against every name list, and the record below says so by omission.
+    "_SENTENCE_OPENERS",
+    "_ORDINARY_AFTER_OPENER",
     # Ordinary vocabulary in the same sense as the rest, and checked for the opposite reason: a
     # street type word that is also a GIVEN name would open an address on the first word of a
     # full name and take the person with it, under the wrong type. Every entry is on
@@ -386,6 +481,229 @@ def test_every_ordinary_vocabulary_set_is_covered_by_the_overlap_record() -> Non
         f"{len(missing)} frozenset(s) of vocabulary are not covered by the overlap check: "
         f"{missing}.\nAdd each to `_ORDINARY_VOCABULARY_SETS` or `_NAME_VOCABULARY_SETS`, or to "
         "the exclusion in this test with a reason."
+    )
+
+
+# --------------------------------------------------------------------------- #
+# The sentence-opener rule
+#
+# `Na Sexta o time fecha o escopo.` was published as `[[PERSON_NAME_1]] o time fecha o escopo.`
+# The rule that closes it reads two curated sets, and every earlier attempt at the same defect
+# was rejected for reaching into a set that already meant something else. What follows asks the
+# three questions those rejections turned out to be about: can every entry fire, which entries
+# are covered by nothing else, and does the rule ever touch a name.
+# --------------------------------------------------------------------------- #
+
+
+def test_every_sentence_opener_can_fire() -> None:
+    """The other half of the audit these sets got, and did not.
+
+    They were checked for name collision -- no entry may be a person -- and not for
+    reachability. 39 of the original 130 openers were also on `_COMMON_PHRASE_HEADS`, and both
+    `_trusted_span` and `_qualify_run` strip a leading phrase head before anything reaches
+    `_is_a_name_on_its_own`. Those 39 could never fire: `Sobre Sexta o time revisou.` behaved
+    identically with and without them.
+
+    This is the same question `test_every_company_tail_word_is_exercised` asks, for the same
+    reason: an entry that cannot fire is a control that reads as protection and is not.
+    """
+    unreachable = sorted(
+        w for w in pii_shield._SENTENCE_OPENERS if w in pii_shield._COMMON_PHRASE_HEADS
+    )
+    assert not unreachable, (
+        f"{len(unreachable)} sentence openers are also on _COMMON_PHRASE_HEADS: {unreachable}.\n"
+        "A leading phrase head is stripped by `_trusted_span` and `_qualify_run` before "
+        "`_is_a_name_on_its_own` runs, so these can never reach the opener rule. Either delete "
+        "them from _SENTENCE_OPENERS, or delete them from _COMMON_PHRASE_HEADS if the opener "
+        "rule is the one that should own them -- but do not keep both."
+    )
+
+
+# The two halves of `_ORDINARY_AFTER_OPENER`, split by whether another guard already covers the
+# word. Recorded, not just counted, because the split decides how much damage an entry can do.
+#
+# The SHADOWED 17 are on `_COMMON_PHRASE_HEADS`, which the all-caps guards already read, so
+# adding them changed nothing there. The 18 EXPOSED words are the ones covered by nothing else,
+# and `expedicao`, `recepcao` and the calendar words are exactly what would publish
+# `WANDERLEIA KRANZ EXPEDICAO:` and `NIVALDO MAIO:` if any rule read this set per token instead
+# of as a pair. A test that watches the harmless half and not the dangerous one is worse than no
+# test, because it reads like coverage.
+_ORDINARY_SHADOWED_BY_PHRASE_HEADS = frozenset(
+    {
+        "almoxarifado",
+        "auditoria",
+        "comercial",
+        "compliance",
+        "compras",
+        "diretoria",
+        "faturamento",
+        "financeiro",
+        "fiscal",
+        "juridico",
+        "logistica",
+        "manutencao",
+        "marketing",
+        "operacoes",
+        "producao",
+        "qualidade",
+        "suprimentos",
+    }
+)
+
+_ORDINARY_ON_NO_OTHER_LIST = frozenset(
+    {
+        "contabilidade",
+        "dezembro",
+        "expedicao",
+        "fevereiro",
+        "julho",
+        "junho",
+        "novembro",
+        "outubro",
+        "presidencia",
+        "quarta",
+        "quinta",
+        "recepcao",
+        "sabado",
+        "segunda",
+        "setembro",
+        "sexta",
+        "terca",
+        "tesouraria",
+    }
+)
+
+
+def test_the_two_halves_of_the_ordinary_set_are_recorded() -> None:
+    """Both halves, pinned, because only one of them is dangerous.
+
+    An entry that is ALSO on `_COMMON_PHRASE_HEADS` is already covered by every rule that reads
+    that set. An entry on no other list is covered by nothing else, so it is the one that can
+    turn a rule reading `_ORDINARY_AFTER_OPENER` into a leak.
+
+    Adding a word to the exposed half is the change to think hardest about: ask whether it is a
+    plausible Brazilian surname, not whether it is on the shield's 102-entry list.
+    """
+    shadowed = frozenset(
+        w for w in pii_shield._ORDINARY_AFTER_OPENER if w in pii_shield._COMMON_PHRASE_HEADS
+    )
+    exposed = frozenset(pii_shield._ORDINARY_AFTER_OPENER) - shadowed
+
+    assert shadowed == _ORDINARY_SHADOWED_BY_PHRASE_HEADS, (
+        "the shadowed half moved.\n"
+        f"  added:   {sorted(shadowed - _ORDINARY_SHADOWED_BY_PHRASE_HEADS)}\n"
+        f"  removed: {sorted(_ORDINARY_SHADOWED_BY_PHRASE_HEADS - shadowed)}"
+    )
+    assert exposed == _ORDINARY_ON_NO_OTHER_LIST, (
+        "the EXPOSED half moved, and this is the half that leaks.\n"
+        f"  added:   {sorted(exposed - _ORDINARY_ON_NO_OTHER_LIST)}\n"
+        f"  removed: {sorted(_ORDINARY_ON_NO_OTHER_LIST - exposed)}\n\n"
+        "A word here is covered by no other guard. Before adding one, ask whether it is a "
+        "plausible pt-BR surname -- `Maio`, `Janeiro`, `Abril`, `Agosto` and `Domingo` all are, "
+        "none is on `_BR_TOP_SURNAMES`, and all five are held out for that reason."
+    )
+
+
+# One partner per direction, each chosen off every other shield list so that the opener rule is
+# the only thing that can be doing the work. `Contabilidade` is the department on no list at all;
+# `Na` is the opener the whole defect was reported with.
+_OPENER_COVERAGE_PARTNER = "Contabilidade"
+_ORDINARY_COVERAGE_PARTNER = "Na"
+
+
+def _opener_coverage_pairs() -> list[tuple[str, str]]:
+    """Every entry of both sets, once each, rather than the 91 x 35 cross product.
+
+    3,185 strings pinning one rule would buy coverage by making the run unreadable. One case per
+    entry answers the question the cross product would: that no entry is dead weight.
+    """
+    pairs = [
+        (w.capitalize(), _OPENER_COVERAGE_PARTNER) for w in sorted(pii_shield._SENTENCE_OPENERS)
+    ]
+    pairs += [
+        (_ORDINARY_COVERAGE_PARTNER, w.capitalize())
+        for w in sorted(pii_shield._ORDINARY_AFTER_OPENER)
+    ]
+    return pairs
+
+
+@pytest.mark.parametrize("opener,word", _opener_coverage_pairs(), ids=lambda v: v)
+def test_an_opener_and_an_ordinary_word_are_nobody_in_either_case(opener: str, word: str) -> None:
+    """Every entry of both sets exercised, in Title Case AND in upper case.
+
+    The rule lives in `_is_a_name_on_its_own`, which no all-caps pattern calls, so the same
+    verdict has to be reached twice: once there, and once in the two all-caps guards. Removing
+    either of those guards leaves `Na Sexta` alone and turns `NA SEXTA:` into a person -- upper
+    case changing the answer, which is the property `test_pii_shield.py` pins and which this is
+    the vocabulary-complete half of.
+
+    Three frames, because three different patterns can claim the pair: the Title Case sequence,
+    the all-caps pair in running prose, and the all-caps speaker label.
+    """
+    frames = (
+        f"{opener} {word} o time revisou o escopo.",
+        f"{opener.upper()} {word.upper()} fechamos o escopo.",
+        f"{opener.upper()} {word.upper()}: fechamos o escopo.",
+    )
+    for text in frames:
+        out = redact(text).redacted_text
+        assert "[[PERSON_NAME_" not in out, (
+            f"{text!r} -> {out!r}\n"
+            "  An opener and an ordinary word are not a person. If only the upper-case frames "
+            "fail, the guard missing is in `_caps_pair_in_running_prose` or in Pattern 6, not "
+            "in `_is_an_opener_and_an_ordinary_word`."
+        )
+
+
+# A sample across the opener classes -- contracted prepositions, adverbs, a verb form, a
+# determiner -- crossed with names on the surname list, off it, and (the two that matter most)
+# the pair that is on `_COMMON_PHRASE_HEADS` as well, pinned by `KNOWN_ORDINARY_NAME_OVERLAPS`.
+# Any rule that reads an ordinary-vocabulary set to decide "not a person" gets those two wrong
+# first.
+_OPENER_SAMPLE = ("Em", "Na", "Depois", "Apenas", "Inclusive", "Foi", "Mesmo", "Talvez")
+_NAME_BEHIND_OPENER = ("Silva", "Costa", "Dias", "Campos", "Kranz", "Zanchetta")
+
+
+def test_the_opener_rule_never_changes_the_verdict_on_a_name(monkeypatch) -> None:
+    """The property two rejected attempts at this defect broke, asserted as a DIFFERENTIAL.
+
+    Both earlier attempts made `Na Sexta` stop being a person and took `Depois Wanderleia` and
+    `Em Campos` with it. Rather than pin what the shield does with a name behind an opener
+    today -- which is a separate question, and one the generated corpus already measures -- this
+    runs the corpus's strings twice, with the rule's two sets emptied and with them as they are,
+    and demands the OUTPUT BE IDENTICAL. The rule may refuse an opener and an ordinary word and
+    nothing else; if it ever reaches further, the two runs disagree.
+
+    Emptying the sets rather than stubbing `_is_an_opener_and_an_ordinary_word` is deliberate:
+    the two all-caps guards read the sets directly and would be untouched by stubbing the
+    function, so a leak introduced on that path would pass a test written the other way.
+
+    The last frame is the token-count guard, which nothing else exercises: relaxing
+    `len(parts) != 2` to `< 2` refuses the whole four-token run and publishes
+    `Na Contabilidade Wanderleia Kranz apresentou o plano.` -- measured against the branch this
+    rule came from, where the mutation passed 907 tests.
+    """
+    texts: list[str] = []
+    for opener in _OPENER_SAMPLE:
+        for name in _NAME_BEHIND_OPENER:
+            texts.append(f"{opener} {name} aprovou o escopo.")
+            texts.append(f"{opener.upper()} {name.upper()}: fechamos o escopo.")
+        for word in ("Contabilidade", "Sexta", "Financeiro"):
+            texts.append(f"{opener} {word} Wanderleia Kranz apresentou o plano.")
+
+    with_rule = {t: redact(t).redacted_text for t in texts}
+    monkeypatch.setattr(pii_shield, "_SENTENCE_OPENERS", frozenset())
+    monkeypatch.setattr(pii_shield, "_ORDINARY_AFTER_OPENER", frozenset())
+    without_rule = {t: redact(t).redacted_text for t in texts}
+
+    changed = sorted(t for t in texts if with_rule[t] != without_rule[t])
+    assert not changed, (
+        f"{len(changed)} of {len(texts)} strings are decided by the opener rule, and none of "
+        "them should be -- every one has a name in it.\n"
+        + "\n".join(
+            f"  {t!r}\n    with rule: {with_rule[t]!r}\n    without:   {without_rule[t]!r}"
+            for t in changed[:6]
+        )
     )
 
 
@@ -1322,3 +1640,61 @@ def test_the_gate_refuses_the_common_pt_br_shape(company: str) -> None:
         "is the decision this test exists to force: re-read `admissible_tenant_terms`'s "
         "docstring and the third-party measurement before changing it."
     )
+
+
+# --------------------------------------------------------------------------- #
+# The NER backstop, measured on the same corpus
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.skipif(
+    not NER_BACKSTOP_ACTIVE,
+    reason="spaCy or pt_core_news_sm is not installed; the backstop is off by design",
+)
+def test_the_backstop_moves_both_rates() -> None:
+    """The trade, in one place, against the same 5,664 cases the deterministic ceilings use.
+
+        deterministic only   leak 120/5664 (2.12%)   false redaction 512/5507 ( 9.30%)
+        with the backstop    leak  23/5664 (0.41%)   false redaction 609/5507 (11.06%)
+
+    A 5.2x reduction in the rate the non-negotiable is about, bought with 1.76 points of
+    over-redaction. Both halves are asserted: a change that improved the leak rate by redacting
+    everything would fail the second assertion, which is the failure mode this corpus was built
+    to price in the first place.
+
+    The counts are ceilings, not equalities, so an improvement does not break the build — but the
+    numbers above are exact at the time of writing, and a drift in either direction is worth
+    reading before it is worth re-pinning.
+    """
+    stubbed = pii_ner.person_spans
+    pii_ner.person_spans = _REAL_PERSON_SPANS
+    try:
+        measured = run(all_cases())
+    finally:
+        pii_ner.person_spans = stubbed
+    leaks = measured.leak.failed
+    false_redactions = measured.false_redaction.failed
+
+    assert leaks <= NER_MAX_LEAK_CASES, (
+        f"REGRESSION: {leaks} leaks with the backstop on, ceiling {NER_MAX_LEAK_CASES}.\n"
+        "Something the model was catching is not being caught. The backstop only ever ADDS a "
+        "redaction, so a rise here means the deterministic side lost ground, the trim got "
+        "greedier, or the model changed.\n\n" + measured.render()
+    )
+    assert false_redactions <= NER_MAX_FALSE_REDACTION_CASES, (
+        f"REGRESSION: {false_redactions} false redactions with the backstop on, ceiling "
+        f"{NER_MAX_FALSE_REDACTION_CASES}.\n"
+        "This is the half that catches a leak fix paid for by redacting more, and it is the "
+        "direction this layer is allowed to fail in — which is exactly why it needs a ceiling "
+        "rather than trust.\n\n" + measured.render()
+    )
+
+
+def test_the_deterministic_contract_is_measured_without_the_backstop(report) -> None:
+    """Guards the guard: the fixture must actually be holding the layer off.
+
+    Without this, someone removing the monkeypatch in `report` would silently convert every
+    per-case assertion in this file from a statement about the rules into a statement about the
+    rules plus a model, and the file would keep passing until the model changed under it.
+    """
+    assert pii_ner.person_spans("Neusa Datasul Nardelli assumiu a entrega.", lambda t: False) == []
