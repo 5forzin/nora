@@ -1132,10 +1132,10 @@ second host to drill them on:
 
 | Date | Dump | Measured RTO | Findings |
 |---|---|---|---|
-| 2026-09-13 | `nora-20260913T221758Z.dump` | 4.0s (data layer) | Checksum passed; 46 tables; Flyway V033; 0 tenants in the empty installation; RLS roles and grants validated |
+| 2026-09-13 | `nora-20260913T221758Z.dump` | 6.0s (data layer) | Checksum passed; 46 tables; Flyway V033; 0 tenants in the empty installation; RLS roles and grants validated |
 
 > The first drill ran on 2026-09-13 against the most recent verified primary and platform dumps.
-> It passed in 4.0s at the data layer, well below the 2h target. This is a floor, not the complete
+> It passed in 6.0s at the data layer, well below the 2h target. This is a floor, not the complete
 > RTO: host repair, stack boot, incident response and DNS/tunnel recovery remain outside the drill.
 
 > Treat the number from this drill as the RTO **floor**, never as the RTO — see the script's own
@@ -1151,7 +1151,7 @@ not a retroactive edit of the two above it.
 
 | Date | Change |
 |---|---|
-| 2026-09-13 | v1.4 — recorded the first successful restore drill (4.0s data-layer floor, Flyway V033, empty installation) and the host's active UFW/key-only SSH state. |
+| 2026-09-13 | v1.4 — recorded the first successful restore drill (6.0s data-layer floor, Flyway V033, empty installation) and the host's active UFW/key-only SSH state. |
 | 2026-08-07 | v1.0 — runbook created together with ADR 0034. Supersedes the historical Azure-era runbook. Covers VM provisioning, bootstrap, SOPS+age, Cloudflare Tunnel/Access, first deployment, restore coming from Azure, verification, the 9 self-hosting pitfalls, 3-level rollback and the quarterly restore drill. |
 | 2026-08-07 | v1.1 — reconciliation with the actual files in the infra directory: correct names (`postgres/init/01-roles-and-db.sql`, `R001__provision_app_roles.sql`), the real `deploy.sh` flags (`--platform`, `--tag`, `--service`, `--rollback`, `--if-changed`) in place of `--profile platform` and manual editing of `API_TAG`, rollout state in `/srv/nora/state/deploy-state.env`, tmpfs on `/dev/shm`, and separation of the two configuration planes (`env.defaults` vs. `secrets.env.sops`) in the secrets inventory. Reference to the restore-into-host script. |
 | 2026-08-23 | v1.3 — reconciled with the roll-forward and observability work of the same date. `deploy.sh` gained `--follow-release` and `--sync`, and the flag table and the timer description now say that the installed timer runs `--if-changed --follow-release` rather than re-probing the tag already running. Added the three systemd timers the bootstrap installs, with the note that the hourly dump is a compose service and not one of them, and that all three escalate to `nora-alert@` instead of failing silently. The restore-drill row says what "pending" now means: the cadence exists, the measurement does not. |

@@ -131,7 +131,7 @@ ADR 0016 documents the choice.
 >   any row with `success = false`), per-tenant reads and the `nora_app` grants. It runs quarterly
 >   on `nora-restore-drill.timer` since 2026-08-23 and passed its first execution on 2026-09-13.
 > - **Measured state:** the first drill restored 46 tables at Flyway V033, validated the RLS roles and
->   grants, and measured a 4.0s data-layer floor against the 2h target. The source installation is
+>   grants, and measured a 6.0s data-layer floor against the 2h target. The source installation is
 >   empty, so the per-tenant smoke was skipped; this is valid for the current zero-tenant state.
 >   The off-host destination remains open until `NORA_OFFSITE_TARGET` is configured.
 
@@ -351,7 +351,7 @@ substrate that no longer exists, and a T-shirt size for a task that cannot be pe
 |---|---|---|
 | 1. Bicep prod.bicepparam | **Void.** No Bicep, no resource group, no dev/prod split | ADR 0016, ADR 0034/0036 |
 | 2. Migrations safety | **Half delivered.** The CI half is `scripts/check-migrations.sh`; the deploy-time pre-flight is open | ADR 0016 |
-| 3. RTO/RPO + restore drill | **Substantially closed.** Quarterly timer exists and the first drill passed with a 4.0s data-layer floor; off-host destination remains unconfigured | ADR 0036 §3, ADR 0038 §6b/§6c |
+| 3. RTO/RPO + restore drill | **Substantially closed.** Quarterly timer exists and the first drill passed with a 6.0s data-layer floor; off-host destination remains unconfigured | ADR 0036 §3, ADR 0038 §6b/§6c |
 | 4. Monitoring + alerting | **Alerting delivered** — eight rules, one contact point, one notification policy, plus the two receivers the rules needed. No SLO, deliberately | ADR 0038 §6a |
 | 5. Operational LGPD | **Delivered** | ADR 0029 |
 | 6. DR runbook | **Open, against a different scenario.** The Azure one cannot happen; the host one has pieces and no runbook, and the age key has no escrow | ADR 0036 |
