@@ -117,10 +117,10 @@ Internet ──> Cloudflare edge ──(tunnel, egress-only)──> cloudflared
 **No inbound port is opened on the host by the stack.** The only ports the compose publishes are
 on `127.0.0.1` (`5432` → postgres, `5433` → postgres-platform) for debugging via `ssh -L`.
 
-The qualifier is load-bearing and this document used to omit it: **sshd's port 22 was open to the
-internet when this was measured on 2026-08-11** — `ufw` inactive, `iptables -S INPUT` policy
-`ACCEPT`, no rule naming port 22 — and the firewall block further down explains why it has been
-left that way. "The tunnel is the only ingress" is true of HTTP and of nothing else.
+The qualifier is load-bearing and this document used to omit it: **sshd's port 22 remains reachable
+from the internet** as the recovery path, but since 2026-09-13 `ufw` has a default-deny incoming
+policy with only `22/tcp` allowed. `sshd` accepts public keys for `noraops`; root login and password
+authentication are disabled. "The tunnel is the only ingress" is true of HTTP and of nothing else.
 
 Replacement map, for those coming from Azure:
 
@@ -134,7 +134,7 @@ Replacement map, for those coming from Azure:
 | App Insights (`-javaagent`) | `opentelemetry-javaagent.jar` → `otel-collector` → `prometheus` |
 | Log Analytics (`appLogsConfiguration`) | `alloy` (Docker socket) → `loki` |
 | Workbook / Metrics Explorer | `grafana` at `grafana.<dom>` |
-| PITR 7 days | `backup` (hourly pg_dump, 14d retention) + `offsite-backup.sh` once its timer is installed; a VM disk snapshot is possible since ADR 0051 and unconfigured |
+| PITR 7 days | `backup` (hourly pg_dump, 14d retention) + `offsite-backup.sh` once `NORA_OFFSITE_TARGET` is configured; the timer is installed but stopped until a destination is chosen |
 | `deploy-infra.yml` (push, OIDC) | `scripts/deploy.sh` on the host (**PULL**) |
 
 ### Blockers before starting
@@ -522,13 +522,12 @@ git clone https://github.com/sf0rzin/nora.git /opt/nora
 > the command. The rule above allows 22 from anywhere, which is what the machine already does —
 > the value `ufw` adds here is the `-p 0.0.0.0:...` guard above, not a source restriction.
 >
-> **State on this host as of 2026-08-11: `ufw` is INACTIVE.** `iptables -S INPUT` is policy
-> `ACCEPT` with no rule naming port 22, so 22 is open to the internet and sshd (key-only:
-> `passwordauthentication no`, `permitrootlogin without-password`) is what stands in front of it.
-> That is the state ADR 0037 §3 relies on when it calls 22 the recovery path. It has not been
-> changed to match this block, because enabling a firewall on the only recovery path is a
-> deliberate-window operation and not a documentation edit — see `ssh-over-tunnel.md` for the
-> shape such a window takes.
+> **State on this host as of 2026-09-13: `ufw` is ACTIVE.** `iptables -S INPUT` is policy
+> `DROP`, with an allow rule for `22/tcp`; the direct SSH recovery path remains available, while
+> the application ports are not accepted from the internet. `sshd -T` resolves to
+> `permitrootlogin no`, `passwordauthentication no`, `kbdinteractiveauthentication no` and
+> `pubkeyauthentication yes`. This was applied only after a second `noraops` key connection
+> succeeded; see `ssh-over-tunnel.md` for the separate Cloudflare-gated path.
 
 Limit journald and the Docker log (the compose already sets `max-size: 20m` / `max-file: 5` per
 container, but the daemon needs the default too):
@@ -1110,7 +1109,8 @@ rebuild-from-repo".
 ## Restore drill
 
 **Quarterly**, inherited from ADR 0016 Gap 3. What changes: previously the RTO was guaranteed by the Flexible
-Server's PITR; now it is **a manual procedure**. An RTO that is never measured is a guess.
+Server's PITR; now the data-layer floor is measured by `restore-drill.sh`. The first execution is manual;
+the timer runs the same isolated drill quarterly afterward. An RTO that is never measured is a guess.
 
 No VM clone is configured (possible since ADR 0051, unconfigured — the drill predates it), so `infra/host/scripts/restore-drill.sh` measures only
 the **data recovery path** — bring up a disposable Postgres (`docker run --network none`, no
@@ -1132,13 +1132,11 @@ second host to drill them on:
 
 | Date | Dump | Measured RTO | Findings |
 |---|---|---|---|
-| _(pending — the quarterly timer exists since 2026-08-23; no drill has been executed)_ | | | |
+| 2026-09-13 | `nora-20260913T221758Z.dump` | 4.0s (data layer) | Checksum passed; 46 tables; Flyway V033; 0 tenants in the empty installation; RLS roles and grants validated |
 
-> **What "pending" means here, precisely.** The drill is real code, it is now scheduled
-> (`nora-restore-drill.timer`), and it has still never been run — so **the RTO floor has never been
-> measured.** ADR 0038 §6c deferred the cadence and the cadence now exists; what is left is a
-> single execution on the host. Until this table has a row, treat any RTO figure anywhere in this
-> repository as an estimate somebody wrote down, including the 2 h below.
+> The first drill ran on 2026-09-13 against the most recent verified primary and platform dumps.
+> It passed in 4.0s at the data layer, well below the 2h target. This is a floor, not the complete
+> RTO: host repair, stack boot, incident response and DNS/tunnel recovery remain outside the drill.
 
 > Treat the number from this drill as the RTO **floor**, never as the RTO — see the script's own
 > header for what it deliberately does not measure. If the measured floor already exceeds 2h (the
@@ -1153,6 +1151,7 @@ not a retroactive edit of the two above it.
 
 | Date | Change |
 |---|---|
+| 2026-09-13 | v1.4 — recorded the first successful restore drill (4.0s data-layer floor, Flyway V033, empty installation) and the host's active UFW/key-only SSH state. |
 | 2026-08-07 | v1.0 — runbook created together with ADR 0034. Supersedes the historical Azure-era runbook. Covers VM provisioning, bootstrap, SOPS+age, Cloudflare Tunnel/Access, first deployment, restore coming from Azure, verification, the 9 self-hosting pitfalls, 3-level rollback and the quarterly restore drill. |
 | 2026-08-07 | v1.1 — reconciliation with the actual files in the infra directory: correct names (`postgres/init/01-roles-and-db.sql`, `R001__provision_app_roles.sql`), the real `deploy.sh` flags (`--platform`, `--tag`, `--service`, `--rollback`, `--if-changed`) in place of `--profile platform` and manual editing of `API_TAG`, rollout state in `/srv/nora/state/deploy-state.env`, tmpfs on `/dev/shm`, and separation of the two configuration planes (`env.defaults` vs. `secrets.env.sops`) in the secrets inventory. Reference to the restore-into-host script. |
 | 2026-08-23 | v1.3 — reconciled with the roll-forward and observability work of the same date. `deploy.sh` gained `--follow-release` and `--sync`, and the flag table and the timer description now say that the installed timer runs `--if-changed --follow-release` rather than re-probing the tag already running. Added the three systemd timers the bootstrap installs, with the note that the hourly dump is a compose service and not one of them, and that all three escalate to `nora-alert@` instead of failing silently. The restore-drill row says what "pending" now means: the cadence exists, the measurement does not. |

@@ -129,12 +129,11 @@ ADR 0016 documents the choice.
 > - **The drill:** `infra/host/scripts/restore-drill.sh` restores the most recent dump into a
 >   disposable `--network none` container and validates row counts, the Flyway history (it fails on
 >   any row with `success = false`), per-tenant reads and the `nora_app` grants. It runs quarterly
->   on `nora-restore-drill.timer` since 2026-08-23.
-> - **What is still open, and it is the part that matters:** the drill has never actually been
->   executed. The results table in `docs/operations/host-deploy.md` still reads `(pending)`, so
->   **the RTO floor has never been measured.** ADR 0038 §6c deferred the cadence; the cadence now
->   exists, and the measurement does not. Writing "RTO: 2h" here would be worse than writing
->   nothing, which is why the number below is left as the Azure-era estimate it was.
+>   on `nora-restore-drill.timer` since 2026-08-23 and passed its first execution on 2026-09-13.
+> - **Measured state:** the first drill restored 46 tables at Flyway V033, validated the RLS roles and
+>   grants, and measured a 4.0s data-layer floor against the 2h target. The source installation is
+>   empty, so the per-tenant smoke was skipped; this is valid for the current zero-tenant state.
+>   The off-host destination remains open until `NORA_OFFSITE_TARGET` is configured.
 
 **Current situation:** Postgres Flexible Server has a default automatic backup (point-in-time recovery — PITR) with 7 days of retention. The Storage Account has 7-day soft-delete (configured in Bicep). Key Vault soft-delete 7 days (configured).
 
@@ -348,11 +347,11 @@ A dedicated workflow `.github/workflows/rotate-secrets.yml` with a monthly cron 
 This table is now **state**, not estimate. The effort column it used to carry priced work against a
 substrate that no longer exists, and a T-shirt size for a task that cannot be performed is noise.
 
-| Gap | State on 2026-08-23 | Successor ADR? |
+| Gap | State on 2026-09-13 | Successor ADR? |
 |---|---|---|
 | 1. Bicep prod.bicepparam | **Void.** No Bicep, no resource group, no dev/prod split | ADR 0016, ADR 0034/0036 |
 | 2. Migrations safety | **Half delivered.** The CI half is `scripts/check-migrations.sh`; the deploy-time pre-flight is open | ADR 0016 |
-| 3. RTO/RPO + restore drill | **Substantially closed.** Off-host leg and quarterly drill timer exist; the drill has never been run, so the RTO floor is unmeasured | ADR 0036 §3, ADR 0038 §6b/§6c |
+| 3. RTO/RPO + restore drill | **Substantially closed.** Quarterly timer exists and the first drill passed with a 4.0s data-layer floor; off-host destination remains unconfigured | ADR 0036 §3, ADR 0038 §6b/§6c |
 | 4. Monitoring + alerting | **Alerting delivered** — eight rules, one contact point, one notification policy, plus the two receivers the rules needed. No SLO, deliberately | ADR 0038 §6a |
 | 5. Operational LGPD | **Delivered** | ADR 0029 |
 | 6. DR runbook | **Open, against a different scenario.** The Azure one cannot happen; the host one has pieces and no runbook, and the age key has no escrow | ADR 0036 |

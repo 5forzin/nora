@@ -283,10 +283,12 @@ SELECT 'CREATE ROLE nora_telemetry LOGIN'
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'nora_telemetry')
 \gexec
 SQL
-  psql_in postgres nora -v app_password="$APP_PW" -q \
-    -c "ALTER ROLE nora_app WITH LOGIN PASSWORD :'app_password' NOBYPASSRLS"
-  psql_in postgres nora -v telemetry_password="$TEL_PW" -q \
-    -c "ALTER ROLE nora_telemetry WITH LOGIN PASSWORD :'telemetry_password' BYPASSRLS"
+  psql_in postgres nora -v app_password="$APP_PW" -q <<'SQL'
+ALTER ROLE nora_app WITH LOGIN PASSWORD :'app_password' NOBYPASSRLS;
+SQL
+  psql_in postgres nora -v telemetry_password="$TEL_PW" -q <<'SQL'
+ALTER ROLE nora_telemetry WITH LOGIN PASSWORD :'telemetry_password' BYPASSRLS;
+SQL
   ok "roles created/adjusted"
 }
 

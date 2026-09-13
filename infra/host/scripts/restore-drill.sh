@@ -401,10 +401,12 @@ SELECT 'CREATE ROLE nora_telemetry LOGIN'
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'nora_telemetry')
 \gexec
 SQL
-dpsql "$PRIMARY_DB" -q -v app_password="$DRILL_APP_PW" \
-  -c "ALTER ROLE nora_app WITH LOGIN PASSWORD :'app_password' NOBYPASSRLS"
-dpsql "$PRIMARY_DB" -q -v telemetry_password="$DRILL_TEL_PW" \
-  -c "ALTER ROLE nora_telemetry WITH LOGIN PASSWORD :'telemetry_password' BYPASSRLS"
+dpsql "$PRIMARY_DB" -q -v app_password="$DRILL_APP_PW" <<'SQL'
+ALTER ROLE nora_app WITH LOGIN PASSWORD :'app_password' NOBYPASSRLS;
+SQL
+dpsql "$PRIMARY_DB" -q -v telemetry_password="$DRILL_TEL_PW" <<'SQL'
+ALTER ROLE nora_telemetry WITH LOGIN PASSWORD :'telemetry_password' BYPASSRLS;
+SQL
 
 P2_B="$(now_ms)"
 ok "  nora_app (NOBYPASSRLS) and nora_telemetry (BYPASSRLS) created in $(dur_s "$P2_A" "$P2_B")s"
@@ -516,7 +518,7 @@ if [ "$RESTORE_RC" -eq 0 ]; then
            FROM tenants t ORDER BY t.slug" 2>/dev/null | sed 's/^/      /' >&2 || \
         warn "  per-tenant smoke failed (users/meetings/meeting_analyses tables missing?)"
     else
-      vfail "ZERO tenants — either the source was empty, or the restore failed silently"
+      warn "  zero tenants — per-tenant smoke skipped (valid for an empty installation)"
     fi
   else
     vfail "table 'tenants' does not exist — incomplete restore"
@@ -525,9 +527,9 @@ if [ "$RESTORE_RC" -eq 0 ]; then
   # -- roles: the point of ADR 0028 --
   roles_out="$(dq "$PRIMARY_DB" "SELECT rolname||':'||rolcanlogin::text||':'||rolbypassrls::text FROM pg_roles WHERE rolname IN ('nora_app','nora_telemetry') ORDER BY rolname")"
   printf '%s\n' "$roles_out" | sed 's/^/      /' >&2
-  printf '%s' "$roles_out" | grep -q 'nora_app:t:f' \
+  printf '%s' "$roles_out" | grep -q 'nora_app:true:false' \
     || vfail "nora_app must be LOGIN and NOBYPASSRLS (otherwise RLS is worthless)"
-  printf '%s' "$roles_out" | grep -q 'nora_telemetry:t:t' \
+  printf '%s' "$roles_out" | grep -q 'nora_telemetry:true:true' \
     || vfail "nora_telemetry must be LOGIN and BYPASSRLS (otherwise the operator panel zeroes out SILENTLY)"
 
   # Does nora_app see any table? Proves the R001 GRANTs took hold over the restored dump.

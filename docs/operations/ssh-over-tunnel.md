@@ -64,7 +64,8 @@ SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13.18
 
 `172.17.0.1` is the gateway of Docker's **default** bridge; `172.20.0.1` is `nora_edge`'s own.
 Both reach the host, and the route uses `172.17.0.1` because it survives recreation of
-`nora_edge`. `sshd` listens on `0.0.0.0:22` and `ufw` is inactive, so nothing blocks that leg.
+`nora_edge`. `sshd` listens on `0.0.0.0:22`; the host firewall allows `22/tcp`, so the tunnel leg
+continues to work while other inbound ports are denied.
 
 `host.docker.internal` resolves to the same `172.17.0.1`, and is the version that does not depend
 on Docker's address assignment at all — but it only resolves inside the container once the
