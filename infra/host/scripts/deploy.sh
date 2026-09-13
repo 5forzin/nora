@@ -509,11 +509,12 @@ probe_once() {
 # the otel-collector-contrib image is distroless — no shell, no wget, no curl — so any `test:`
 # would leave the container `unhealthy` FOREVER and abort `up -d --wait` on a collector that
 # works. It then points out that the health_check extension answers on :13133 and "can be
-# probed from outside". That sentence had no implementation. This is it.
+# probed from outside". Prometheus already scrapes the collector and Alloy, so the fallback
+# reads those internal target results rather than adding a second network client.
 #
 # The probe runs INSIDE `prometheus`, which is on the same `internal` bridge and whose image
-# ships busybox wget — the same wget its own healthcheck uses. Health is still judged from
-# inside the stack, never through the public URL, which is the rule at the top of this section.
+# ships the local HTTP client used by its own healthcheck. Health is still judged from inside
+# the stack, never through the public URL, which is the rule at the top of this section.
 #
 # `backup` is different in kind: it serves no port at all. What it has is a log line per
 # event, so the fallback reads its own words — preflight failed, or preflight passed and a
@@ -530,10 +531,25 @@ probe_once() {
 #
 # fallback_probe <service> -> 0 healthy, 1 not healthy, 2 no fallback available
 fallback_probe() {
-  local svc="$1" peer url out rc
+  local svc="$1" peer url out rc target_job
   case "$svc" in
-    otel-collector) peer=prometheus; url="http://otel-collector:13133/" ;;
-    alloy)          peer=prometheus; url="http://alloy:12345/-/ready" ;;
+    otel-collector|alloy)
+      # The Prometheus image's BusyBox resolver does not resolve Docker aliases on this
+      # pinned image, even though Prometheus itself resolves and scrapes the same targets.
+      # Ask its local API for the scrape result instead of making the deploy gate depend on
+      # an unrelated wget/DNS implementation detail.
+      peer=prometheus
+      target_job="$svc"
+      set +e
+      out="$(dc exec -T "$peer" wget -qO- http://localhost:9090/api/v1/targets 2>/dev/null)"
+      rc=$?
+      set -e
+      [ "$rc" -eq 0 ] || return 2
+      printf '%s' "$out" | jq -e --arg job "$target_job" \
+        '.data.activeTargets[]? | select(.labels.job == $job and .health == "up")' \
+        >/dev/null 2>&1 && return 0
+      return 1
+      ;;
     backup)
       set +e
       out="$(dc logs --tail 200 backup 2>/dev/null)"
