@@ -99,12 +99,9 @@ creation_rules:
     # encrypt and it cannot decrypt, which is why it belongs in a public repository and
     # the private half at /etc/nora/age.key does not.
     #
-    # This value is the one the host actually holds, read back with
-    # `age-keygen -y /etc/nora/age.key` on 2026-08-10. It had drifted: the host's key was
-    # regenerated at some point and only the host's working copy was updated, so anything
-    # re-encrypted from a workstation would have produced a file the host could not read —
-    # and the failure would have surfaced as a stack that boots with empty variables, not
-    # as a decryption error. Keep this in step with the host or the drift returns.
+    # The active host recipient must always be one of the public keys below. The historical
+    # production host had drifted from this file once, so a new host key is added explicitly
+    # during migration rather than silently replacing the existing recipients.
     #
     # Multiple recipients: separate with a comma. Strongly recommended to have
     # at least TWO (host + the operator's offline backup), otherwise losing the

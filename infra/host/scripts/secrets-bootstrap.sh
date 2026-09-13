@@ -98,6 +98,7 @@ CF_ACCESS_TEAM_DOMAIN|coletado|e.g.: stratfy.cloudflareaccess.com (not a secret)
 CF_ACCESS_AUD|coletado|AUD tag of the admin's Access Application (not a secret)
 GHCR_PULL_TOKEN|opcional|empty = assumes public packages on GHCR (the case today)
 OPENAI_API_KEY|opcional|empty = worker in stub mode and chat 503
+USE_LLM_STUB|opcional|true = deterministic worker analysis without an external LLM key
 GEMINI_API_KEY|opcional|empty = embeddings/RAG off
 DEEPSEEK_API_KEY|opcional|empty = provider unavailable in chat
 RESEND_API_KEY|opcional|empty = backend falls back to LogEmailSender
