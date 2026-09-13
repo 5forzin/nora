@@ -88,7 +88,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: sf0rzin/nora
+  IMAGE_PREFIX: ${{ github.repository_owner }}/nora
 
 jobs:
   changes:

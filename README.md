@@ -1,6 +1,6 @@
 # NORA
 
-[![CI](https://github.com/sf0rzin/nora/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/sf0rzin/nora/actions/workflows/ci.yml)
+[![CI](https://github.com/5forzin/nora/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/5forzin/nora/actions/workflows/ci.yml)
 
 Conversation intelligence for meetings: NORA turns a transcript into what the meeting actually produced.
 
@@ -84,7 +84,7 @@ docs/                      Documentation, see below
 You need Java 21, Maven, Node.js 22, Python 3.12, Docker with Compose, and Make. There is no Maven wrapper in the repository, so `mvn` has to be on your PATH — CI gets it from `setup-java`, which is why nothing here fails without it.
 
 ```bash
-git clone https://github.com/sf0rzin/nora.git && cd nora
+git clone https://github.com/5forzin/nora.git && cd nora
 make env
 make db-up
 ```

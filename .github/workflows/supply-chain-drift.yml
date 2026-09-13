@@ -33,6 +33,9 @@ on:
 permissions:
   contents: read
 
+env:
+  IMAGE_PREFIX: ${{ github.repository_owner }}/nora
+
 concurrency:
   group: supply-chain-drift
   cancel-in-progress: false
@@ -211,7 +214,7 @@ jobs:
           rc=0
           mkdir -p /tmp/trivy-cache
           for svc in api worker web admin; do
-            echo "::group::ghcr.io/sf0rzin/nora-$svc:latest"
+            echo "::group::ghcr.io/${IMAGE_PREFIX}-$svc:latest"
             docker run --rm \
               -v /tmp/trivy-cache:/root/.cache/trivy \
               "$TRIVY_IMAGE" image \
@@ -220,7 +223,7 @@ jobs:
               --scanners vuln \
               --exit-code 1 \
               --no-progress \
-              "ghcr.io/sf0rzin/nora-$svc:latest" || rc=1
+              "ghcr.io/${IMAGE_PREFIX}-$svc:latest" || rc=1
             echo "::endgroup::"
           done
           exit "$rc"

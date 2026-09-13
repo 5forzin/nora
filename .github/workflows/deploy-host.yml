@@ -109,6 +109,9 @@ permissions:
   contents: write   # create/move the release/prod/* tags. That is all.
   actions: read     # download the nora-release-pointer artifact from the build-images run.
 
+env:
+  IMAGE_PREFIX: ${{ github.repository_owner }}/nora
+
 # One pointer at a time. cancel-in-progress:false queues: cancelling a promote midway
 # would leave the immutable tag created and `current` pointing at the previous SHA.
 concurrency:
@@ -207,16 +210,16 @@ jobs:
             # services on the same tag. That is only safe because the rollback points at a SHA
             # that was ALREADY built; the next step confirms it in GHCR before publishing.
             echo "No artifact — generating a full pointer for SHA $SHORT (rollback mode)."
-            jq -n --arg sha "$SHA" --arg short "$SHORT" \
+            jq -n --arg sha "$SHA" --arg short "$SHORT" --arg prefix "$IMAGE_PREFIX" \
               --arg built_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
               '{schema:"nora.release-pointer/v1", sha:$sha, short_sha:$short, ref:"main",
-                registry:"ghcr.io", image_prefix:"sf0rzin/nora", built_at:$built_at,
+                registry:"ghcr.io", image_prefix:$prefix, built_at:$built_at,
                 mode:"rollback-full",
                 services:[
-                  {service:"api",    compose_var:"API_TAG",    tag:("sha-"+$short), image:("ghcr.io/sf0rzin/nora-api:sha-"+$short)},
-                  {service:"worker", compose_var:"WORKER_TAG", tag:("sha-"+$short), image:("ghcr.io/sf0rzin/nora-worker:sha-"+$short)},
-                  {service:"web",    compose_var:"WEB_TAG",    tag:("sha-"+$short), image:("ghcr.io/sf0rzin/nora-web:sha-"+$short)},
-                  {service:"admin",  compose_var:"ADMIN_TAG",  tag:("sha-"+$short), image:("ghcr.io/sf0rzin/nora-admin:sha-"+$short)}
+                  {service:"api",    compose_var:"API_TAG",    tag:("sha-"+$short), image:("ghcr.io/"+$prefix+"-api:sha-"+$short)},
+                  {service:"worker", compose_var:"WORKER_TAG", tag:("sha-"+$short), image:("ghcr.io/"+$prefix+"-worker:sha-"+$short)},
+                  {service:"web",    compose_var:"WEB_TAG",    tag:("sha-"+$short), image:("ghcr.io/"+$prefix+"-web:sha-"+$short)},
+                  {service:"admin",  compose_var:"ADMIN_TAG",  tag:("sha-"+$short), image:("ghcr.io/"+$prefix+"-admin:sha-"+$short)}
                 ]}' > pointer/release.json
             jq -r '.services[] | "\(.compose_var)=\(.tag)"' pointer/release.json > pointer/deploy.env
           fi

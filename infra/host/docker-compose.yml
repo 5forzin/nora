@@ -260,7 +260,7 @@ services:
   # No scale-to-zero: on a single host the cost of keeping 1 replica up is irrelevant and
   # it removes the cold start. The Dockerfile's `--workers 2` still applies.
   worker:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-sf0rzin/nora}-worker:${WORKER_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-5forzin/nora}-worker:${WORKER_TAG:-latest}
     container_name: nora-worker
     <<: *default-restart
     logging: *default-logging
@@ -307,7 +307,7 @@ services:
   # APP — Spring Boot API (replaces nora-api-dev; 1 vCPU / 2Gi, min 1)
   # ==========================================================================
   api:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-sf0rzin/nora}-api:${API_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-5forzin/nora}-api:${API_TAG:-latest}
     container_name: nora-api
     <<: *default-restart
     logging: *default-logging
@@ -506,7 +506,7 @@ services:
   # rebuilt with the --build-arg (see .github/workflows/build-images.yml). Since the domain
   # is still nora.systems, the current GHCR image serves without a rebuild.
   web:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-sf0rzin/nora}-web:${WEB_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-5forzin/nora}-web:${WEB_TAG:-latest}
     container_name: nora-web
     <<: *default-restart
     logging: *default-logging
@@ -579,7 +579,7 @@ services:
   # Secret)". That is no longer true — measured on the running container, 2026-08-12, values not
   # printed: NORA_ADMIN_USE_MOCKS=false, CF_ACCESS_TEAM_DOMAIN length 28, CF_ACCESS_AUD length 64.
   admin:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-sf0rzin/nora}-admin:${ADMIN_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX:-5forzin/nora}-admin:${ADMIN_TAG:-latest}
     container_name: nora-admin
     <<: *default-restart
     logging: *default-logging
