@@ -94,7 +94,7 @@ function ProjectCard({ p }: { p: Project }) {
         )}
       </div>
       <div style={{ fontSize: 11.5, color: "var(--muted)", borderTop: "1px solid var(--border)", paddingTop: 12 }}>
-        {copy.lastActivityPrefix} {fmtDate(p.last)}
+        {copy.lastActivityPrefix} {p.last ? fmtDate(p.last) : "—"}
       </div>
     </Link>
   );
@@ -206,7 +206,7 @@ function DetailView({ p }: { p: Project }) {
               </span>
             )}
             <span>
-              {copy.lastActivityPrefix} {fmtDate(p.last)}
+              {copy.lastActivityPrefix} {p.last ? fmtDate(p.last) : "—"}
             </span>
           </div>
         </div>
