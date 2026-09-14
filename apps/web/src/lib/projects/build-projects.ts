@@ -24,7 +24,12 @@ export interface Project {
   /** Every action item the analyses extracted, DONE included. */
   total: number;
   risks: number;
-  /** ISO-8601 of the most recent meeting in the group. */
+  /**
+   * ISO-8601 of the most recent meeting in the group — `""` when no meeting in it has a
+   * date. `startedAt` is OPTIONAL on upload, so a group can legitimately have none; the
+   * empty string (rather than null/undefined) keeps `localeCompare` in the sort below
+   * total and the screen rendering, instead of the whole page dying in the error boundary.
+   */
   last: string;
 }
 
@@ -63,10 +68,14 @@ export function buildProjects(
     const open = meetings.reduce((a, m) => a + (m.openActionItemCount ?? 0), 0);
     const total = meetings.reduce((a, m) => a + (m.actionItemCount ?? 0), 0);
     const risks = meetings.reduce((a, m) => a + (m.riskCount ?? 0), 0);
-    const last = meetings
-      .map((m) => m.startedAt)
-      .sort()
-      .reverse()[0];
+    const last =
+      meetings
+        .map((m) => m.startedAt)
+        // `startedAt` is optional on upload: undated meetings must not reach the sort, where
+        // `undefined` parks at the end and `.reverse()[0]` would hand it back as `last`.
+        .filter((iso): iso is string => typeof iso === "string")
+        .sort()
+        .reverse()[0] ?? "";
     projects.push({ tag, name: formatName(tag), meetings, open, total, risks, last });
   }
 

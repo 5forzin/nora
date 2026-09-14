@@ -134,7 +134,7 @@ function MeetingRow({ m }: { m: MeetingListItem }) {
             {m.riskCount} {copy.risks}
           </span>
         )}
-        <span>{fmtDate(m.startedAt)}</span>
+        <span>{m.startedAt ? fmtDate(m.startedAt) : "—"}</span>
       </span>
     </Link>
   );
