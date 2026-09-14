@@ -118,4 +118,29 @@ describe('buildProjects', () => {
 
     expect(projects[0]).toMatchObject({ tag: 'sales-team', name: 'SALES-TEAM' });
   });
+
+  it('survives meetings without a startedAt instead of dying in the sort', () => {
+    // `startedAt` is OPTIONAL on upload, and the crash this guards was real: an undated
+    // meeting made `.reverse()[0]` yield `undefined` as `last`, and the final
+    // `b.last.localeCompare(a.last)` threw — taking the whole Projects page down through
+    // the error boundary the moment one dated project existed to be compared against.
+    const projects = buildProjects([
+      meeting({ id: 'dated', tags: ['legacy'], startedAt: '2026-05-01T10:00:00Z' }),
+      meeting({ id: 'undated', tags: ['fresh'], startedAt: undefined }),
+      meeting({ id: 'mixed', tags: ['fresh'], startedAt: '2026-06-01T10:00:00Z' }),
+    ]);
+
+    expect(byTag(projects, 'fresh').last).toBe('2026-06-01T10:00:00Z');
+    expect(byTag(projects, 'legacy').last).toBe('2026-05-01T10:00:00Z');
+    expect(projects.map((p) => p.tag)).toEqual(['fresh', 'legacy']);
+  });
+
+  it('falls back to an empty string when no meeting in the group has a date', () => {
+    const projects = buildProjects([
+      meeting({ id: 'u1', tags: ['never-dated'], startedAt: undefined }),
+      meeting({ id: 'u2', tags: ['never-dated'], startedAt: undefined }),
+    ]);
+
+    expect(byTag(projects, 'never-dated').last).toBe('');
+  });
 });
