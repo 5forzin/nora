@@ -100,6 +100,7 @@ GHCR_PULL_TOKEN|opcional|empty = assumes public packages on GHCR (the case today
 OPENAI_API_KEY|opcional|empty = worker in stub mode and chat 503
 USE_LLM_STUB|opcional|true = deterministic worker analysis without an external LLM key
 GEMINI_API_KEY|opcional|empty = embeddings/RAG off
+NORA_EMBEDDING_MODEL|opcional|empty = text-embedding-004 (compiled default); non-secret embedding model override
 DEEPSEEK_API_KEY|opcional|empty = provider unavailable in chat
 RESEND_API_KEY|opcional|empty = backend falls back to LogEmailSender
 GOOGLE_OAUTH_CLIENT_ID|opcional|empty = Google Calendar integration does not connect
