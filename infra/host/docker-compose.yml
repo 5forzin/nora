@@ -381,6 +381,11 @@ services:
       # client secret, never the key, and the desktop bundle never carries one.
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Embedding model for the block above (non-secret). The compiled default is
+      # text-embedding-004; a key that cannot see it — AI Studio Express (`AQ.`) keys list
+      # only gemini-embedding-* — sets NORA_EMBEDDING_MODEL=gemini-embedding-001 in the
+      # secrets file. Dimension stays 768: every candidate honors outputDimensionality=768.
+      NORA_EMBEDDING_MODEL: ${NORA_EMBEDDING_MODEL:-text-embedding-004}
       # Bare key = pass through from the host env, and DO NOT SET when it is absent. The
       # `${VAR:-}` form used elsewhere in this file would inject an empty string, and an empty
       # string is a resolved value: it would win over the `${OPENAI_API_KEY:}` fallback that
