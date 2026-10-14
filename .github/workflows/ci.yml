@@ -821,7 +821,8 @@ jobs:
           # .exe, and minisign.exe is native — a relative path sidesteps that translation
           # entirely instead of relying on it.
           mkdir -p .sigcheck
-          jq -r '.plugins.updater.pubkey' src-tauri/tauri.conf.json | base64 -d > .sigcheck/nora.pub
+          # Native jq emits CRLF on Windows; GNU base64 rejects carriage returns.
+          jq -r '.plugins.updater.pubkey' src-tauri/tauri.conf.json | tr -d '\r\n' | base64 -d > .sigcheck/nora.pub
           head -1 .sigcheck/nora.pub | grep -q 'minisign public key' || {
             echo "::error::tauri.conf.json pubkey does not decode to a minisign public key"
             exit 1
@@ -840,7 +841,7 @@ jobs:
             # Tauri writes the signature base64-encoded — it is the same string that goes into
             # latest.json. Decoded when it is, used as-is when it is not, so this keeps working
             # if that ever changes rather than failing on a format nobody promised us.
-            if base64 -d < "$sig" > .sigcheck/sig 2>/dev/null &&
+            if tr -d '\r\n' < "$sig" | base64 -d > .sigcheck/sig 2>/dev/null &&
                head -c 18 .sigcheck/sig | grep -q 'untrusted comment'; then
               :
             else

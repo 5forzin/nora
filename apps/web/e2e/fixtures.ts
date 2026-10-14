@@ -1,32 +1,30 @@
 import { test as base, type Page } from "@playwright/test";
+import { FIXTURE_TOKEN, SESSION_COOKIE } from './api-fixtures.mts';
 
 /**
  * The auth cookie the middleware gates on. `src/lib/auth.ts` documents it as
  * `nora_access` (Path=/, SameSite=Lax), and `src/middleware.ts` reads exactly
  * `req.cookies.get('nora_access')?.value` — presence only, no verification.
  */
-export const SESSION_COOKIE = "nora_access";
+export { SESSION_COOKIE } from './api-fixtures.mts';
 
 /**
  * WHAT THE LOGIN FIXTURE IS, AND IS NOT.
  *
  * The middleware decides route access on the PRESENCE of the cookie, not on the token being
  * valid — it runs at the edge and cannot verify a signature without a round trip. So a
- * fixture that sets an arbitrary value exercises the real gate, unchanged, and reaches the
- * authenticated shell without a backend, a database or a user.
+ * fixture sets an explicit test token accepted only by the local mock API. Both server
+ * rendering and client hydration receive the same complete Enterprise profile from /auth/me.
  *
- * It does NOT establish a session in any deeper sense. Nothing behind these routes that
- * calls the API with this token will get data back. That is the honest scope: these tests
- * are about ROUTING, HEADERS and what the BROWSER objects to — the three things that can be
- * checked without standing up the stack, and the three that nothing checks today.
+ * This tests routing, headers and browser CSP behavior against an authorized API fixture.
+ * It does not exercise JWT verification or the backend's permission evaluator.
  *
  * The value is deliberately not a well-formed JWT. A fake-but-plausible token invites the
  * reader to believe more is being tested than is; a value that says what it is does not.
  */
-const FIXTURE_TOKEN = "e2e-fixture-not-a-real-token";
 
 type Fixtures = {
-  /** A page that the middleware treats as signed in. */
+  /** An isolated page with the mock API's Enterprise Root session. */
   authedPage: Page;
 };
 
@@ -53,7 +51,7 @@ type Fixtures = {
 // key, including `comment`, which is how the first version of the override failed CI.)
 export const test = base.extend<Fixtures>({
   authedPage: async ({ browser, baseURL }, use) => {
-    const url = new URL(baseURL ?? "http://127.0.0.1:3100");
+    const url = new URL(baseURL ?? "http://localhost:3100");
     const context = await browser.newContext({ baseURL });
     await context.addCookies([
       {

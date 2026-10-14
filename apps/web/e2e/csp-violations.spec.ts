@@ -43,7 +43,7 @@ const PAGES = [
   { path: "/tasks", label: "tasks", authed: true },
   { path: "/trends", label: "trends panel", authed: true },
   { path: "/settings/context", label: "settings / tenant context", authed: true },
-  { path: "/settings/iam", label: "settings / IAM (mounts Monaco)", authed: true },
+  { path: "/enterprise/access", label: "Enterprise / access (mounts Monaco)", authed: true },
   { path: "/chat", label: "chat", authed: true },
   { path: "/flows", label: "flows (visual builder)", authed: true },
   { path: "/meetings/upload", label: "meetings / upload", authed: true },
@@ -115,7 +115,26 @@ async function assertNoViolations(page: Page, path: string) {
   // failing API fetches being REFUSED quickly. A runner with something listening on that port,
   // or a hang instead of a refusal, would turn it into a 60s timeout on an unrelated PR.
   await page.waitForLoadState("domcontentloaded");
-  await expect(page.locator("body")).not.toBeEmpty();
+  await expect(page).toHaveURL(new URL(path, page.url()).href);
+  // A streamed server error can still have HTTP 200. Require the actual screen, including
+  // the hydrated permissions provider, rather than accepting any nonempty error document.
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  if (path !== '/') {
+    await expect(page.getByRole('complementary').getByRole('link', { name: 'Acessos', exact: true })).toBeVisible();
+  }
+  if (path === '/chat') {
+    await expect(page.getByRole('textbox', { name: 'Pergunte qualquer coisa para a Nora' })).toBeVisible();
+  }
+  if (path === '/enterprise/access') {
+    await expect(page.getByRole('heading', { name: 'Acessos', exact: true })).toBeVisible();
+    await page.getByRole('navigation', { name: 'Gestão de acessos' }).getByRole('button', { name: 'Policies', exact: true }).click();
+    const jsonWorker = page.waitForEvent('worker', {
+      predicate: (worker) => worker.evaluate(() => self.name === 'json'),
+    });
+    await page.getByRole('group', { name: 'Modo do editor de policy' }).getByRole('button', { name: 'JSON', exact: true }).click();
+    await expect(page.locator('.monaco-editor')).toBeVisible();
+    await jsonWorker;
+  }
 
   const violations = await read();
   expect(
