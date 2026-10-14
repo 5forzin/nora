@@ -108,6 +108,7 @@ on:
 permissions:
   contents: write   # create/move the release/prod/* tags. That is all.
   actions: read     # download the nora-release-pointer artifact from the build-images run.
+  packages: read    # inspect private GHCR image manifests before promoting the release.
 
 env:
   IMAGE_PREFIX: ${{ github.repository_owner }}/nora

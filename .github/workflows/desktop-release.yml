@@ -99,6 +99,7 @@ jobs:
       # operator the tag had to exist first.
       - name: Guard — a rehearsal may not touch an existing release
         if: github.event_name == 'workflow_dispatch'
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.tag }}
@@ -178,7 +179,7 @@ jobs:
           projectPath: apps/desktop
           tagName: ${{ inputs.tag || github.ref_name }}
           releaseName: "Nora Desktop ${{ inputs.tag || github.ref_name }}"
-          releaseBody: "Nora Desktop update. From v0.2.5 on, installation is automatic through the sidebar button."
+          releaseBody: "Nora Desktop update. If you use v0.2.5 or earlier, install v0.2.6 or later manually once. The update endpoint and signing key have changed."
           # A TAG PUSH is unchanged: false/false, a real release that becomes Latest.
           #
           # A DISPATCH defaults to a DRAFT PRERELEASE, and this is the whole point. The

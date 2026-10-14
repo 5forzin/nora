@@ -1,7 +1,7 @@
 {
   "$schema": "gen/schemas/desktop-schema.json",
   "productName": "Nora Desktop",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "identifier": "com.nora.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -65,9 +65,9 @@
     },
     "updater": {
       "endpoints": [
-        "https://github.com/sf0rzin/nora/releases/latest/download/latest.json"
+        "https://github.com/5forzin/nora/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ4OTlCQzQyRUFENTlCMTYKUldRV205WHFRcnlaMkU1d1N0V3BqQk5jTzYwMTdCR3NYT3hibklmY1puZzdnakFONEVOWTI3WXMK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEwNzVGNTNBRUZGRTJDQ0QKUldUTkxQN3ZPdlYxRU4zcjFsOFd2Rm1oL1NiOTRIUm9GRUFjUlpDdDBPK3dwNDE4RzdFVTFNdi8K",
       "windows": {
         "installMode": "passive"
       }

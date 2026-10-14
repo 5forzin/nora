@@ -407,7 +407,7 @@ export function LandingFinalCTA() {
 }
 
 // ── Footer ──
-const REPO_URL = 'https://github.com/sf0rzin/nora';
+const REPO_URL = 'https://github.com/5forzin/nora';
 
 export function LandingFooter() {
   return (
