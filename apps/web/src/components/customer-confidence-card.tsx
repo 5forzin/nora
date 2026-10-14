@@ -30,6 +30,27 @@ const SEVERITY_LABEL: Record<Severity, string> = {
   HIGH: "Alta",
 };
 
+const BUYING_SIGNAL_LABEL: Record<string, string> = {
+  BUDGET_DISCUSSED: "Orçamento discutido",
+  TIMELINE_DISCUSSED: "Prazo discutido",
+  STAKEHOLDER_INVOLVED: "Pessoa-chave envolvida",
+  NEXT_STEP_REQUESTED: "Próximo passo solicitado",
+  REFERENCE_REQUESTED: "Referência solicitada",
+  PROPOSAL_REQUESTED: "Proposta solicitada",
+  OTHER: "Outro sinal",
+};
+
+const OBJECTION_LABEL: Record<string, string> = {
+  PRICE: "Preço",
+  TIMELINE: "Prazo",
+  AUTHORITY: "Autoridade para decidir",
+  NEED: "Necessidade",
+  COMPETITOR_MENTION: "Menção a concorrente",
+  TRUST: "Confiança",
+  FEATURE_GAP: "Funcionalidade ausente",
+  OTHER: "Outra objeção",
+};
+
 function softBg(color: string): string {
   return `color-mix(in oklch, ${color} 16%, var(--canvas))`;
 }
@@ -148,7 +169,7 @@ export default function CustomerConfidenceCard({
                 ↑
               </span>
               <div>
-                <div style={{ fontSize: 13.5, fontWeight: 500, color: "var(--ink)" }}>{signal.type}</div>
+                <div style={{ fontSize: 13.5, fontWeight: 500, color: "var(--ink)" }}>{BUYING_SIGNAL_LABEL[signal.type] ?? signal.type}</div>
                 <div className="quote" style={{ marginTop: 6 }}>
                   {signal.quote}
                 </div>
@@ -196,7 +217,7 @@ export default function CustomerConfidenceCard({
               </span>
               <div>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 500, color: "var(--ink)" }}>{objection.type}</span>
+                  <span style={{ fontSize: 13.5, fontWeight: 500, color: "var(--ink)" }}>{OBJECTION_LABEL[objection.type] ?? objection.type}</span>
                   <span style={{ fontSize: 10.5, fontWeight: 500, color: "var(--danger)", letterSpacing: "0.04em", textTransform: "uppercase" }}>
                     Severidade {SEVERITY_LABEL[objection.severity]}
                   </span>

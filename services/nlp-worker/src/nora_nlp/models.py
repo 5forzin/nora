@@ -9,7 +9,7 @@ from datetime import date
 from enum import Enum
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 # ---------- Enums aligned to the v1 schemas ----------
 
@@ -253,6 +253,18 @@ class CustomerConfidence(BaseModel):
     )
     objections: list[Objection] = Field(default_factory=list, max_length=20)
     rationale: Annotated[str, Field(min_length=10, max_length=1000)]
+
+    @field_validator("band")
+    @classmethod
+    def band_from_score(cls, value: ConfidenceBand, info: ValidationInfo) -> ConfidenceBand:
+        score = info.data.get("score")
+        if score is None:
+            return value
+        if score < 40:
+            return ConfidenceBand.LOW
+        if score < 70:
+            return ConfidenceBand.MEDIUM
+        return ConfidenceBand.HIGH
 
 
 class BaselineTerm(BaseModel):

@@ -106,6 +106,8 @@ ALLOWED=(
   "apps/web/src/app/api/chat/route-context.test.ts"                         # asserts the pt-BR task evidence appended to chat
   "apps/web/src/app/(app)/flows/flow-editor.test.tsx"                       # asserts localized read-only and save controls
   "apps/web/src/lib/overview/load.test.ts"                                 # pt-BR meeting/task fixtures for executive overview
+  "apps/web/e2e/csp-violations.spec.ts"                                   # selects the product's localized headings and editor controls
+  "apps/web/e2e/route-protection.spec.ts"                                 # asserts the localized heading after the legacy IAM redirect
   "packages/nlp-baseline/tests/"                                          # pt-BR tokenizer/TF-IDF fixtures
   "notebooks/"                                                            # academic EDA notebook, pt-BR narrative (FIAP deliverable)
 
