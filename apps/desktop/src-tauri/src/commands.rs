@@ -421,8 +421,9 @@ pub struct UploadMeetingResponse {
     pub processing_status: String,
 }
 
+// Cookie completion cannot run reentrantly inside WebView2's synchronous IPC callback.
 #[tauri::command]
-pub fn get_session_identity(
+pub async fn get_session_identity(
     window: tauri::Window,
     app_handle: AppHandle,
 ) -> Result<crate::auth_bridge::SessionIdentity, String> {
