@@ -39,4 +39,5 @@ public record MeetingListItem(
          * a screen that labelled it as open work reported twelve open items for a workstream whose
          * twelve items had all been completed.
          */
-        int openActionItemCount) {}
+        int openActionItemCount,
+        OffsetDateTime createdAt) {}

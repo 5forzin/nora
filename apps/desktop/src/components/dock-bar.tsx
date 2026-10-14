@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { emit } from "@tauri-apps/api/event";
+import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { NoraLogo } from "@/components/brand/nora-logo";
@@ -8,6 +8,7 @@ import { useRecording } from "@/hooks/use-recording";
 import { formatDuration } from "@/lib/format";
 import { setDockVisible } from "@/lib/dock-prefs";
 import { EVENTS } from "@/lib/desktop-events";
+import { createRecordingController } from "@/lib/recording-session";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DOCK — floating recording control (Cluely style, in Nora's LIGHT theme).
@@ -24,7 +25,7 @@ import { EVENTS } from "@/lib/desktop-events";
 // Window dimensions (logical px) — compact vs. expanded. The Rust side already
 // grants core:window:allow-set-size.
 const SIZE_COMPACT = { width: 460, height: 56 };
-const SIZE_EXPANDED = { width: 460, height: 308 };
+const SIZE_EXPANDED = { width: 460, height: 342 };
 
 // Bar theme — Nora's light tokens (var(--…) from styles.css). We keep a local
 // object only for the few translucent/glass values that do not exist as a
@@ -119,17 +120,70 @@ const selectStyle: React.CSSProperties = {
 
 export function DockBar() {
   const [captureSystemAudio, setCaptureSystemAudio] = useState(true);
-  const r = useRecording({ captureSystemAudio });
+  const [captureMicrophone, setCaptureMicrophone] = useState(true);
+  const r = useRecording({ captureSystemAudio, captureMicrophone });
 
   const [expanded, setExpanded] = useState(false);
   const [stealth, setStealth] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [finishing, setFinishing] = useState(false);
   const [title, setTitle] = useState("");
   // Shows "Salvo" for a few seconds after a successful upload.
   const [showSaved, setShowSaved] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const win = useRef(getCurrentWebviewWindow()).current;
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recordingRef = useRef(r);
+  const titleRef = useRef(title);
+  recordingRef.current = r;
+  titleRef.current = title;
+  const [controller] = useState(() => createRecordingController({
+    stop: () => recordingRef.current.stopRecording(),
+    save: async () => {
+      const result = await recordingRef.current.saveMeeting(titleRef.current.trim() || defaultTitle());
+      if (result.ok) setTitle("");
+      return result;
+    },
+    discard: () => {
+      recordingRef.current.discardRecording();
+      setTitle("");
+    },
+    notify: (result) => emit("nora://save-result", result),
+    busy: setFinishing,
+  }));
+  const sourcesLocked = r.isRecording || starting || finishing || r.isSaving;
+  const queueVisible = r.pendingCount + r.failedCount + r.unownedCount > 0 || !!r.queueError || !!exportError;
+
+  useEffect(() => {
+    let cancelled = false;
+    const stored: UnlistenFn[] = [];
+    const attach = (pending: Promise<UnlistenFn>) => {
+      pending.then((unlisten) => {
+        if (cancelled) unlisten();
+        else stored.push(unlisten);
+      }).catch((error) => console.error("[dock] event listener failed:", error));
+    };
+    attach(listen("nora://stop-and-save", () => {
+      if (recordingRef.current.isRecording) {
+        controller.stopAndSave().catch((error) => console.error("[dock] save result failed:", error));
+      }
+    }));
+    attach(listen("nora://cancel-recording", () => {
+      if (recordingRef.current.isRecording) {
+        controller.cancel().catch((error) => console.error("[dock] cancel result failed:", error));
+      }
+    }));
+    attach(listen<{ speakerId: string; name: string }>("nora://rename-speaker", ({ payload }) => {
+      if (typeof payload?.speakerId === "string" && typeof payload?.name === "string") {
+        recordingRef.current.renameSpeaker(payload.speakerId, payload.name);
+      }
+    }));
+    return () => {
+      cancelled = true;
+      stored.forEach((unlisten) => unlisten());
+    };
+  }, [controller]);
 
   // Loads the audio devices + initial stealth state on mount.
   useEffect(() => {
@@ -143,10 +197,10 @@ export function DockBar() {
   // Resizes the dock window when expanding/collapsing the config panel.
   useEffect(() => {
     const { width, height } = expanded ? SIZE_EXPANDED : SIZE_COMPACT;
-    win.setSize(new LogicalSize(width, height)).catch((e) =>
+    win.setSize(new LogicalSize(width, height + (expanded && queueVisible ? 120 : 0))).catch((e) =>
       console.warn("[dock] setSize failed:", e),
     );
-  }, [expanded, win]);
+  }, [expanded, win, queueVisible]);
 
   // Shows "Salvo" when saveMeeting resolves successfully (new meetingId).
   useEffect(() => {
@@ -199,12 +253,15 @@ export function DockBar() {
   };
 
   const handleStart = async () => {
+    if (starting || finishing || r.isSaving) return;
+    setShowSaved(false);
     setStarting(true);
     try {
       // The hook already calls toggle_overlay(show:true) on start.
       await r.startRecording({
         deviceName: r.selectedDevice,
         captureSystemAudio,
+        captureMicrophone,
       });
     } finally {
       setStarting(false);
@@ -212,16 +269,32 @@ export function DockBar() {
   };
 
   const handleStopAndSave = async () => {
-    await r.stopRecording();
-    await r.saveMeeting(title.trim() || defaultTitle());
-    setTitle("");
+    await controller.stopAndSave().catch((error) => console.error("[dock] save result failed:", error));
+  };
+
+  const handleExportUnowned = () => {
+    setExportError(null);
+    try {
+      const blob = new Blob([r.exportUnownedMeetings()], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "nora-gravacoes-sem-conta.json";
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch {
+      setExportError("Não foi possível exportar a cópia local.");
+    }
   };
 
   const statusLine = (() => {
     if (r.isSaving) return { text: "Salvando…", danger: false };
+    if (finishing) return { text: "Finalizando…", danger: false };
     if (r.saveError) return { text: r.saveError, danger: true };
     if (r.error) return { text: r.error, danger: true };
     if (showSaved) return { text: "Salvo", danger: false };
+    if (r.pendingCount + r.failedCount > 0) return { text: "Envios pendentes nas configurações", danger: false };
+    if (r.unownedCount > 0) return { text: "Cópias locais nas configurações", danger: false };
     return null;
   })();
 
@@ -265,6 +338,8 @@ export function DockBar() {
             onStart={handleStart}
             onStop={handleStopAndSave}
             saving={r.isSaving}
+            finishing={finishing}
+            noSource={!captureMicrophone && !captureSystemAudio}
           />
 
           {/* Timer while recording. */}
@@ -359,6 +434,7 @@ export function DockBar() {
               <select
                 value={r.selectedDevice ?? ""}
                 onChange={(e) => r.setSelectedDevice(e.target.value || null)}
+                disabled={sourcesLocked || !captureMicrophone}
                 style={selectStyle}
               >
                 <option value="">Padrão do sistema</option>
@@ -378,6 +454,7 @@ export function DockBar() {
               <input
                 type="text"
                 value={title}
+                disabled={finishing || r.isSaving}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder={defaultTitle()}
                 style={{
@@ -397,15 +474,43 @@ export function DockBar() {
 
             {/* Toggles */}
             <ToggleRow
+              label="Capturar microfone"
+              checked={captureMicrophone}
+              onChange={setCaptureMicrophone}
+              disabled={sourcesLocked}
+            />
+            <ToggleRow
               label="Capturar áudio do sistema"
               checked={captureSystemAudio}
               onChange={setCaptureSystemAudio}
+              disabled={sourcesLocked}
             />
             <ToggleRow
               label="Stealth (invisível na captura de tela)"
               checked={stealth}
               onChange={handleToggleStealth}
             />
+
+            {queueVisible && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
+                {r.pendingCount + r.failedCount > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                    <span>{r.pendingCount} pendente(s) · {r.failedCount} com falha</span>
+                    <button type="button" disabled={r.queueBusy} onClick={() => void r.retryQueuedMeetings(true)}
+                      style={{ ...selectStyle, width: "auto", backgroundImage: "none", padding: "6px 10px" }}>
+                      {r.queueBusy ? "Enviando…" : "Tentar enviar"}
+                    </button>
+                  </div>
+                )}
+                {r.unownedCount > 0 && (
+                  <button type="button" onClick={handleExportUnowned}
+                    style={{ ...selectStyle, backgroundImage: "none", padding: "6px 10px" }}>
+                    Exportar gravações sem conta ({r.unownedCount})
+                  </button>
+                )}
+                {(r.queueError || exportError) && <span role="alert" style={{ color: THEME.danger }}>{r.queueError || exportError}</span>}
+              </div>
+            )}
 
             {/* Open overlay */}
             <button
@@ -444,29 +549,33 @@ function RecButton({
   recording,
   starting,
   saving,
+  finishing,
+  noSource,
   onStart,
   onStop,
 }: {
   recording: boolean;
   starting: boolean;
   saving: boolean;
+  finishing: boolean;
+  noSource: boolean;
   onStart: () => void;
   onStop: () => void;
 }) {
-  const busy = starting || saving;
-  const title = recording
-    ? saving
-      ? "Salvando…"
-      : "Parar e salvar"
-    : starting
-      ? "Iniciando…"
-      : "Iniciar gravação";
+  const busy = starting || saving || finishing;
+  const disabled = busy || (!recording && noSource);
+  const title = saving ? "Salvando…"
+    : finishing ? "Finalizando…"
+    : starting ? "Iniciando…"
+    : recording ? "Parar e salvar"
+    : noSource ? "Ative uma fonte de áudio"
+    : "Iniciar gravação";
 
   return (
     <button
       type="button"
       onClick={recording ? onStop : onStart}
-      disabled={busy && !recording}
+      disabled={disabled}
       title={title}
       aria-label={title}
       className="grid place-items-center shrink-0"
@@ -478,9 +587,9 @@ function RecButton({
           ? "1px solid var(--danger-soft-border)"
           : "1.5px solid var(--border-strong)",
         background: recording ? "var(--danger-soft-bg)" : "transparent",
-        cursor: busy && !recording ? "default" : "pointer",
+        cursor: disabled ? "default" : "pointer",
         padding: 0,
-        opacity: busy && !recording ? 0.7 : 1,
+        opacity: disabled ? 0.7 : 1,
         transition: "background 140ms ease, border-color 140ms ease",
       }}
     >
@@ -495,7 +604,7 @@ function RecButton({
             animation: "recPulse 1.6s ease-in-out infinite",
           }}
         />
-      ) : starting ? (
+      ) : busy ? (
         // Spinner while starting.
         <span
           style={{
@@ -527,18 +636,25 @@ function ToggleRow({
   label,
   checked,
   onChange,
+  disabled = false,
 }: {
   label: string;
   checked: boolean;
   onChange: (v: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <label
-      className="flex items-center justify-between gap-3 cursor-pointer"
-      style={{ fontSize: 12.5, color: THEME.text, letterSpacing: "-0.005em" }}
+      className="flex items-center justify-between gap-3"
+      style={{ fontSize: 12.5, color: THEME.text, letterSpacing: "-0.005em", opacity: disabled ? 0.55 : 1 }}
     >
       <span>{label}</span>
-      <span
+      <button
+        type="button"
+        role="switch"
+        aria-label={label}
+        aria-checked={checked}
+        disabled={disabled}
         onClick={(e) => {
           e.preventDefault();
           onChange(!checked);
@@ -547,6 +663,9 @@ function ToggleRow({
         style={{
           width: 34,
           height: 19,
+          border: "none",
+          padding: 0,
+          cursor: disabled ? "default" : "pointer",
           borderRadius: 999,
           background: checked ? "var(--accent)" : "rgba(0,0,0,0.14)",
           position: "relative",
@@ -566,7 +685,7 @@ function ToggleRow({
             transition: "left 140ms ease",
           }}
         />
-      </span>
+      </button>
     </label>
   );
 }

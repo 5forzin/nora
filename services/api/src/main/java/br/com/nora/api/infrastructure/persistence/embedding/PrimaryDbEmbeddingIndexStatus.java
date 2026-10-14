@@ -37,21 +37,24 @@ import org.springframework.stereotype.Component;
 @Component
 public class PrimaryDbEmbeddingIndexStatus implements EmbeddingIndexStatusSource {
 
-    /** The four counters, in the order both row mappers read them. */
+    /** Mutually exclusive counters, in the order both row mappers read them. */
     private static final String COUNTERS =
             "COUNT(*) AS analysed,"
-                    + " COUNT(*) FILTER (WHERE e.model = ?) AS indexed,"
+                    + " COUNT(*) FILTER (WHERE e.model = ?"
+                    + " AND e.source_chars = char_length(a.summary)) AS indexed,"
                     + " COUNT(*) FILTER (WHERE e.meeting_id IS NULL) AS missing,"
-                    + " COUNT(*) FILTER (WHERE e.meeting_id IS NOT NULL AND e.model <> ?) AS stale";
+                    + " COUNT(*) FILTER (WHERE e.meeting_id IS NOT NULL AND e.model <> ?) AS stale,"
+                    + " COUNT(*) FILTER (WHERE e.model = ?"
+                    + " AND e.source_chars <> char_length(a.summary)) AS stale_content";
 
-    /**
-     * A meeting counts as analysed when it carries a summary snippet: only the analysis pipeline
-     * ever writes that column, and it is also the exact text the indexing consumes.
-     */
+    /** The full summary is the same PII-safe text consumed by live indexing and backfill. */
     private static final String FROM_ANALYSED_MEETINGS =
-            " FROM meetings m LEFT JOIN meeting_embeddings e ON e.meeting_id = m.id"
+            " FROM meetings m JOIN meeting_analyses a"
+                    + " ON a.meeting_id = m.id AND a.tenant_id = m.tenant_id"
+                    + " LEFT JOIN meeting_embeddings e"
+                    + " ON e.meeting_id = m.id AND e.tenant_id = m.tenant_id"
                     + " WHERE m.deleted_at IS NULL"
-                    + " AND m.summary_snippet IS NOT NULL AND btrim(m.summary_snippet) <> ''";
+                    + " AND btrim(a.summary) <> ''";
 
     private static final RowMapper<Totals> TOTALS_ROW = PrimaryDbEmbeddingIndexStatus::totalsRow;
 
@@ -79,8 +82,8 @@ public class PrimaryDbEmbeddingIndexStatus implements EmbeddingIndexStatusSource
     @Override
     public Totals totals(String modelId) {
         String sql = "SELECT " + COUNTERS + FROM_ANALYSED_MEETINGS;
-        Totals totals = jdbc().queryForObject(sql, TOTALS_ROW, modelId, modelId);
-        return totals == null ? new Totals(0, 0, 0, 0) : totals;
+        Totals totals = jdbc().queryForObject(sql, TOTALS_ROW, modelId, modelId, modelId);
+        return totals == null ? new Totals(0, 0, 0, 0, 0) : totals;
     }
 
     @Override
@@ -89,8 +92,9 @@ public class PrimaryDbEmbeddingIndexStatus implements EmbeddingIndexStatusSource
                 "SELECT m.tenant_id, "
                         + COUNTERS
                         + FROM_ANALYSED_MEETINGS
-                        + " GROUP BY m.tenant_id ORDER BY missing DESC, stale DESC LIMIT ?";
-        return jdbc().query(sql, TENANT_ROW, modelId, modelId, maxRows);
+                        + " GROUP BY m.tenant_id ORDER BY missing DESC, stale DESC,"
+                        + " stale_content DESC LIMIT ?";
+        return jdbc().query(sql, TENANT_ROW, modelId, modelId, modelId, maxRows);
     }
 
     private JdbcTemplate jdbc() {
@@ -102,7 +106,8 @@ public class PrimaryDbEmbeddingIndexStatus implements EmbeddingIndexStatusSource
                 rs.getLong("analysed"),
                 rs.getLong("indexed"),
                 rs.getLong("missing"),
-                rs.getLong("stale"));
+                rs.getLong("stale"),
+                rs.getLong("stale_content"));
     }
 
     private static TenantIndexStatus tenantRow(ResultSet rs, int rowNum) throws SQLException {
@@ -111,6 +116,7 @@ public class PrimaryDbEmbeddingIndexStatus implements EmbeddingIndexStatusSource
                 rs.getLong("analysed"),
                 rs.getLong("indexed"),
                 rs.getLong("missing"),
-                rs.getLong("stale"));
+                rs.getLong("stale"),
+                rs.getLong("stale_content"));
     }
 }

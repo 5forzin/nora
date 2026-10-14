@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import {
@@ -14,6 +14,7 @@ import {
 // exported file as on this screen, and two copies of one map is how that stops being true.
 import { PRIORITY_LABEL, STATUS_LABEL } from "@/lib/report/tasks-export";
 import TasksExportMenu from "./export-menu";
+import { useWorkspaceAccess } from "@/components/enterprise/workspace-provider";
 
 const FILTERS: { value: TaskStatus | "ALL"; label: string }[] = [
   { value: "ALL", label: "Todas" },
@@ -25,12 +26,17 @@ const PRIORITY_COLOR: Record<string, string> = { HIGH: "var(--danger)", MEDIUM: 
 
 // Dates in pt-BR (Intl, no date-fns). Keeps the prototype's tone: vence hoje /
 // vence amanhã / venceu DD/mês / vence DD/mês.
+function dueDate(iso: string): Date {
+  // A calendar deadline has no UTC offset; UTC parsing shifts it to yesterday in Brazil.
+  return new Date(`${iso}T00:00:00`);
+}
+
 function fmtShortDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+  return dueDate(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
 }
 
 function relativeDue(iso: string): string {
-  const d = new Date(iso);
+  const d = dueDate(iso);
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -42,12 +48,28 @@ function relativeDue(iso: string): string {
 }
 
 function isLate(t: TaskListItemDto): boolean {
-  return Boolean(t.dueDate) && new Date(t.dueDate as string) < new Date() && t.status !== "DONE";
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Boolean(t.dueDate) && dueDate(t.dueDate as string) < today && t.status !== "DONE";
 }
 
 export default function TasksPage() {
+  const { access, loading } = useWorkspaceAccess();
+  const canWrite = access?.permissions?.writeTasks === true;
+  const canCreateMeetings = access?.permissions?.createMeetings === true;
+  if (loading) return <div className="page" role="status">Carregando acesso…</div>;
+  if (!access?.permissions?.readTasks) return <div className="page"><h1 className="h1">Action items</h1><p className="lede">Você não tem permissão para consultar tarefas neste workspace.</p></div>;
+  return <TasksContent canWrite={canWrite} canCreateMeetings={canCreateMeetings} />;
+}
+
+function TasksContent({ canWrite, canCreateMeetings }: { canWrite: boolean; canCreateMeetings: boolean }) {
   const [items, setItems] = useState<TaskListItemDto[]>([]);
   const [filter, setFilter] = useState<TaskStatus | "ALL">("ALL");
+  const [page, setPage] = useState(0);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [revision, setRevision] = useState(0);
+  const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -57,15 +79,23 @@ export default function TasksPage() {
     let active = true;
     setLoading(true);
     setError(null);
-    // `size` is explicit because `GET /tasks` became paged and its default page is twenty: the
-    // screen was showing the first twenty action items of the workspace and calling it the list.
-    // 100 is the backend's own cap, so this asks for as much as one request can carry.
-    listTasks({ status: filter === "ALL" ? undefined : filter, size: 100 })
+    listTasks({ status: filter === "ALL" ? undefined : filter, page, size: 100 })
       .then((r) => {
-        if (active) setItems(r.items);
+        if (!active) return;
+        const lastPage = Math.max(0, r.totalPages - 1);
+        if (page > lastPage) {
+          setPage(lastPage);
+          return;
+        }
+        setItems(r.items);
+        setTotalItems(r.totalItems);
+        setTotalPages(r.totalPages);
       })
       .catch((e) => {
         if (!active) return;
+        setItems([]);
+        setTotalItems(0);
+        setTotalPages(0);
         setError(e instanceof ApiRequestError ? e.message : "Falha ao carregar action items.");
       })
       .finally(() => {
@@ -74,7 +104,7 @@ export default function TasksPage() {
     return () => {
       active = false;
     };
-  }, [filter]);
+  }, [filter, page, revision]);
 
   // §3.11 — consistent filter: on a status change with an active filter, the
   // item leaves the list if it stops matching the selected filter.
@@ -86,15 +116,19 @@ export default function TasksPage() {
 
   async function changeStatus(t: TaskListItemDto, next: TaskStatus) {
     if (t.status === next) return;
+    setSaving(true);
     const previous = items;
     const optimistic: TaskListItemDto = { ...t, status: next };
     setItems((curr) => applyLocalUpdate(curr, optimistic));
     try {
       const updated = await updateTask(t.id, { status: next });
       setItems((curr) => applyLocalUpdate(curr, updated));
+      setRevision((value) => value + 1);
     } catch (e) {
       setItems(previous);
       setError(e instanceof ApiRequestError ? e.message : "Falha ao atualizar status.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -103,15 +137,19 @@ export default function TasksPage() {
   // way to clear the column. Sending undefined would mean "leave it alone" instead.
   async function changeDueDate(t: TaskListItemDto, value: string) {
     if ((t.dueDate ?? "") === value) return;
+    setSaving(true);
     const previous = items;
     const optimistic: TaskListItemDto = { ...t, dueDate: value === "" ? undefined : value };
     setItems((curr) => curr.map((x) => (x.id === t.id ? optimistic : x)));
     try {
       const updated = await updateTask(t.id, { dueDate: value });
       setItems((curr) => curr.map((x) => (x.id === t.id ? updated : x)));
+      setRevision((value) => value + 1);
     } catch (e) {
       setItems(previous);
       setError(e instanceof ApiRequestError ? e.message : "Falha ao atualizar a data.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -130,32 +168,20 @@ export default function TasksPage() {
       return;
     }
     const previous = items;
+    setSaving(true);
     setItems((curr) => curr.map((x) => (x.id === t.id ? { ...x, title: trimmed } : x)));
     cancelEdit();
     try {
       const updated = await updateTask(t.id, { title: trimmed });
       setItems((curr) => curr.map((x) => (x.id === t.id ? updated : x)));
+      setRevision((value) => value + 1);
     } catch (e) {
       setItems(previous);
       setError(e instanceof ApiRequestError ? e.message : "Falha ao atualizar título.");
+    } finally {
+      setSaving(false);
     }
   }
-
-  // Counts per filter. When the filter is ALL we have the whole list; with an
-  // active filter we only have the loaded subset, so we show the available
-  // count for the current filter only.
-  const counts = useMemo(() => {
-    const base: Record<string, number | undefined> = {};
-    if (filter === "ALL") {
-      base.ALL = items.length;
-      base.OPEN = items.filter((t) => t.status === "OPEN").length;
-      base.IN_PROGRESS = items.filter((t) => t.status === "IN_PROGRESS").length;
-      base.DONE = items.filter((t) => t.status === "DONE").length;
-    } else {
-      base[filter] = items.length;
-    }
-    return base;
-  }, [items, filter]);
 
   const activeFilterLabel = FILTERS.find((f) => f.value === filter)?.label ?? "Todas";
 
@@ -174,34 +200,42 @@ export default function TasksPage() {
         <div style={{ minWidth: 0 }}>
           <h1 className="h1">Action items</h1>
           <p className="lede" style={{ marginTop: 8 }}>
-            Tarefas extraídas das suas reuniões. Atualize o status conforme avança.
+            {canWrite ? "Tarefas extraídas das suas reuniões. Atualize o status conforme avança." : "Tarefas extraídas das reuniões do workspace."}
           </p>
         </div>
-        {/* Exports what is on screen, filter included — see export-menu.tsx. */}
-        <TasksExportMenu items={items} filterLabel={activeFilterLabel} />
+        <TasksExportMenu
+          status={filter === "ALL" ? undefined : filter}
+          totalItems={totalItems}
+          filterLabel={activeFilterLabel}
+          disabled={loading || saving}
+          onError={setError}
+        />
       </header>
 
       <div style={{ display: "flex", gap: 6, marginBottom: 20, flexWrap: "wrap" }}>
         {FILTERS.map((f) => {
           const active = filter === f.value;
-          const count = counts[f.value];
+          const count = active && !loading ? totalItems : undefined;
           return (
             <button
               key={f.value}
               type="button"
               className={`filter-pill${active ? " is-active" : ""}`}
-              onClick={() => setFilter(f.value)}
+              aria-pressed={active}
+              disabled={saving}
+              onClick={() => { setFilter(f.value); setPage(0); cancelEdit(); }}
             >
               {f.label}
-              {typeof count === "number" && <span style={{ opacity: 0.65, marginLeft: 5 }}>{count}</span>}
+              {typeof count === "number" && <span style={{ opacity: 0.65, marginLeft: 5 }}> {count}</span>}
             </button>
           );
         })}
       </div>
 
       {error && (
-        <div className="notice notice--danger" style={{ marginBottom: 16 }}>
-          {error}
+        <div className="notice notice--danger" role="alert" style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ flex: 1 }}>{error}</span>
+          <button type="button" className="btn btn-ghost btn-sm" disabled={loading || saving} onClick={() => setRevision((value) => value + 1)}>Tentar de novo</button>
         </div>
       )}
 
@@ -226,19 +260,19 @@ export default function TasksPage() {
             </div>
           ))}
         </div>
-      ) : items.length === 0 ? (
+      ) : error && items.length === 0 ? null : items.length === 0 ? (
         <div style={{ border: "1px dashed var(--border-strong)", borderRadius: 14, padding: "48px 24px", textAlign: "center" }}>
           {filter === "ALL" ? (
             <>
               <p style={{ fontSize: 14, color: "var(--ink)", margin: "0 0 4px" }}>Nenhum action item por aqui.</p>
-              <p style={{ fontSize: 12.5, color: "var(--muted)", margin: 0 }}>
+              {canCreateMeetings && <p style={{ fontSize: 12.5, color: "var(--muted)", margin: 0 }}>
                 Envie uma reunião pra Nora extrair os próximos passos automaticamente.
-              </p>
-              <div style={{ marginTop: 16 }}>
+              </p>}
+              {canCreateMeetings && <div style={{ marginTop: 16 }}>
                 <Link className="btn btn-primary btn-sm" href={"/meetings/upload" as Route}>
                   Enviar reunião
                 </Link>
-              </div>
+              </div>}
             </>
           ) : (
             <>
@@ -265,13 +299,14 @@ export default function TasksPage() {
                   borderTop: idx === 0 ? "none" : "1px solid var(--border)",
                 }}
               >
-                <input
+                {canWrite && <input
                   type="checkbox"
                   checked={done}
+                  disabled={saving}
                   onChange={(e) => changeStatus(t, e.target.checked ? "DONE" : "OPEN")}
                   style={{ marginTop: 3, accentColor: "var(--ink)", width: 16, height: 16, flexShrink: 0, cursor: "pointer" }}
                   aria-label={`Marcar "${t.title}" como ${done ? "aberta" : "concluída"}`}
-                />
+                />}
 
                 <div style={{ flex: 1, minWidth: 0 }}>
                   {editingId === t.id ? (
@@ -280,6 +315,7 @@ export default function TasksPage() {
                         autoFocus
                         className="input"
                         value={editTitle}
+                        disabled={saving}
                         onChange={(e) => setEditTitle(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter") void saveEdit(t);
@@ -287,7 +323,7 @@ export default function TasksPage() {
                         }}
                         style={{ flex: 1, minWidth: 200, fontSize: 14, padding: "5px 9px" }}
                       />
-                      <button type="button" className="btn btn-primary btn-sm" onClick={() => void saveEdit(t)}>
+                      <button type="button" className="btn btn-primary btn-sm" disabled={saving} onClick={() => void saveEdit(t)}>
                         Salvar
                       </button>
                       <button type="button" className="btn btn-ghost btn-sm" onClick={cancelEdit}>
@@ -336,11 +372,12 @@ export default function TasksPage() {
                   )}
                 </div>
 
-                <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                {canWrite ? <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
                   <input
                     type="date"
                     className="input"
                     value={t.dueDate ?? ""}
+                    disabled={saving}
                     onChange={(e) => void changeDueDate(t, e.target.value)}
                     style={{ fontSize: 12.5, padding: "4px 8px", borderRadius: 7 }}
                     aria-label={`Alterar data de vencimento de "${t.title}"`}
@@ -349,6 +386,7 @@ export default function TasksPage() {
                   <select
                     className="select"
                     value={t.status}
+                    disabled={saving}
                     onChange={(e) => changeStatus(t, e.target.value as TaskStatus)}
                     style={{ fontSize: 12.5, padding: "5px 9px", borderRadius: 7 }}
                     aria-label="Alterar status"
@@ -360,6 +398,7 @@ export default function TasksPage() {
                   {editingId !== t.id && (
                     <button
                       type="button"
+                      disabled={saving}
                       onClick={() => beginEdit(t)}
                       title="Editar título"
                       style={{
@@ -376,11 +415,22 @@ export default function TasksPage() {
                       Editar
                     </button>
                   )}
-                </div>
+                </div> : <span className="chip">{STATUS_LABEL[t.status] ?? t.status}</span>}
               </div>
             );
           })}
         </div>
+      )}
+      {totalItems > 0 && (
+        <nav aria-label="Paginação de tarefas" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 20 }}>
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>
+            Página {page + 1} de {Math.max(1, totalPages)} · {totalItems} tarefas
+          </span>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" className="btn btn-ghost btn-sm" disabled={loading || saving || page === 0} onClick={() => { setPage((value) => value - 1); cancelEdit(); }}>Anterior</button>
+            <button type="button" className="btn btn-ghost btn-sm" disabled={loading || saving || page + 1 >= totalPages} onClick={() => { setPage((value) => value + 1); cancelEdit(); }}>Próxima</button>
+          </div>
+        </nav>
       )}
     </div>
   );

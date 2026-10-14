@@ -370,6 +370,7 @@ class AnalyzeOptions(BaseModel):
 
     include_risks: bool = Field(default=True, alias="includeRisks")
     include_opportunities: bool = Field(default=True, alias="includeOpportunities")
+    include_customer_confidence: bool = Field(default=True, alias="includeCustomerConfidence")
     max_action_items: int = Field(default=20, ge=1, le=50, alias="maxActionItems")
     # The ONLY request field that names a file on disk. `llm_analyzer` passes it straight to
     # `load_prompt`, which builds `prompts/{version}.md` -- so as a free string it selected any

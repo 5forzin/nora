@@ -19,6 +19,7 @@ compile_error!(
 #[cfg(target_os = "windows")]
 mod platform {
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::mpsc;
     use std::sync::Arc;
     use windows::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
     use windows::Win32::Media::Audio::{
@@ -70,25 +71,44 @@ mod platform {
             _sample_rate_hint: u32,
             sink: tokio::sync::mpsc::Sender<Vec<i16>>,
             flag: Arc<AtomicBool>,
+            on_failure: impl FnOnce() + Send + 'static,
         ) -> Result<Self, String> {
             let stop_flag = flag.clone();
+            let (ready_tx, ready_rx) = mpsc::channel();
             let thread = std::thread::Builder::new()
                 .name("nora-wasapi-loopback".into())
                 .spawn(move || unsafe {
-                    if let Err(e) = run_loop(sink, flag) {
-                        crate::audio_capture::emit_capture_error(
-                            &app,
-                            "system",
-                            &format!("system audio capture stopped: {}", e),
-                        );
+                    let mut started = false;
+                    if let Err(e) = run_loop(sink, flag.clone(), &ready_tx, &mut started) {
+                        if started {
+                            crate::audio_capture::emit_capture_error(
+                                &app,
+                                "system",
+                                &format!("system audio capture stopped: {}", e),
+                            );
+                            on_failure();
+                        } else {
+                            let _ = ready_tx.send(Err(e.to_string()));
+                        }
                     }
+                    flag.store(false, Ordering::SeqCst);
                 })
                 .map_err(|e| format!("spawn wasapi thread: {}", e))?;
 
-            Ok(Self {
+            let capture = Self {
                 stop_flag,
                 thread: Some(thread),
-            })
+            };
+            await_startup(ready_rx)?;
+            Ok(capture)
+        }
+
+        pub fn is_running(&self) -> bool {
+            self.stop_flag.load(Ordering::SeqCst)
+                && self
+                    .thread
+                    .as_ref()
+                    .is_some_and(|thread| !thread.is_finished())
         }
 
         pub fn stop(&mut self) {
@@ -108,6 +128,8 @@ mod platform {
     unsafe fn run_loop(
         sink: tokio::sync::mpsc::Sender<Vec<i16>>,
         flag: Arc<AtomicBool>,
+        ready: &mpsc::Sender<Result<(), String>>,
+        started: &mut bool,
     ) -> windows::core::Result<()> {
         CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
 
@@ -152,6 +174,9 @@ mod platform {
             crate::audio_resample::MonoResampler::new(src_sr, crate::stt::TARGET_SAMPLE_RATE)
                 .unwrap();
 
+        *started = true;
+        let _ = ready.send(Ok(()));
+
         while flag.load(Ordering::SeqCst) {
             let wait = WaitForSingleObject(event, 100);
             if wait != WAIT_OBJECT_0 {
@@ -176,9 +201,7 @@ mod platform {
                         decode_to_f32_mono(data, frames as usize, src_ch, is_float)
                     };
 
-                    let resampled = resampler.process(&f32_mono);
-                    let i16_samples = crate::audio_resample::f32_to_i16(&resampled);
-                    let _ = sink.try_send(i16_samples);
+                    send_resampled_audio(&mut resampler, &f32_mono, &sink);
                 }
 
                 capture_client.ReleaseBuffer(frames)?;
@@ -189,6 +212,25 @@ mod platform {
         CloseHandle(event)?;
         CoTaskMemFree(Some(mix_format_ptr as *const _ as *mut _));
         Ok(())
+    }
+
+    pub(super) fn await_startup(ready: mpsc::Receiver<Result<(), String>>) -> Result<(), String> {
+        ready
+            .recv()
+            .map_err(|_| "System audio thread stopped before capture was ready".to_string())?
+    }
+
+    pub(super) fn send_resampled_audio(
+        resampler: &mut crate::audio_resample::MonoResampler,
+        input: &[f32],
+        sink: &tokio::sync::mpsc::Sender<Vec<i16>>,
+    ) {
+        let resampled = resampler.process(input);
+        // WASAPI packets can be shorter than an FFT block. The resampler keeps them
+        // until it has enough input; an empty output is not a PCM silence packet.
+        if !resampled.is_empty() {
+            let _ = sink.try_send(crate::audio_resample::f32_to_i16(&resampled));
+        }
     }
 
     unsafe fn is_ieee_float(fmt: &WAVEFORMATEX) -> bool {
@@ -237,6 +279,68 @@ pub use platform::SystemAudioCapture;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn short_wasapi_packets_wait_for_resampling_without_dropping_silence() {
+        let mut resampler =
+            crate::audio_resample::MonoResampler::new(48_000, crate::stt::TARGET_SAMPLE_RATE)
+                .unwrap();
+        let (sink, mut audio) = tokio::sync::mpsc::channel(20);
+        let packet = vec![0.0; 480];
+        super::platform::send_resampled_audio(&mut resampler, &packet, &sink);
+        assert!(matches!(
+            audio.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+
+        for _ in 0..9 {
+            super::platform::send_resampled_audio(&mut resampler, &packet, &sink);
+        }
+        let mut sample_count = 0;
+        while let Ok(samples) = audio.try_recv() {
+            assert!(!samples.is_empty());
+            assert!(samples.iter().all(|sample| *sample == 0));
+            sample_count += samples.len();
+        }
+        assert_eq!(sample_count, crate::stt::TARGET_SAMPLE_RATE as usize / 10);
+    }
+
+    #[test]
+    fn startup_waits_for_audio_initialization() {
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let (result_tx, result_rx) = std::sync::mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            result_tx
+                .send(super::platform::await_startup(ready_rx))
+                .unwrap();
+        });
+        assert!(matches!(
+            result_rx.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        ));
+        ready_tx.send(Ok(())).unwrap();
+        assert!(result_rx.recv().unwrap().is_ok());
+        thread.join().unwrap();
+    }
+
+    #[test]
+    fn startup_propagates_device_errors() {
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        ready_tx
+            .send(Err("No default output device".to_string()))
+            .unwrap();
+        assert_eq!(
+            super::platform::await_startup(ready_rx).unwrap_err(),
+            "No default output device"
+        );
+    }
+
+    #[test]
+    fn startup_rejects_a_thread_that_exits_without_acknowledging() {
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        drop(ready_tx);
+        assert!(super::platform::await_startup(ready_rx).is_err());
+    }
+
     /// The mix format WASAPI hands back is whatever the endpoint runs at, and the decoder has
     /// to fold it to mono before the resampler sees it. These two are the shapes that actually
     /// show up: 32-bit float stereo (the usual mix format) and 16-bit stereo.

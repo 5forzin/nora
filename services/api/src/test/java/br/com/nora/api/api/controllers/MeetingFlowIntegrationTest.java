@@ -111,6 +111,9 @@ class MeetingFlowIntegrationTest {
 
         // Detail
         JsonNode detail = authGet("/meetings/" + meetingId, accessToken).read(HttpStatus.OK);
+        assertThat(list.get("items").get(0).get("startedAt").isNull()).isTrue();
+        assertThat(list.get("items").get(0).get("createdAt")).isEqualTo(detail.get("createdAt"));
+        assertThat(detail.get("createdAt").asText()).isNotBlank();
         assertThat(detail.get("title").asText()).isEqualTo("Discovery Acme");
         assertThat(detail.get("processingStatus").asText()).isEqualTo("PENDING");
         assertThat(detail.get("participants").get(0).get("displayName").asText())

@@ -83,7 +83,7 @@ pub fn api_base_url() -> String {
 pub fn run() {
     let capture_state: CaptureState = Arc::new(Mutex::new(audio_capture::AudioCapture::new()));
     let sidecar_state: SidecarState = Arc::new(Mutex::new(Vec::new()));
-    let live_state: LiveHighlightsState = Arc::new(Mutex::new(None));
+    let live_state: LiveHighlightsState = Arc::new(Mutex::new(Default::default()));
     let stealth_state: StealthModeState = Arc::new(Mutex::new(false));
 
     // Parsed here rather than merely printed: `api_base_url()` memoizes a string that every
@@ -118,6 +118,16 @@ pub fn run() {
             let open_item = MenuItemBuilder::with_id("open", "Abrir NORA").build(app)?;
             let record_item = MenuItemBuilder::with_id("record", "Gravar reunião").build(app)?;
             let quit_item = MenuItemBuilder::with_id("quit", "Sair").build(app)?;
+            if let Some(main) = app.get_webview_window("main") {
+                let record =
+                    MenuItemBuilder::with_id("record-main", "Gravar reunião").build(app)?;
+                main.set_menu(MenuBuilder::new(app).item(&record).build()?)?;
+                main.on_menu_event(|window, event| {
+                    if event.id().as_ref() == "record-main" {
+                        let _ = windows::toggle_dock(window.app_handle().clone(), true);
+                    }
+                });
+            }
             let menu = MenuBuilder::new(app)
                 .item(&open_item)
                 .item(&record_item)
@@ -172,6 +182,7 @@ pub fn run() {
             commands::start_recording,
             commands::stop_recording,
             commands::get_recording_status,
+            commands::get_session_identity,
             commands::upload_meeting,
             live_analysis::analyze_live,
             live_analysis::toggle_overlay,

@@ -767,6 +767,10 @@ export async function listGroupMembers(id: string): Promise<string[]> {
   return request<string[]>(`/iam/groups/${encodeURIComponent(id)}/members`);
 }
 
+export async function listGroupPolicies(id: string): Promise<string[]> {
+  return request<string[]>(`/iam/groups/${encodeURIComponent(id)}/policies`);
+}
+
 export async function addGroupMember(groupId: string, userId: string): Promise<void> {
   return request<void>(
     `/iam/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(userId)}`,

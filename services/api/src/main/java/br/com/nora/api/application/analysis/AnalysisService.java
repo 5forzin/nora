@@ -14,6 +14,7 @@ import br.com.nora.api.application.ports.ProductivityAssessmentRepository;
 import br.com.nora.api.application.ports.TenantContextRepository;
 import br.com.nora.api.application.ports.TenantRlsContext;
 import br.com.nora.api.application.ports.TranscriptRepository;
+import br.com.nora.api.application.tenant.EnterpriseEntitlementService;
 import br.com.nora.api.domain.analysis.ActionItem;
 import br.com.nora.api.domain.analysis.MeetingAnalysis;
 import br.com.nora.api.domain.analysis.Risk;
@@ -62,6 +63,7 @@ public class AnalysisService {
     private final TenantRlsContext rlsContext;
     private final EmbeddingService embeddings;
     private final DomainEventPublisher events;
+    private final EnterpriseEntitlementService entitlements;
 
     public AnalysisService(
             MeetingRepository meetings,
@@ -75,7 +77,8 @@ public class AnalysisService {
             UsageRecorder usageRecorder,
             TenantRlsContext rlsContext,
             EmbeddingService embeddings,
-            DomainEventPublisher events) {
+            DomainEventPublisher events,
+            EnterpriseEntitlementService entitlements) {
         this.meetings = meetings;
         this.transcripts = transcripts;
         this.tenantContexts = tenantContexts;
@@ -88,6 +91,7 @@ public class AnalysisService {
         this.rlsContext = rlsContext;
         this.embeddings = embeddings;
         this.events = events;
+        this.entitlements = entitlements;
     }
 
     /**
@@ -128,7 +132,10 @@ public class AnalysisService {
         meeting = markStatus(meeting, ProcessingStatus.PROCESSING);
 
         Transcript transcript = loadTranscript(meetingId, tenantId);
-        Optional<TenantContext> ctx = tenantContexts.findByTenantId(tenantId);
+        Optional<TenantContext> ctx =
+                entitlements.isEnterprise(tenantId)
+                        ? tenantContexts.findByTenantId(tenantId)
+                        : Optional.empty();
         Optional<MeetingGoal> goal = goals.findByMeetingId(meetingId, tenantId);
 
         AnalysisResult result =
@@ -146,15 +153,9 @@ public class AnalysisService {
         // (markStatusAndSnippet is @Transactional and has already returned). Fail-soft: workflow
         // never takes down nor reverts the analysis.
         publishDomainEvents(meetingId, tenantId, saved);
-        // RAG: indexes ONLY the SUMMARY (summarySnippet), which has already been through the PII
-        // Shield (it was generated from the redacted transcript). The meeting title comes raw
-        // from the upload and may contain unredacted PII — that is why it stays OUT of the
-        // embedding payload (ADR 0012). Best-effort — the EmbeddingService swallows failures and
-        // never takes down the analysis.
-        String snippet = saved.summarySnippet() == null ? "" : saved.summarySnippet().trim();
-        if (!snippet.isEmpty()) {
-            embeddings.index(meetingId, tenantId, snippet);
-        }
+        // Index the complete summary generated after PII Shield, not the 240-character list
+        // preview. Titles and raw transcripts remain outside the embedding payload (ADR 0012).
+        embeddings.index(meetingId, tenantId, saved.summary());
         return saved;
     }
 

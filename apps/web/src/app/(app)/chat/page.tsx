@@ -31,6 +31,7 @@ import { applyChatFrames, createChatFrameDecoder } from "@/lib/chat/ndjson";
 import { applyStoredReasoning, rememberReasoning } from "@/lib/chat/reasoning-store";
 import { notifySessionsChanged } from "@/lib/chat-sessions-sync";
 import { errorCopy } from "@/lib/strings";
+import { useWorkspaceAccess } from "@/components/enterprise/workspace-provider";
 
 type Role = "user" | "assistant";
 interface Msg {
@@ -67,6 +68,9 @@ const SUGGESTIONS = [
 ];
 
 export default function ChatPage() {
+  const { access, loading } = useWorkspaceAccess();
+  if (loading) return <ChatFallback />;
+  if (!access?.permissions?.readMeetings) return <div className="page"><h1 className="h1">Chat</h1><p className="lede">Você não tem permissão para consultar reuniões neste workspace.</p></div>;
   return (
     <Suspense fallback={<ChatFallback />}>
       <ChatRoom />

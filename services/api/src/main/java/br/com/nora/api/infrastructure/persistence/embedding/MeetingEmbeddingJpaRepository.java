@@ -34,10 +34,8 @@ public interface MeetingEmbeddingJpaRepository
             @Param("sourceChars") int sourceChars);
 
     /**
-     * Backfill candidates: a meeting carries an analysed summary (only AnalysisService writes
-     * summary_snippet) and either has no vector or has one from another model, which the search
-     * ignores just as completely. Newest first — the recent meetings are the ones a user searches
-     * for. Under RLS enforce both tables are filtered by the GUC the caller set.
+     * Backfill candidates have an analysis and a missing, wrong-model or truncated-summary vector.
+     * Newest first. Under RLS enforce all tables are filtered by the GUC the caller set.
      *
      * <p>{@code m.deleted_at IS NULL} because native SQL does not see the entity's
      * {@code @SQLRestriction}: a soft-deleted meeting is invisible to the product, so paying an
@@ -45,11 +43,15 @@ public interface MeetingEmbeddingJpaRepository
      */
     @Query(
             value =
-                    "SELECT m.id, m.summary_snippet FROM meetings m LEFT JOIN meeting_embeddings e"
-                            + " ON e.meeting_id = m.id WHERE m.tenant_id = :tenantId AND"
+                    "SELECT m.id, a.summary FROM meetings m JOIN meeting_analyses a"
+                            + " ON a.meeting_id = m.id AND a.tenant_id = m.tenant_id"
+                            + " LEFT JOIN meeting_embeddings e"
+                            + " ON e.meeting_id = m.id AND e.tenant_id = m.tenant_id"
+                            + " WHERE m.tenant_id = :tenantId AND"
                             + " m.deleted_at IS NULL AND"
-                            + " m.summary_snippet IS NOT NULL AND btrim(m.summary_snippet) <> ''"
-                            + " AND (e.meeting_id IS NULL OR e.model <> :model) ORDER BY"
+                            + " btrim(a.summary) <> ''"
+                            + " AND (e.meeting_id IS NULL OR e.model <> :model"
+                            + " OR e.source_chars <> char_length(a.summary)) ORDER BY"
                             + " m.created_at DESC LIMIT :limit",
             nativeQuery = true)
     List<Object[]> findPendingIndex(
@@ -60,11 +62,13 @@ public interface MeetingEmbeddingJpaRepository
     /** Same predicate as {@link #findPendingIndex}, counted without the ceiling. */
     @Query(
             value =
-                    "SELECT COUNT(*) FROM meetings m LEFT JOIN meeting_embeddings e ON e.meeting_id"
-                            + " = m.id WHERE m.tenant_id = :tenantId AND m.deleted_at IS NULL AND"
-                            + " m.summary_snippet IS NOT"
-                            + " NULL AND btrim(m.summary_snippet) <> '' AND (e.meeting_id IS NULL"
-                            + " OR e.model <> :model)",
+                    "SELECT COUNT(*) FROM meetings m JOIN meeting_analyses a"
+                            + " ON a.meeting_id = m.id AND a.tenant_id = m.tenant_id"
+                            + " LEFT JOIN meeting_embeddings e"
+                            + " ON e.meeting_id = m.id AND e.tenant_id = m.tenant_id"
+                            + " WHERE m.tenant_id = :tenantId AND m.deleted_at IS NULL"
+                            + " AND btrim(a.summary) <> '' AND (e.meeting_id IS NULL"
+                            + " OR e.model <> :model OR e.source_chars <> char_length(a.summary))",
             nativeQuery = true)
     long countPendingIndex(@Param("tenantId") UUID tenantId, @Param("model") String model);
 }

@@ -22,9 +22,11 @@ from ..clients.llm import LlmClient, build_json_schema_for_analysis
 from ..models import AnalyzeRequest, AnalyzeResponse, MeetingAnalysisV1
 from ..settings import Settings
 from ..time_budget import LlmBudgetExceededError, TimeBudget
+from .date_grounding import contains_explicit_date
 from .pii_shield import admissible_tenant_terms
 from .prompt_utils import load_prompt, render_template
 from .shield_walk import shield_field, shield_tree
+from .summary_verifier import verify_summary
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +121,16 @@ def analyze(
     )
 
     json_schema = build_json_schema_for_analysis()
+    if not req.options.include_customer_confidence:
+        json_schema["properties"]["customerConfidence"] = {"type": "null"}
+        system_prompt += (
+            "\nCustomer Confidence is disabled for this workspace. "
+            "Do not evaluate customer confidence or generate buying-signal or objection scores. "
+            "Return customerConfidence as null."
+        )
+
+    # The fallback receives the identical prompt; only the transport mode changes.
+    system_prompt += "\n\nReturn JSON matching this schema:\n" + json.dumps(json_schema)
 
     try:
         raw_json, tokens_in, tokens_out = client.chat_structured(
@@ -145,7 +157,22 @@ def analyze(
     logger.debug("LLM raw response: %d chars", len(raw_json))
 
     parsed = json.loads(raw_json)
+    if not req.options.include_customer_confidence and isinstance(parsed, dict):
+        parsed["customerConfidence"] = None
     analysis = MeetingAnalysisV1.model_validate(parsed)
+    verified_summary, verification_in, verification_out = verify_summary(
+        client, analysis.summary, req.transcript, req.language
+    )
+    analysis = analysis.model_copy(update={"summary": verified_summary})
+    tokens_in += verification_in
+    tokens_out += verification_out
+
+    for action in analysis.action_items:
+        if action.due_date is not None and not all(
+            contains_explicit_date(text, action.due_date, req.language)
+            for text in (action.source_quote, req.transcript)
+        ):
+            action.due_date = None
 
     elapsed_ms = int((time.monotonic() - started) * 1000)
 

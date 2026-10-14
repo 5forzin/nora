@@ -31,7 +31,7 @@ RUN npm run build
 # --- runtime ---
 FROM node:22-alpine AS runtime
 WORKDIR /app
-ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 TZ=America/Sao_Paulo
 RUN addgroup -S nora && adduser -S nora -G nora
 COPY --from=build /app/.next ./.next
 COPY --from=build /app/public ./public

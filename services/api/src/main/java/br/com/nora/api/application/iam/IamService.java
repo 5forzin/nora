@@ -22,9 +22,9 @@ import org.springframework.transaction.annotation.Transactional;
  * Use case of the IAM subdomain. Every mutating operation records an audit event.
  *
  * <p>The authorization itself (checking whether the caller may invoke each method) is the
- * IamController's responsibility via {@link AuthorizationService}. {@link #simulate} is the one
- * method that reaches for that service with a different purpose: to ask what it WOULD decide for
- * another user, without acting on the answer.
+ * IamController's responsibility via {@link AuthorizationService}. Attachment reads additionally
+ * require the group-read grant in this service. {@link #simulate} asks what authorization WOULD
+ * decide for another user, without acting on the answer.
  */
 @Service
 public class IamService {
@@ -150,6 +150,13 @@ public class IamService {
     public List<UUID> listGroupMembers(UUID tenantId, UUID groupId) {
         iam.findGroup(groupId, tenantId).orElseThrow(IamException::groupNotFound);
         return iam.listGroupMembers(groupId, tenantId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<UUID> listGroupPolicyIds(UUID tenantId, UUID userId, UUID groupId) {
+        authz.require(userId, tenantId, "iam:group:read", "nora:tenant/" + tenantId + ":iam/*");
+        iam.findGroup(groupId, tenantId).orElseThrow(IamException::groupNotFound);
+        return iam.listGroupPolicyIds(groupId, tenantId);
     }
 
     // ========== policies ==========

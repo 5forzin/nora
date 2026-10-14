@@ -7,9 +7,8 @@
  * navigation (Link + usePathname), user profile from the session cookie,
  * logout, ⌘K command palette with semantic search and mobile drawer.
  *
- * The primary nav stays lean — day-to-day surfaces only. Administration (IAM) sits in its
- * own labelled section below it, the same shape "Conectores" uses, so that a feature which
- * exists and is wired to the API is reachable by clicking instead of by typing its URL.
+ * Daily work and enterprise administration have separate navigation groups.
+ * Enterprise entries use authenticated workspace capabilities from the API.
  *
  * Deliberate deviations from the default shell:
  *  - the sidebar logo is only the "Nora" wordmark (no soundwave);
@@ -22,7 +21,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { DesktopUpdateButton } from "./desktop-update-button";
 import { Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { SESSION_USER_EVENT, clearSession, getCurrentUser, type SessionUser } from "@/lib/auth";
+import { SESSION_USER_EVENT, clearSession, getCurrentUser, resumeSessionRefresh, type SessionUser } from "@/lib/auth";
+
+import { useWorkspaceAccess } from "@/components/enterprise/workspace-provider";
 
 import { AppSidebarSessions } from "./app-sidebar-sessions";
 import { Avatar } from "./avatar";
@@ -230,24 +231,18 @@ const CONNECTORS: NavItem[] = [
   },
 ];
 
-/**
- * IAM (users, groups, policies, invites, corporate domain, audit). Kept out of the primary
- * NAV on purpose — it is an administration surface, not a daily one — but present on every
- * page, because the alternative it replaces was no entry point at all.
- *
- * No plan gating here: the entry is shown to everyone signed in, and the page itself is
- * guarded by the backend, which answers 403 on the `iam:*` permissions to a member who does
- * not hold them. Hiding the link in the client would not be a control, only a disguise.
- */
-const ADMINISTRATION: NavItem = {
-  label: "IAM",
-  href: "/settings/iam" as Route,
-  icon: <ShieldIcon />,
-  hint: "Enterprise",
-};
-
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const { access } = useWorkspaceAccess();
+  const enterprise = access?.plan === "ENTERPRISE";
+  const planLabel = access ? (enterprise ? "Enterprise" : "Core") : "";
+  const dailyNav = NAV.filter((item) => item.href === '/flows' ? access?.permissions?.readFlows : item.href === '/tasks' ? access?.permissions?.readTasks : access?.permissions?.readMeetings);
+  const enterpriseNav: NavItem[] = enterprise ? [
+    ...(access.capabilities.viewExecutiveOverview ? [{ label: "Visão executiva", href: "/enterprise" as Route, icon: <TrendsIcon />, matchPrefixes: ["/enterprise"] }] : []),
+    ...(access.capabilities.manageUsers ? [{ label: "Usuários", href: "/enterprise/users" as Route, icon: <PeopleIcon /> }] : []),
+    ...(access.capabilities.manageAccess ? [{ label: "Acessos", href: "/enterprise/access" as Route, icon: <ShieldIcon /> }] : []),
+    ...(access.capabilities.readCompanyContext ? [{ label: "Empresa", href: "/enterprise/company" as Route, icon: <ProjectsIcon /> }] : []),
+  ] : [];
   const router = useRouter();
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -256,6 +251,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setUser(getCurrentUser());
+    resumeSessionRefresh();
     // Profile edited in settings (displayName) → sidebar reflects it right away.
     const onUserUpdated = () => setUser(getCurrentUser());
     window.addEventListener(SESSION_USER_EVENT, onUserUpdated);
@@ -269,6 +265,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const isActive = useMemo(
     () => (item: NavItem) => {
+      if (item.href === "/enterprise") return pathname === "/enterprise";
       const prefixes = item.matchPrefixes ?? [item.href];
       return prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
     },
@@ -300,7 +297,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         return;
       }
       if (typing) return;
-      if (e.key.toLowerCase() === "n") {
+      if (e.key.toLowerCase() === "n" && access?.permissions?.createMeetings) {
         e.preventDefault();
         router.push("/meetings/upload" as Route);
       } else if (e.key === "/") {
@@ -316,7 +313,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [togglePalette, openPalette, router]);
+  }, [togglePalette, openPalette, router, access?.permissions?.createMeetings]);
 
   function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {
     const active = isActive(item);
@@ -325,6 +322,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         href={item.href}
         className={`side-link${active ? " is-active" : ""}`}
         onClick={onNavigate}
+        aria-current={active ? "page" : undefined}
       >
         <span className="icon">{item.icon}</span>
         <span className="grow">{item.label}</span>
@@ -343,10 +341,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       <Avatar seed={user?.email} size={28} />
       <div className="meta">
         <div className="name">{user?.displayName ?? "Carregando…"}</div>
-        <div className="mail">{user?.email ? `${user.email} · Core` : "—"}</div>
+        <div className="mail">{user?.email ?? "—"}</div>
       </div>
-      {/* `/settings` rather than `/settings/context`: the gear means settings, and the
-          prefix now resolves (it used to 404) by redirecting to the hub's first section. */}
       <Link className="icon-btn" href={"/settings" as Route} aria-label="Configurações" title="Configurações">
         <SettingsIcon />
       </Link>
@@ -360,27 +356,32 @@ export function AppShell({ children }: { children: ReactNode }) {
   function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
     return (
       <>
-        <nav className="side-nav">
-          {NAV.map((item) => (
+        {enterpriseNav.length > 0 && (
+          <div>
+            <div className="side-sec-label">Enterprise</div>
+            {enterpriseNav.map((item) => (
+              <NavLink key={item.href} item={item} onNavigate={onNavigate} />
+            ))}
+          </div>
+        )}
+
+        {dailyNav.length > 0 && <nav className="side-nav" aria-label="Trabalho">
+          {enterprise && <div className="side-sec-label" style={{ marginTop: 0 }}>Trabalho</div>}
+          {dailyNav.map((item) => (
             <NavLink key={item.href} item={item} onNavigate={onNavigate} />
           ))}
-        </nav>
+        </nav>}
 
         <div>
           <div className="side-sec-label">Conectores</div>
-          {CONNECTORS.map((item) => (
+          {CONNECTORS.filter((item) => item.href !== '/integrations' || access?.permissions?.readIntegrations).map((item) => (
             <NavLink key={item.href} item={item} onNavigate={onNavigate} />
           ))}
         </div>
 
-        <div>
-          <div className="side-sec-label">Administração</div>
-          <NavLink item={ADMINISTRATION} onNavigate={onNavigate} />
-        </div>
-
-        <Suspense fallback={null}>
+        {access?.permissions?.readMeetings && <Suspense fallback={null}>
           <AppSidebarSessions />
-        </Suspense>
+        </Suspense>}
 
         <div style={{ flex: 1 }} />
 
@@ -403,7 +404,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Link href={"/chat" as Route} aria-label="Nora — nova sessão" style={{ display: "inline-flex", alignItems: "center" }}>
             <NoraWordmark />
           </Link>
-          <span className="plan-badge">Core</span>
+          {planLabel && <span className="plan-badge">{planLabel}</span>}
         </div>
         <SidebarBody />
       </aside>
@@ -435,7 +436,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="side-brand" style={{ justifyContent: "space-between" }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
             <NoraWordmark />
-            <span className="plan-badge">Core</span>
+            {planLabel && <span className="plan-badge">{planLabel}</span>}
           </span>
           <button
             type="button"

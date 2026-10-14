@@ -3,8 +3,7 @@
 /**
  * CorporateDomainCard (US32)
  * -------------------------------------------------------------------------
- * Configuration block for the tenant corporate domain. Rendered at the top of
- * the settings/iam page. Shows the current state and lets the Root:
+ * Corporate domain configuration in the Enterprise company page. Lets the Root:
  *
  * - Set a domain (e.g.: `acme.com`) to restrict future invites (US06).
  * - Clear the restriction (sends `null`), allowing invites for any domain.
@@ -45,9 +44,9 @@ const DOMAIN_REGEX = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*
  */
 function validateDomain(raw: string): string | null {
   const trimmed = raw.trim();
-  if (trimmed.length === 0) return "Informe um dominio.";
-  if (trimmed.length > 255) return "Dominio muito longo (max 255 caracteres).";
-  if (!DOMAIN_REGEX.test(trimmed)) return "Dominio invalido. Use formato como `acme.com.br`.";
+  if (trimmed.length === 0) return "Informe um domínio.";
+  if (trimmed.length > 255) return "Domínio muito longo (max 255 caracteres).";
+  if (!DOMAIN_REGEX.test(trimmed)) return "Domínio inválido. Use formato como `acme.com.br`.";
   return null;
 }
 
@@ -73,7 +72,7 @@ export default function CorporateDomainCard() {
       setFetchError(
         err instanceof ApiRequestError
           ? err.message
-          : "Nao foi possivel carregar a configuracao de dominio.",
+          : "Não foi possível carregar a configuração de domínio.",
       );
       setStatus("error");
     }
@@ -100,14 +99,14 @@ export default function CorporateDomainCard() {
       setInput(resp.allowedEmailDomain ?? "");
       setSuccess(
         resp.allowedEmailDomain
-          ? `Dominio salvo: ${resp.allowedEmailDomain}`
-          : "Restricao de dominio removida.",
+          ? `Domínio salvo: ${resp.allowedEmailDomain}`
+          : "Restrição de domínio removida.",
       );
       setStatus("loaded");
     } catch (err) {
       // The backend validates too (defense in depth). 422 -> TENANT_DOMAIN_INVALID.
       if (err instanceof ApiRequestError && err.status === 422) {
-        setFormError("Dominio invalido. Use formato como `acme.com.br`.");
+        setFormError("Domínio inválido. Use formato como `acme.com.br`.");
       } else if (err instanceof ApiRequestError) {
         setFormError(
           err.payload?.message ?? `Falha ao salvar (${err.status}). Tente novamente.`,
@@ -147,11 +146,9 @@ export default function CorporateDomainCard() {
   return (
     <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-5">
       <header className="space-y-1">
-        <h2 className="text-lg font-medium">Dominio corporativo</h2>
+        <h2 className="text-lg font-medium">Domínio corporativo</h2>
         <p className="text-sm text-slate-500">
-          Restringe convites futuros a e-mails desse dominio. Usuarios ja existentes
-          nao sao afetados. Deixe vazio (ou clique em &quot;Limpar restricao&quot;) para
-          permitir qualquer dominio.
+          Restrinja novos convites a e-mails deste domínio. Usuários existentes mantêm o acesso.
         </p>
       </header>
 
@@ -180,7 +177,7 @@ export default function CorporateDomainCard() {
         <form className="space-y-3" onSubmit={onSubmit} noValidate>
           <div className="space-y-1">
             <label htmlFor="allowed-email-domain" className="text-sm font-medium text-slate-700">
-              Dominio permitido
+              Domínio permitido
             </label>
             <div className="flex flex-wrap items-center gap-2">
               <input
@@ -202,7 +199,7 @@ export default function CorporateDomainCard() {
                 disabled={isSaving || !input.trim()}
                 className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
               >
-                {isSaving ? "Salvando..." : "Salvar"}
+                {isSaving ? "Salvando…" : "Salvar"}
               </button>
               {hasDomain && (
                 <button
@@ -211,7 +208,7 @@ export default function CorporateDomainCard() {
                   disabled={isSaving}
                   className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Limpar restricao
+                  Limpar restrição
                 </button>
               )}
             </div>
@@ -222,7 +219,7 @@ export default function CorporateDomainCard() {
                   <span className="font-mono text-slate-700">{current?.allowedEmailDomain}</span>
                 </>
               ) : (
-                <>Nenhuma restricao ativa.</>
+                <>Nenhuma restrição ativa.</>
               )}
             </p>
           </div>

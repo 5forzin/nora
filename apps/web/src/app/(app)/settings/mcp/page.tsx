@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiRequestError,
   createMcpToken,
@@ -30,40 +30,44 @@ import { formatDateTime } from "@/lib/utils";
 export default function McpSettingsPage() {
   const [tokens, setTokens] = useState<McpTokenSummary[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const listVersion = useRef(0);
 
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [revealed, setRevealed] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState<{ id: string; token: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
 
   const [revoking, setRevoking] = useState<string | null>(null);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    listMcpTokens()
-      .then((items) => {
-        if (!cancelled) setTokens(items);
-      })
-      .catch((err) => {
-        if (cancelled) return;
+  const reload = useCallback(async () => {
+    const version = ++listVersion.current;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const items = await listMcpTokens();
+      if (version === listVersion.current) setTokens(items);
+    } catch (err) {
+      if (version === listVersion.current) {
         setLoadError(message(err, "Não foi possível carregar as credenciais."));
-      });
-    return () => {
-      cancelled = true;
-    };
+      }
+    } finally {
+      if (version === listVersion.current) setLoading(false);
+    }
   }, []);
 
-  async function reload() {
-    try {
-      setTokens(await listMcpTokens());
-    } catch (err) {
-      setLoadError(message(err, "Não foi possível atualizar a lista."));
-    }
-  }
+  useEffect(() => {
+    const requests = listVersion;
+    void reload();
+    return () => { requests.current++; };
+  }, [reload]);
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();
+    if (creating) return;
     const label = name.trim();
     if (!label) {
       setCreateError("Dê um nome para reconhecer esta credencial depois.");
@@ -73,8 +77,9 @@ export default function McpSettingsPage() {
     setCreateError(null);
     try {
       const created = await createMcpToken({ name: label });
-      setRevealed(created.token);
+      setRevealed({ id: created.id, token: created.token });
       setCopied(false);
+      setCopyError(null);
       setName("");
       await reload();
     } catch (err) {
@@ -86,23 +91,27 @@ export default function McpSettingsPage() {
 
   async function onCopy() {
     if (!revealed) return;
+    setCopyError(null);
     try {
-      await navigator.clipboard.writeText(revealed);
+      await navigator.clipboard.writeText(revealed.token);
       setCopied(true);
     } catch {
-      // Clipboard blocked (insecure context, permission denied): the value is on screen and
-      // selectable, so this is a missing convenience, not a dead end.
       setCopied(false);
+      setCopyError("Não foi possível copiar. Selecione e copie o valor acima.");
     }
   }
 
   async function onRevoke(token: McpTokenSummary) {
+    if (revoking) return;
     setRevoking(token.id);
+    setRevokeError(null);
     try {
       await revokeMcpToken(token.id);
+      setTokens((items) => items?.map((item) => item.id === token.id ? { ...item, active: false } : item) ?? null);
+      setRevealed((current) => current?.id === token.id ? null : current);
       await reload();
     } catch (err) {
-      setLoadError(message(err, "Não foi possível revogar a credencial."));
+      setRevokeError(message(err, "Não foi possível revogar a credencial."));
     } finally {
       setRevoking(null);
     }
@@ -169,7 +178,7 @@ export default function McpSettingsPage() {
               userSelect: "all",
             }}
           >
-            {revealed}
+            {revealed.token}
           </code>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
             <button className="btn btn-primary btn-sm" type="button" onClick={onCopy}>
@@ -181,11 +190,13 @@ export default function McpSettingsPage() {
               onClick={() => {
                 setRevealed(null);
                 setCopied(false);
+                setCopyError(null);
               }}
             >
               Já guardei
             </button>
           </div>
+          {copyError && <div role="alert" className="notice notice--danger">{copyError}</div>}
         </section>
       )}
 
@@ -194,7 +205,15 @@ export default function McpSettingsPage() {
           <h2 className="sec-label">Suas credenciais</h2>
         </div>
 
-        {loadError && <div className="notice notice--danger">{loadError}</div>}
+        {loadError && (
+          <div role="alert" className="notice notice--danger">
+            <p>{loadError}</p>
+            <button className="btn btn-ghost btn-sm" type="button" disabled={loading} onClick={() => void reload()}>
+              Tentar novamente
+            </button>
+          </div>
+        )}
+        {revokeError && <div role="alert" className="notice notice--danger">{revokeError}</div>}
 
         {tokens === null && !loadError && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -238,7 +257,7 @@ export default function McpSettingsPage() {
                   <button
                     className="btn btn-ghost btn-sm"
                     type="button"
-                    disabled={revoking === token.id}
+                    disabled={revoking !== null}
                     onClick={() => onRevoke(token)}
                   >
                     {revoking === token.id ? "Revogando…" : "Revogar"}

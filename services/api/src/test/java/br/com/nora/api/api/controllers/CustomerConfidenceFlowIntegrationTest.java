@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import br.com.nora.api.application.analysis.AnalysisService;
 import br.com.nora.api.application.ports.NlpWorkerClient;
 import br.com.nora.api.application.ports.NlpWorkerClient.CustomerConfidenceCarrier;
+import br.com.nora.api.application.tenant.TenantContextService;
+import br.com.nora.api.application.workflow.WorkflowContextFactory;
 import br.com.nora.api.domain.analysis.MeetingAnalysis;
 import br.com.nora.api.domain.analysis.Sentiment;
 import br.com.nora.api.domain.customer.BuyingSignal;
@@ -19,6 +21,7 @@ import br.com.nora.api.infrastructure.nlp.WorkerDtos;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -42,6 +45,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -83,13 +87,97 @@ class CustomerConfidenceFlowIntegrationTest {
     @LocalServerPort int port;
     @Autowired TestRestTemplate rest;
     @Autowired ObjectMapper mapper;
+    @Autowired JdbcTemplate jdbc;
     @Autowired AnalysisService analysisService;
     @Autowired ConfidenceScript script;
+    @Autowired TenantContextService companyContext;
+    @Autowired WorkflowContextFactory workflowContexts;
 
     @BeforeEach
     void setUp() {
         rest.getRestTemplate().setRequestFactory(new JdkClientHttpRequestFactory());
         script.reset();
+    }
+
+    @Test
+    void coreAnalysisDoesNotUseStoredCompanyContextOrPersistConfidence() throws Exception {
+        String token = signupAndLogin("conf-core@nora.dev", "SenhaForte123", "Core Owner");
+        UUID tenantId = principalTenantId(token);
+        UUID userId =
+                UUID.fromString(
+                        authGet("/auth/me", token).read(HttpStatus.OK).path("userId").asText());
+        companyContext.upsert(
+                tenantId,
+                new TenantContextService.UpsertCommand(
+                        "Private Enterprise Context",
+                        null,
+                        null,
+                        null,
+                        List.of(),
+                        List.of(),
+                        List.of()),
+                userId);
+        jdbc.update("UPDATE tenants SET plan = 'FREE' WHERE id = ?", tenantId);
+        script.set(carrier("Core Must Not Persist", 70, ConfidenceBand.MEDIUM));
+        UUID meetingId = uploadMeeting(token, "Core Meeting");
+        analysisService.run(meetingId, tenantId);
+
+        assertThat(script.lastContext.get()).isEmpty();
+        JsonNode detail = authGet("/meetings/" + meetingId, token).read(HttpStatus.OK);
+        assertThat(detail.path("customerConfidence").isNull()).isTrue();
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT count(*) FROM customer_confidence_assessments WHERE tenant_id = ?",
+                                Integer.class,
+                                tenantId))
+                .isZero();
+        assertThat(
+                        workflowContexts
+                                .forMeeting(
+                                        tenantId,
+                                        meetingId,
+                                        "meeting.analysis_completed",
+                                        OffsetDateTime.now())
+                                .customerConfidenceScore())
+                .isNull();
+    }
+
+    @Test
+    void downgradeHidesAlreadyPersistedConfidenceFromDetailsAndFlowContext() throws Exception {
+        String token =
+                signupAndLogin("conf-downgrade@nora.dev", "SenhaForte123", "Former Enterprise");
+        UUID tenantId = principalTenantId(token);
+        script.set(carrier("Historic Account", 70, ConfidenceBand.MEDIUM));
+        UUID meetingId = uploadMeeting(token, "Prior Enterprise Meeting");
+        analysisService.run(meetingId, tenantId);
+        assertThat(
+                        authGet("/meetings/" + meetingId, token)
+                                .read(HttpStatus.OK)
+                                .path("customerConfidence")
+                                .isNull())
+                .isFalse();
+        jdbc.update("UPDATE tenants SET plan = 'PRO' WHERE id = ?", tenantId);
+        assertThat(
+                        authGet("/meetings/" + meetingId, token)
+                                .read(HttpStatus.OK)
+                                .path("customerConfidence")
+                                .isNull())
+                .isTrue();
+        assertThat(
+                        workflowContexts
+                                .forMeeting(
+                                        tenantId,
+                                        meetingId,
+                                        "meeting.analysis_completed",
+                                        OffsetDateTime.now())
+                                .customerConfidenceScore())
+                .isNull();
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT count(*) FROM customer_confidence_assessments WHERE meeting_id = ?",
+                                Integer.class,
+                                meetingId))
+                .isPositive();
     }
 
     @Test
@@ -232,6 +320,10 @@ class CustomerConfidenceFlowIntegrationTest {
                         .read(HttpStatus.CREATED);
         String verifyToken = signup.get("emailVerificationDevToken").asText();
         postJson("/auth/verify-email", Map.of("token", verifyToken)).read(HttpStatus.NO_CONTENT);
+        jdbc.update(
+                "UPDATE tenants SET plan = 'ENTERPRISE' WHERE id = "
+                        + "(SELECT tenant_id FROM users WHERE email = ?)",
+                email);
         JsonNode login =
                 postJson("/auth/login", Map.of("email", email, "password", pwd))
                         .read(HttpStatus.OK);
@@ -305,6 +397,8 @@ class CustomerConfidenceFlowIntegrationTest {
      */
     static final class ConfidenceScript {
         private final AtomicReference<CustomerConfidenceCarrier> next = new AtomicReference<>();
+        private final AtomicReference<Optional<TenantContext>> lastContext =
+                new AtomicReference<>(Optional.empty());
 
         void set(CustomerConfidenceCarrier carrier) {
             next.set(carrier);
@@ -312,6 +406,7 @@ class CustomerConfidenceFlowIntegrationTest {
 
         void reset() {
             next.set(null);
+            lastContext.set(Optional.empty());
         }
 
         CustomerConfidenceCarrier current() {
@@ -340,6 +435,7 @@ class CustomerConfidenceFlowIntegrationTest {
                         String transcript,
                         Optional<TenantContext> tenantContext,
                         Optional<br.com.nora.api.domain.meeting.productivity.MeetingGoal> goal) {
+                    scriptBean.lastContext.set(tenantContext);
                     MeetingAnalysis analysis =
                             MeetingAnalysis.newAnalysis(
                                     meetingId,

@@ -31,6 +31,7 @@ The NORA backend returns errors in the format:
 - `FORBIDDEN` — Spring Security access denied
 - `USER_DISABLED` — deactivated account
 - `IAM_FORBIDDEN` — an IAM policy denies the operation
+- `ENTERPRISE_REQUIRED` — the workspace plan does not enable this feature; the Root IAM bypass does not override plan access
 
 ### 404 NOT_FOUND
 - `NOT_FOUND` — non-existent endpoint

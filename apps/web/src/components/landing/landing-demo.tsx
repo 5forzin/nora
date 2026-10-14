@@ -1,29 +1,29 @@
-"use client";
+'use client';
 
-import { useState } from "react";
+import { useState } from 'react';
 
-type Kind = "decision" | "action" | "person" | "competitor";
+type Kind = 'decision' | 'action' | 'person' | 'competitor';
 
 const SPOTLIGHT_TOKENS: { text: string; kind: Kind | null }[] = [
-  { text: "Camila", kind: "person" },
-  { text: " levantou que o ", kind: null },
-  { text: "DPO exige redação de CPF mesmo em campos livres", kind: "decision" },
-  { text: ". ", kind: null },
-  { text: "Rafael", kind: "person" },
-  { text: " vai ", kind: null },
-  { text: "mandar a proposta do piloto na segunda", kind: "action" },
-  { text: ". O cliente comentou que ", kind: null },
-  { text: "Gong", kind: "competitor" },
-  { text: " custa três vezes mais. Combinamos ", kind: null },
-  { text: "data de go-live na última semana de maio", kind: "decision" },
-  { text: ". Documentar tudo no ADR 0012.", kind: null },
+  { text: 'Camila', kind: 'person' },
+  { text: ' levantou que o ', kind: null },
+  { text: 'DPO exige redação de CPF mesmo em campos livres', kind: 'decision' },
+  { text: '. ', kind: null },
+  { text: 'Rafael', kind: 'person' },
+  { text: ' vai ', kind: null },
+  { text: 'mandar a proposta do piloto na segunda', kind: 'action' },
+  { text: '. O cliente comentou que ', kind: null },
+  { text: 'outra solução', kind: 'competitor' },
+  { text: ' também está em avaliação. Combinamos ', kind: null },
+  { text: 'data de go-live na última semana de maio', kind: 'decision' },
+  { text: '. Documentar tudo no ADR 0012.', kind: null },
 ];
 
 const KIND_META: Record<Kind, { label: string; color: string; bg: string }> = {
-  decision: { label: "Decisão", color: "var(--accent-ink)", bg: "var(--accent-soft)" },
-  action: { label: "Action item", color: "#3f8a5e", bg: "rgba(98,181,133,0.16)" },
-  person: { label: "PII · nome", color: "#a04c3e", bg: "rgba(201,119,102,0.16)" },
-  competitor: { label: "Concorrente", color: "#a37528", bg: "rgba(212,160,76,0.18)" },
+  decision: { label: 'Decisão', color: 'var(--accent-ink)', bg: 'var(--accent-soft)' },
+  action: { label: 'Action item', color: '#3f8a5e', bg: 'rgba(98,181,133,0.16)' },
+  person: { label: 'PII · nome', color: '#a04c3e', bg: 'rgba(201,119,102,0.16)' },
+  competitor: { label: 'Concorrente', color: '#a37528', bg: 'rgba(212,160,76,0.18)' },
 };
 
 function WordSpotlight() {
@@ -49,11 +49,11 @@ function WordSpotlight() {
               onFocus={() => setActive(i)}
               onBlur={() => setActive(null)}
               onKeyDown={(e) => {
-                if (e.key === "Escape") setActive(null);
+                if (e.key === 'Escape') setActive(null);
               }}
               style={{
-                background: isActive ? meta.bg : "transparent",
-                color: isActive ? meta.color : "var(--ink)",
+                background: isActive ? meta.bg : 'transparent',
+                color: isActive ? meta.color : 'var(--ink)',
                 boxShadow: isActive
                   ? `inset 0 -1.5px 0 ${meta.color}`
                   : `inset 0 -1.5px 0 ${meta.bg}`,
@@ -91,11 +91,11 @@ export function LandingDemo() {
     <section id="demo">
       <div className="container">
         <div style={{ maxWidth: 720 }}>
-          <div className="section-label">Demonstração</div>
-          <h2 className="section-title">Da conversa à inteligência, palavra por palavra.</h2>
+          <div className="section-label">Exemplo ilustrativo</div>
+          <h2 className="section-title">Decisões e ações dentro da conversa.</h2>
           <p className="section-subtitle">
-            A Nora classifica cada trecho — decisão, action item, PII, concorrente — e devolve tudo
-            estruturado. Passe o mouse ou use o Tab pra ver a classificação de cada um.
+            Neste trecho fictício, explore exemplos de decisão, tarefa, dado pessoal e concorrente.
+            Passe o mouse ou use Tab para ver as marcações.
           </p>
         </div>
         <div className="demo-shell-v2">

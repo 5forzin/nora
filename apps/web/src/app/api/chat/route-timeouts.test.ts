@@ -6,9 +6,9 @@ import { describe, expect, it } from 'vitest';
 /**
  * Every network call this route makes must be bounded.
  *
- * `POST /api/chat` does six calls to our own backend before it flushes a single byte: the
- * session check, the control-plane model resolution, the tenant context, the meeting search,
- * the recents fallback and the task list. Each one is wrapped in `try/catch` with a documented
+ * `POST /api/chat` calls our own backend before it flushes a single byte: session validation,
+ * model resolution, company context, meeting search/details and pending tasks. The workspace
+ * helper shares the same timeout contract. Each call has a documented
  * soft fallback — "on any failure, uses the env", "falls through to the recents fallback",
  * "returns null". None of them passed a signal.
  *
@@ -24,16 +24,18 @@ import { describe, expect, it } from 'vitest';
  * about the timeout, so that is what is checked.
  */
 const ROUTE = readFileSync(join(__dirname, 'route.ts'), 'utf8');
+const CONTEXT = readFileSync(join(__dirname, '../../../lib/chat/workspace-context.ts'), 'utf8');
 
 /** Each `fetch(` and the options object that follows it, roughly. */
 function fetchCallSites(): string[] {
   const sites: string[] = [];
   const re = /fetch\(/g;
+  const source = `${ROUTE}\n${CONTEXT}`;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(ROUTE)) !== null) {
+  while ((m = re.exec(source)) !== null) {
     // Take from the call up to the first line that closes it at the same indentation. Crude,
     // but the file's formatting is stable and the alternative is a TS parser for one rule.
-    sites.push(ROUTE.slice(m.index, m.index + 420));
+    sites.push(source.slice(m.index, m.index + 420));
   }
   return sites;
 }

@@ -12,6 +12,8 @@ import type { NextRequest } from 'next/server';
  */
 export const PROTECTED_PREFIXES = [
   '/dashboard',
+  '/overview',
+  '/enterprise',
   '/meetings',
   '/settings',
   '/tasks',
@@ -47,7 +49,8 @@ export function middleware(req: NextRequest) {
   if (isProtected && !token) {
     const url = req.nextUrl.clone();
     url.pathname = '/auth/login';
-    url.searchParams.set('next', pathname);
+    url.search = '';
+    url.searchParams.set('next', pathname + req.nextUrl.search);
     return NextResponse.redirect(url);
   }
 
@@ -75,6 +78,8 @@ export const config = {
   matcher: [
     '/',
     '/dashboard/:path*',
+    '/overview/:path*',
+    '/enterprise/:path*',
     '/meetings/:path*',
     '/settings/:path*',
     '/tasks/:path*',

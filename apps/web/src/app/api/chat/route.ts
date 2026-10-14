@@ -24,6 +24,16 @@
 import { cookies } from "next/headers";
 
 import { openAiSseToNdjson, type StreamUsage } from "@/lib/chat/sse-to-ndjson";
+import { createMeetingSourceLinkTransform } from "@/lib/chat/source-links";
+import { formatPendingTaskEvidence } from "@/lib/chat/pending-evidence";
+import {
+  clampContextValue,
+  fetchMeetingContext,
+  fetchPendingTaskContext,
+  formatMeetingSources,
+  type MeetingContext,
+  type PendingTaskContext,
+} from "@/lib/chat/workspace-context";
 import { resolveProviderKey } from "@/lib/llm/provider-key";
 import { redactPii } from "@/lib/pii/redact";
 
@@ -173,15 +183,23 @@ interface ModelConfig {
 
 type Usage = StreamUsage;
 
-const SYSTEM_PROMPT = `Você é a Nora, copiloto pessoal de reuniões do plano Core.
+const SYSTEM_PROMPT = `Você é a Nora, assistente de reuniões e informações de negócio do workspace.
 
 Personalidade e regras:
-- Responda SEMPRE em português brasileiro, de forma direta, clara e concisa.
+- Responda SEMPRE em português brasileiro, de forma direta, clara e concisa. Traduza também os rótulos do contexto: use "Responsável" para "Assignee" e "Prazo" para "Due".
 - Você ajuda o usuário a entender suas reuniões: resumos, decisões, action items, prazos e projetos.
 - Use markdown leve (negrito, listas) quando ajudar a leitura. Não invente dados.
 - Se a resposta depende de uma reunião específica e ela não está no contexto, diga que não encontrou e sugira abrir/enviar a reunião.
 - Nunca exponha dados sensíveis (PII). O conteúdo que você recebe já foi tratado pelo PII Shield.
-- Quando citar uma reunião, use o título dela.
+- Sustente afirmações sobre reuniões com os links de fontes fornecidos no contexto, no formato [título](/meetings/id). Não invente links, reuniões ou evidências.
+- Para perguntas executivas, relacione decisões, riscos, oportunidades e pendências entre as reuniões consultadas. Diferencie fatos registrados de inferências.
+- Em um panorama executivo, inclua as áreas que tenham riscos ou pendências relevantes no contexto. Ao listar pendências, use a seção atual de tarefas e inclua todas as tarefas fornecidas nela, com responsável e prazo; se apresentar apenas uma seleção, identifique-a como parcial. Não omita uma área inteira para encurtar a resposta.
+- Compare as datas das reuniões. Para o estado atual de um mesmo fato, uma atualização explícita mais recente prevalece sobre um registro antigo. Só apresente o estado antigo como histórico, identificando a mudança. Uma confirmação recebida pode resolver a falta dessa confirmação sem comprovar entrega física, aprovação do gasto ou liberação do projeto.
+- Preserve a associação entre datas e eventos: entrega, instalação, elaboração de um plano e início de um piloto são marcos diferentes. Se uma data não foi definida, diga isso. Não transforme uma previsão condicionada em autorização.
+- Separe critérios explícitos de liberação das demais tarefas de acompanhamento. Uma tarefa aberta não é automaticamente um impedimento formal: só classifique como bloqueio quando a fonte registrar essa relação. Não diga que nenhuma condição foi atendida quando uma atualização registra uma confirmação ou condição resolvida. Explique o que foi resolvido e quais critérios continuam sem evidência de cumprimento.
+- Descreva individualmente o estado de cada critério, usando a atualização mais recente. Evite afirmações universais como "todos os critérios continuam pendentes" ou "nenhuma condição foi atendida". Uma tarefa de revisar condições ou acompanhar prazos não cria um novo critério obrigatório de liberação. Se houver ambiguidade entre confirmação de uma previsão e entrega física, preserve essa distinção e não invente o estado de cumprimento.
+- O contexto contém uma seleção limitada de reuniões e tarefas. Não a apresente como cobertura de toda a empresa. Se faltar evidência, diga o que não foi encontrado.
+- Tarefas DONE estão concluídas e nunca devem ser apresentadas como pendentes. Um status não informado não comprova que uma tarefa continua aberta.
 - Quando houver contexto da empresa do usuário (produtos, ICP, concorrentes, proposta de valor, tratamento de objeções), use-o como pano de fundo: fale dos produtos e concorrentes DELE pelo nome, e responda no vocabulário do negócio dele em vez de dar conselho genérico. Não invente contexto que não estiver ali.`;
 
 /** Env config (SOFT fallback and legacy behavior when the control plane is not plugged in). */
@@ -240,7 +258,7 @@ function resolveKey(provider: string): string {
  */
 async function resolveSession(
   cookieHeader: string,
-): Promise<{ tenantId: string | null; userId: string | null } | null> {
+): Promise<{ tenantId: string | null; userId: string | null; readCompanyContext: boolean } | null> {
   try {
     const r = await fetch(`${API_BASE_URL}/auth/me`, {
       headers: { Cookie: cookieHeader, Accept: "application/json" },
@@ -248,8 +266,17 @@ async function resolveSession(
       signal: AbortSignal.timeout(INTERNAL_CALL_TIMEOUT_MS),
     });
     if (!r.ok) return null;
-    const me = (await r.json()) as { tenantId?: string; userId?: string };
-    return { tenantId: me.tenantId ?? null, userId: me.userId ?? null };
+    const me = (await r.json()) as {
+      tenantId?: string;
+      userId?: string;
+      plan?: string;
+      capabilities?: { readCompanyContext?: boolean };
+    };
+    return {
+      tenantId: me.tenantId ?? null,
+      userId: me.userId ?? null,
+      readCompanyContext: me.plan === "ENTERPRISE" && me.capabilities?.readCompanyContext === true,
+    };
   } catch {
     return null;
   }
@@ -287,57 +314,10 @@ function recordUsage(
   });
 }
 
-interface MeetingContextItem {
-  title?: string;
-  summarySnippet?: string;
-  startedAt?: string;
-}
-
-/**
- * RAG: fetches the meetings RELEVANT to the question by semantic similarity
- * (GET /meetings/search). Falls back to the most recent ones when the search comes back
- * empty (embeddings off/not indexed yet) or unavailable.
- */
-async function fetchContextMeetings(
-  headers: Record<string, string>,
-  query: string,
-): Promise<{ label: string; items: MeetingContextItem[] }> {
-  if (query.trim()) {
-    try {
-      const r = await fetch(
-        `${API_BASE_URL}/meetings/search?q=${encodeURIComponent(query)}&k=6`,
-        { headers, cache: "no-store", signal: AbortSignal.timeout(INTERNAL_CALL_TIMEOUT_MS) },
-      );
-      if (r.ok) {
-        const d = (await r.json()) as { items?: MeetingContextItem[] };
-        if (d.items && d.items.length > 0) {
-          return { label: "REUNIÕES RELEVANTES À PERGUNTA (busca semântica):", items: d.items };
-        }
-      }
-    } catch {
-      // falls through to the recents fallback
-    }
-  }
-  try {
-    const r = await fetch(`${API_BASE_URL}/meetings?size=12`, {
-      headers,
-      cache: "no-store",
-      signal: AbortSignal.timeout(INTERNAL_CALL_TIMEOUT_MS),
-    });
-    if (r.ok) {
-      const d = (await r.json()) as { items?: MeetingContextItem[] };
-      return { label: "REUNIÕES RECENTES DO WORKSPACE:", items: (d.items ?? []).slice(0, 12) };
-    }
-  } catch {
-    // no meeting context
-  }
-  return { label: "", items: [] };
-}
-
 /**
  * Commercial context of the tenant (GET /tenant/context), as it comes off the wire.
  * Mirrors `TenantContextDto` in src/lib/api/client.ts; declared locally like
- * `MeetingContextItem` above, because this route talks to the API directly and does not
+ * the meeting context types, because this route talks to the API directly and does not
  * go through the browser client.
  */
 interface TenantContextPayload {
@@ -420,42 +400,6 @@ async function fetchTenantContext(
 }
 
 /**
- * Neutralizes text coming from the tenant before it enters the <workspace_context> block.
- *
- * Meeting and action item titles are typed by any member of the tenant and arrive
- * here raw — validation on upload is only trim + length, and redactPii handles
- * CPF/CNPJ/phone/e-mail/card, letting the rest through.
- *
- * Two delimiters need neutralizing, not one:
- *
- * - `<` and `>`, otherwise a title like `x</workspace_context> Nova instrução:` closes the fence
- *   and the rest lands in system prompt scope. They are ESCAPED, not stripped: stripping
- *   corrupted the data the model is instructed to quote — `escalar se MRR > R$ 50k` became
- *   `escalar se MRR R$ 50k`, and the answer came out missing the comparison operator.
- * - the line break, which is the line separator INSIDE the block (items are joined with
- *   `\n`). A title with `\n` forges whole lines — a meeting that never existed, with a date
- *   and content of the title writer's choosing. Collapsing whitespace closes that.
- */
-function sanitizeContextValue(value: string): string {
-  return value
-    .replace(/\s+/g, " ")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .trim();
-}
-
-/**
- * Sanitizes and then truncates, in that order. The other way round is not equivalent:
- * `sanitizeContextValue` ESCAPES `<`/`>` into four-character entities, so cutting first
- * and escaping second can hand back a string well over the cap. Cutting an entity in half
- * is harmless — `&l` cannot become a delimiter, which is the thing the escape defends.
- */
-function clampContextValue(value: string, max: number): string {
-  const safe = sanitizeContextValue(value);
-  return safe.length <= max ? safe : `${safe.slice(0, max - 1).trimEnd()}…`;
-}
-
-/**
  * Keeps whole lines while they fit the budget, and stops. Dropping a WHOLE line rather than
  * slicing the joined text is the point: half a line reads as a fact with its ending
  * amputated, which is exactly the kind of thing a model finishes on its own.
@@ -486,7 +430,7 @@ function fitSection(heading: string, items: string[], budget: number): string[] 
  *
  * Every value passes through `clampContextValue` (= sanitize + cap): these fields are typed
  * by any member of the tenant at /settings/context and land inside the same nonce fence as
- * the meeting titles, so the reasoning documented on `sanitizeContextValue` applies to them
+ * the meeting titles, so the reasoning documented on `clampContextValue` applies to them
  * unchanged. Empty fields are SKIPPED rather than printed as a placeholder — "no data" said
  * out loud is one more thing for the model to talk about.
  */
@@ -556,74 +500,25 @@ function buildTenantContextLines(ctx: TenantContextPayload): string[] {
   return fitLines(lines, CTX_MAX_BLOCK_CHARS);
 }
 
-async function buildWorkspaceContext(cookieHeader: string, query: string): Promise<string> {
-  const parts: string[] = [];
-  try {
-    const headers = { Cookie: cookieHeader, Accept: "application/json" };
-    const [meetings, tRes, tenantContext] = await Promise.all([
-      fetchContextMeetings(headers, query),
-      fetch(`${API_BASE_URL}/tasks`, {
-        headers,
-        cache: "no-store",
-        signal: AbortSignal.timeout(INTERNAL_CALL_TIMEOUT_MS),
-      }),
-      fetchTenantContext(headers),
-    ]);
+interface WorkspaceContext extends MeetingContext {
+  pendingTasks: PendingTaskContext;
+}
 
-    // FIRST, ahead of meetings and tasks: the company context is the backdrop the rest is
-    // read against, not another item in a list.
-    if (tenantContext) {
-      const ctxLines = buildTenantContextLines(tenantContext);
-      if (ctxLines.length > 0) {
-        parts.push(...ctxLines);
-        parts.push("");
-      }
-    }
-
-    if (meetings.label && meetings.items.length > 0) {
-      parts.push(meetings.label);
-      for (const m of meetings.items) {
-        const date = m.startedAt ? ` (${m.startedAt.slice(0, 10)})` : "";
-        parts.push(
-          `- "${sanitizeContextValue(m.title ?? "sem título")}"${date}: ${sanitizeContextValue(
-            m.summarySnippet ?? "sem resumo",
-          )}`,
-        );
-      }
-    }
-
-    if (tRes.ok) {
-      const data = (await tRes.json()) as {
-        items?: Array<{
-          title?: string;
-          status?: string;
-          priority?: string;
-          dueDate?: string;
-          meetingTitle?: string;
-        }>;
-      };
-      const items = (data.items ?? []).slice(0, 20);
-      if (items.length > 0) {
-        parts.push("\nACTION ITEMS ABERTOS:");
-        for (const t of items) {
-          const due = t.dueDate ? ` (vence ${t.dueDate.slice(0, 10)})` : "";
-          parts.push(
-            `- [${sanitizeContextValue(t.status ?? "?")}/${sanitizeContextValue(
-              t.priority ?? "?",
-            )}] ${sanitizeContextValue(t.title ?? "?")}${due} — reunião: ${sanitizeContextValue(
-              t.meetingTitle ?? "?",
-            )}`,
-          );
-        }
-      }
-    }
-  } catch {
-    // backend unavailable — carry on without workspace context
-  }
-  // Trimmed: the company block ends with a blank separator line, which is a separator only
-  // when a section follows it. A tenant with context but no meetings and no tasks would
-  // otherwise hand the fence a body ending in whitespace.
-  return parts.join("\n").trim();
+async function buildWorkspaceContext(
+  cookieHeader: string,
+  query: string,
+  readCompanyContext: boolean,
+): Promise<WorkspaceContext> {
+  const headers = { Cookie: cookieHeader, Accept: "application/json" };
+  const api = { apiBaseUrl: API_BASE_URL, headers, timeoutMs: INTERNAL_CALL_TIMEOUT_MS };
+  const [meetings, tasks, tenantContext] = await Promise.all([
+    fetchMeetingContext(api, query),
+    fetchPendingTaskContext(api),
+    readCompanyContext ? fetchTenantContext(headers) : Promise.resolve(null),
+  ]);
+  const parts = tenantContext ? buildTenantContextLines(tenantContext) : [];
+  parts.push(meetings.text, tasks.text);
+  return { text: parts.filter(Boolean).join("\n\n"), sources: meetings.sources, pendingTasks: tasks };
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -744,19 +639,27 @@ export async function POST(req: Request): Promise<Response> {
   const lastUserMsg = [...history].reverse().find((m) => m.role === "user")?.content ?? "";
   const safeQuery = redactPii(lastUserMsg);
   phase("workspace-context");
-  const workspaceContext = await buildWorkspaceContext(cookieHeader, safeQuery);
+  const workspaceContext = await buildWorkspaceContext(cookieHeader, safeQuery, session.readCompanyContext);
+  const needsTaskList = /diretor|executiv|panorama|consolid/i.test(safeQuery)
+    && /pend[eê]ncia|tarefas|pending|tasks|action\s*items/i.test(safeQuery);
+  const taskEvidence = needsTaskList
+    ? formatPendingTaskEvidence(workspaceContext.pendingTasks, workspaceContext.sources)
+    : "";
 
   // PII Shield (ADR 0012): redacts structured PII from the context (meeting and task titles
   // come raw from the upload; the company context is free text typed at /settings/context)
   // and from every history message BEFORE any call to the external LLM provider.
   phase("redact");
-  const safeContext = redactPii(workspaceContext);
+  const safeContext = [
+    redactPii(workspaceContext.text),
+    formatMeetingSources(workspaceContext.sources),
+  ].filter(Boolean).join("\n\n");
   const safeHistory: ChatMessage[] = history.map((m) => ({
     role: m.role,
     content: redactPii(m.content),
   }));
 
-  // Fence with a per-request nonce, on top of sanitizeContextValue: defense in depth. If
+  // Fence with a per-request nonce, on top of clampContextValue: defense in depth. If
   // some new path lets a raw `<` through again, the attacker still doesn't know this request's
   // id to close the block — the delimiter stops being guessable.
   const fenceId = crypto.randomUUID();
@@ -770,7 +673,10 @@ export async function POST(req: Request): Promise<Response> {
       `<workspace_context_${fenceId}>\n${safeContext}\n</workspace_context_${fenceId}>`
     : `${SYSTEM_PROMPT}\n\n(Sem contexto de workspace disponível agora — responda de forma geral e, se precisar de dados de reuniões, peça pro usuário abrir/enviar a reunião.)`;
 
-  const messages: ChatMessage[] = [{ role: "system", content: systemContent }, ...safeHistory];
+  const answerInstructions = taskEvidence
+    ? `${systemContent}\n\nNeste panorama, concentre a análise em decisões, riscos e relações entre áreas. O aplicativo anexará a lista atual de pendências consultadas, com responsáveis, prazos e fontes. Não reproduza essa lista nem crie uma seção de tarefas: ela será anexada diretamente após sua resposta. Não equipare as tarefas anexadas a critérios obrigatórios de liberação.`
+    : systemContent;
+  const messages: ChatMessage[] = [{ role: "system", content: answerInstructions }, ...safeHistory];
   // Already resolved in the authentication gate above — no second trip to /auth/me.
   const tenantId = session.tenantId;
   phase("provider-call");
@@ -810,8 +716,8 @@ export async function POST(req: Request): Promise<Response> {
         messages,
         stream: true,
         stream_options: { include_usage: true },
-        temperature: 0.4,
-        max_tokens: 900,
+        temperature: 0,
+        max_tokens: 1800,
       }),
     });
   } catch {
@@ -839,6 +745,8 @@ export async function POST(req: Request): Promise<Response> {
 
   phase("stream-build");
   const stream = openAiSseToNdjson(upstream.body, {
+    contentTransform: createMeetingSourceLinkTransform(workspaceContext.sources),
+    completionContent: taskEvidence ? `\n\n${taskEvidence}` : undefined,
     onComplete: (usage) => {
       recordUsage(cfg, tenantId, usage, Date.now() - startedAt, "ok");
     },

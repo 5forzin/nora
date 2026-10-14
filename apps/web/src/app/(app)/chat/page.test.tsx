@@ -36,6 +36,7 @@ const streamChat = vi.fn();
 const createChatSession = vi.fn();
 const appendChatMessage = vi.fn();
 const getChatSession = vi.fn();
+const getMe = vi.fn();
 vi.mock('@/lib/api/client', async (importOriginal) => ({
   // eslint-disable-next-line @typescript-eslint/consistent-type-imports
   ...(await importOriginal<typeof import('@/lib/api/client')>()),
@@ -43,10 +44,17 @@ vi.mock('@/lib/api/client', async (importOriginal) => ({
   createChatSession: (...a: unknown[]) => createChatSession(...a),
   appendChatMessage: (...a: unknown[]) => appendChatMessage(...a),
   getChatSession: (...a: unknown[]) => getChatSession(...a),
+  getMe: () => getMe(),
 }));
 
 import ChatPage from '@/app/(app)/chat/page';
 import { errorCopy } from '@/lib/strings';
+import { WorkspaceProvider } from '@/components/enterprise/workspace-provider';
+import { readerWorkspace } from '@/fixtures/workspace-access';
+
+function renderChat() {
+  return render(<WorkspaceProvider><ChatPage /></WorkspaceProvider>);
+}
 
 function composer(): HTMLTextAreaElement {
   return document.querySelector('textarea') as HTMLTextAreaElement;
@@ -60,14 +68,46 @@ beforeEach(() => {
   createChatSession.mockReset().mockResolvedValue({ id: 's-1', title: 'Nova sessão' });
   appendChatMessage.mockReset().mockResolvedValue(undefined);
   getChatSession.mockReset().mockResolvedValue({ title: 'Sessão', messages: [] });
+  getMe.mockReset().mockResolvedValue(readerWorkspace);
 });
 
 afterEach(cleanup);
 
+describe('meeting access', () => {
+  it('keeps the composer available to a reader without meeting or task write permissions', async () => {
+    renderChat();
+    await vi.waitFor(() => expect(composer()).not.toBeNull());
+    expect(readerWorkspace.permissions.createMeetings).toBe(false);
+    expect(readerWorkspace.permissions.writeTasks).toBe(false);
+  });
+
+  it('does not load saved conversations for an administrator without meeting read access', async () => {
+    params = new URLSearchParams({ s: 'saved-session' });
+    getMe.mockResolvedValue({
+      ...readerWorkspace,
+      capabilities: { ...readerWorkspace.capabilities, manageUsers: true, manageAccess: true, viewExecutiveOverview: false },
+      permissions: { ...readerWorkspace.permissions, readMeetings: false },
+    });
+    renderChat();
+    await screen.findByText('Você não tem permissão para consultar reuniões neste workspace.');
+    expect(composer()).toBeNull();
+    expect(getChatSession).not.toHaveBeenCalled();
+    expect(streamChat).not.toHaveBeenCalled();
+  });
+
+  it('keeps chat unavailable when permission metadata is missing', async () => {
+    getMe.mockResolvedValue({ ...readerWorkspace, permissions: undefined });
+    renderChat();
+    await screen.findByText('Você não tem permissão para consultar reuniões neste workspace.');
+    expect(composer()).toBeNull();
+    expect(createChatSession).not.toHaveBeenCalled();
+  });
+});
+
 describe('the question carried over from the landing', () => {
   it('seeds the composer from ?q= instead of dropping it', async () => {
     params = new URLSearchParams({ q: 'O que ficou pendente esta semana?' });
-    render(<ChatPage />);
+    renderChat();
 
     await vi.waitFor(() => expect(composer()).not.toBeNull());
     expect(composer().value).toBe('O que ficou pendente esta semana?');
@@ -75,7 +115,7 @@ describe('the question carried over from the landing', () => {
 
   it('does not send it by itself — a link must not spend an LLM call on its own', async () => {
     params = new URLSearchParams({ q: 'Resuma minha última reunião' });
-    render(<ChatPage />);
+    renderChat();
 
     await vi.waitFor(() => expect(composer().value).not.toBe(''));
     expect(streamChat).not.toHaveBeenCalled();
@@ -84,7 +124,7 @@ describe('the question carried over from the landing', () => {
 
   it('takes the parameter out of the URL, so a reload does not overwrite what was typed', async () => {
     params = new URLSearchParams({ q: 'Quais riscos apareceram?' });
-    render(<ChatPage />);
+    renderChat();
 
     await vi.waitFor(() => expect(replace).toHaveBeenCalled());
     expect(replace.mock.calls[0][0]).toBe('/chat');
@@ -92,7 +132,7 @@ describe('the question carried over from the landing', () => {
 
   it('leaves an existing conversation alone: ?s= means they came back to a session', async () => {
     params = new URLSearchParams({ s: 'sess-9', q: 'pergunta antiga' });
-    render(<ChatPage />);
+    renderChat();
 
     await vi.waitFor(() => expect(getChatSession).toHaveBeenCalledWith('sess-9'));
     expect(composer().value).toBe('');
@@ -100,7 +140,7 @@ describe('the question carried over from the landing', () => {
   });
 
   it('does nothing at all without the parameter', async () => {
-    render(<ChatPage />);
+    renderChat();
 
     await vi.waitFor(() => expect(composer()).not.toBeNull());
     expect(composer().value).toBe('');
@@ -124,7 +164,7 @@ describe('a chat turn the backend refused for budget reasons', () => {
       body: null,
       json: async () => ({}),
     });
-    render(<ChatPage />);
+    renderChat();
     await ask();
 
     const answer = await vi.waitFor(() => screen.getByTestId('answer'));
@@ -138,7 +178,7 @@ describe('a chat turn the backend refused for budget reasons', () => {
       body: null,
       json: async () => ({ error: 'Muitas mensagens em pouco tempo.' }),
     });
-    render(<ChatPage />);
+    renderChat();
     await ask();
 
     const answer = await vi.waitFor(() => screen.getByTestId('answer'));
@@ -152,7 +192,7 @@ describe('a chat turn the backend refused for budget reasons', () => {
       body: null,
       json: async () => ({ error: 'Provedor indisponível.' }),
     });
-    render(<ChatPage />);
+    renderChat();
     await ask();
 
     const answer = await vi.waitFor(() => screen.getByTestId('answer'));

@@ -1,0 +1,38 @@
+import type { MeResponse } from '@/lib/api/types';
+
+export const readerWorkspace: MeResponse = {
+  userId: 'reader-user',
+  tenantId: 'example-workspace',
+  email: 'reader@example.com',
+  displayName: 'Reader',
+  emailVerified: true,
+  createdAt: '2026-10-01T12:00:00Z',
+  tenantName: 'Example workspace',
+  plan: 'ENTERPRISE',
+  root: false,
+  capabilities: {
+    manageUsers: false,
+    manageAccess: false,
+    readCompanyContext: false,
+    manageCompanyContext: false,
+    viewExecutiveOverview: true,
+  },
+  permissions: {
+    readMeetings: true,
+    createMeetings: false,
+    captureMeetings: false,
+    updateMeetings: false,
+    reprocessMeetings: false,
+    deleteMeetings: false,
+    eraseMeetings: false,
+    readTasks: true,
+    writeTasks: false,
+    readFlows: true,
+    manageFlows: false,
+    testFlows: false,
+    readIntegrations: true,
+    manageIntegrations: false,
+    readWorkspace: true,
+    renameWorkspace: false,
+  },
+};

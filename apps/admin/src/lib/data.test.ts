@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CostGroupBy } from "./contracts";
 import type { NewModelInput } from "./data";
-import { createModel, getCost, getModels, REQUIRED_MODEL_FIELDS } from "./data";
+import { bindService, createModel, getCost, getModels, REQUIRED_MODEL_FIELDS } from "./data";
 
 const PLATFORM_DTOS = new URL(
   "../../../../services/api/src/main/java/br/com/nora/api/api/dto/platform/PlatformDtos.java",
@@ -202,6 +202,24 @@ describe("cost telemetry query", () => {
 });
 
 describe("transport", () => {
+  it("returns the saved binding instead of guessing its state from the request", async () => {
+    stubFetch({ service: "chat", modelId: "saved-model", enabled: false });
+    await expect(bindService("chat", "requested-model", true, "operator@example.test")).resolves.toEqual({
+      service: "chat", modelId: "saved-model", enabled: false,
+    });
+  });
+
+  it("returns the created model with the API id and catalog field names", async () => {
+    stubFetch({ ...COMPLETE_INPUT, id: "api-model-id", enabled: true });
+    const result = await createModel(COMPLETE_INPUT, "operator@example.test");
+    expect(result).toMatchObject({
+      id: "api-model-id", label: COMPLETE_INPUT.displayName,
+      inputCostPer1M: COMPLETE_INPUT.priceInputPerMTok,
+      outputCostPer1M: COMPLETE_INPUT.priceOutputPerMTok,
+      cachedInputCostPer1M: COMPLETE_INPUT.priceCachedInputPerMTok,
+    });
+  });
+
   it("turns a non-2xx into an error that names the status and the path", async () => {
     stubFetch({}, { status: 503 });
     await expect(getModels()).rejects.toThrow("Plataforma respondeu 503 em /admin/platform/models");

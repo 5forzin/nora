@@ -1,5 +1,9 @@
+import { isSessionIdentity, sameSessionIdentity, type SessionIdentity } from "./session-identity.ts";
+import { isPermanentUploadError, isSessionUploadError } from "./upload-errors.ts";
+
 export interface PendingMeeting {
   id: string;
+  owner: SessionIdentity | null;
   status: "pending" | "failed_permanently" | "completed";
   payload: {
     title: string;
@@ -16,7 +20,12 @@ export interface PendingMeeting {
   lastError?: string;
 }
 
-const STORAGE_KEY = "nora-pending-meetings";
+const LEGACY_STORAGE_KEY = "nora-pending-meetings";
+
+function storageKey(owner: SessionIdentity): string {
+  if (!isSessionIdentity(owner)) throw new Error("SESSION_UNAVAILABLE: Identidade inválida.");
+  return `${LEGACY_STORAGE_KEY}:v2:${owner.tenantId.toLowerCase()}:${owner.userId.toLowerCase()}`;
+}
 
 function isPendingMeeting(v: unknown): v is PendingMeeting {
   return (
@@ -28,9 +37,9 @@ function isPendingMeeting(v: unknown): v is PendingMeeting {
   );
 }
 
-export function getPendingMeetings(): PendingMeeting[] {
+function readQueue(key: string): PendingMeeting[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     // Validate the shape: localStorage may hold junk from older versions. Audit #108.
@@ -40,22 +49,76 @@ export function getPendingMeetings(): PendingMeeting[] {
   }
 }
 
+export function getPendingMeetings(owner: SessionIdentity): PendingMeeting[] {
+  return readQueue(storageKey(owner)).filter((meeting) =>
+    isSessionIdentity(meeting.owner) && sameSessionIdentity(meeting.owner, owner));
+}
+
+/** Old entries have no trustworthy account identity. Keep them untouched and never auto-upload. */
+export function getUnownedMeetings(): PendingMeeting[] {
+  return readQueue(LEGACY_STORAGE_KEY);
+}
+
+export function exportUnownedMeetings(): string {
+  return localStorage.getItem(LEGACY_STORAGE_KEY) ?? "[]";
+}
+
 export function savePendingMeeting(meeting: PendingMeeting): void {
-  const meetings = getPendingMeetings();
+  const key = meeting.owner ? storageKey(meeting.owner) : LEGACY_STORAGE_KEY;
+  const meetings = readQueue(key);
   const existing = meetings.findIndex((m) => m.id === meeting.id);
   if (existing >= 0) {
     meetings[existing] = meeting;
   } else {
     meetings.push(meeting);
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(meetings));
+  localStorage.setItem(key, JSON.stringify(meetings));
 }
 
-export function removePendingMeeting(id: string): void {
-  const meetings = getPendingMeetings().filter((m) => m.id !== id);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(meetings));
+export function removePendingMeeting(owner: SessionIdentity, id: string): void {
+  const key = storageKey(owner);
+  const meetings = readQueue(key).filter((meeting) => meeting.id !== id);
+  localStorage.setItem(key, JSON.stringify(meetings));
 }
 
-export function getPendingCount(): number {
-  return getPendingMeetings().filter((m) => m.status === "pending").length;
+export function getPendingCount(owner: SessionIdentity): number {
+  return getPendingMeetings(owner).filter((meeting) => meeting.status === "pending").length;
+}
+
+export function resumeFailedMeetings(owner: SessionIdentity): void {
+  for (const meeting of getPendingMeetings(owner)) {
+    if (meeting.status === "failed_permanently") {
+      savePendingMeeting({ ...meeting, status: "pending", retryCount: 0, lastError: undefined });
+    }
+  }
+}
+
+export async function retryPendingMeetings(
+  owner: SessionIdentity | null,
+  upload: (meeting: PendingMeeting, owner: SessionIdentity) => Promise<unknown>,
+  inFlight: Set<string>,
+): Promise<void> {
+  if (!owner || !isSessionIdentity(owner)) return;
+  const pending = getPendingMeetings(owner).filter((meeting) => meeting.status === "pending" && meeting.retryCount < 10);
+  await Promise.all(pending.map(async (meeting) => {
+    const key = `${storageKey(owner)}:${meeting.id}`;
+    if (inFlight.has(key)) return;
+    inFlight.add(key);
+    try {
+      await upload(meeting, owner);
+      removePendingMeeting(owner, meeting.id);
+    } catch (error) {
+      // Signing out, changing accounts or losing upload permission must not exhaust the queue.
+      if (isSessionUploadError(error)) return;
+      const retryCount = meeting.retryCount + 1;
+      savePendingMeeting({
+        ...meeting,
+        status: isPermanentUploadError(error) || retryCount >= 10 ? "failed_permanently" : "pending",
+        retryCount,
+        lastError: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      inFlight.delete(key);
+    }
+  }));
 }

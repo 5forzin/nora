@@ -34,6 +34,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8
 const REFRESH_THRESHOLD = 0.8;
 /** Safety floor: never schedules less than 15s. */
 const MIN_REFRESH_DELAY_MS = 15_000;
+const REFRESH_AT_KEY = 'nora:refresh-at';
 
 export interface SessionUser {
   userId: string;
@@ -114,6 +115,7 @@ export function getCurrentUser(): SessionUser | null {
 export function clearLocalSession(): void {
   cancelScheduledRefresh();
   clearCookie(USER_COOKIE);
+  try { sessionStorage.removeItem(REFRESH_AT_KEY); } catch { /* Storage may be unavailable. */ }
 }
 
 /**
@@ -149,9 +151,23 @@ export function scheduleRefresh(expiresInSeconds: number): void {
     Math.floor(expiresInSeconds * 1000 * REFRESH_THRESHOLD),
     MIN_REFRESH_DELAY_MS,
   );
+  try { sessionStorage.setItem(REFRESH_AT_KEY, String(Date.now() + delayMs)); } catch { /* Timer still works without storage. */ }
   refreshTimerId = setTimeout(() => {
+    refreshTimerId = null;
     void runProactiveRefresh();
   }, delayMs);
+}
+
+/** Restore the refresh timer after a full navigation; token cookies remain httpOnly. */
+export function resumeSessionRefresh(): void {
+  if (typeof window === 'undefined' || !getCurrentUser() || refreshTimerId !== null) return;
+  let refreshAt = 0;
+  try { refreshAt = Number(sessionStorage.getItem(REFRESH_AT_KEY)); } catch { /* Refresh below. */ }
+  const delay = Number.isFinite(refreshAt) ? Math.max(0, refreshAt - Date.now()) : 0;
+  refreshTimerId = setTimeout(() => {
+    refreshTimerId = null;
+    void runProactiveRefresh();
+  }, delay);
 }
 
 export function cancelScheduledRefresh(): void {
@@ -191,7 +207,7 @@ let refreshInFlight: Promise<SharedRefreshResult> | null = null;
  */
 export function sharedRefresh(): Promise<SharedRefreshResult> {
   if (refreshInFlight) return refreshInFlight;
-  refreshInFlight = (async (): Promise<SharedRefreshResult> => {
+  const rotate = async (): Promise<SharedRefreshResult> => {
     try {
       const resp = await fetch(`${API_BASE_URL}/auth/refresh`, {
         method: 'POST',
@@ -210,11 +226,16 @@ export function sharedRefresh(): Promise<SharedRefreshResult> {
       return { ok: true, status: resp.status, expiresInSeconds };
     } catch {
       return { ok: false, status: null, expiresInSeconds: null };
-    } finally {
-      // Clear after completing — the next call creates a new promise if needed.
-      refreshInFlight = null;
     }
-  })();
+  };
+  // Cookies are shared across tabs; serializing rotation avoids revoking a family
+  // when two documents refresh the same token concurrently.
+  refreshInFlight = (async () => {
+    if (typeof navigator !== 'undefined' && navigator.locks) {
+      return await navigator.locks.request('nora:refresh', rotate);
+    }
+    return rotate();
+  })().finally(() => { refreshInFlight = null; });
   return refreshInFlight;
 }
 
@@ -234,6 +255,8 @@ export async function runProactiveRefresh(): Promise<number | null> {
     if (result.status === 401) {
       // Invalid refresh: forces a local logout + redirect.
       await handleSessionExpired();
+    } else {
+      scheduleRefresh(30);
     }
     return null;
   }
@@ -245,8 +268,7 @@ export async function runProactiveRefresh(): Promise<number | null> {
  * the user was trying to see (so the UX does not lose them in the flow).
  */
 export async function handleSessionExpired(): Promise<void> {
-  cancelScheduledRefresh();
-  clearCookie(USER_COOKIE);
+  clearLocalSession();
   if (typeof window === 'undefined') return;
   const current = window.location.pathname + window.location.search;
   const next = encodeURIComponent(current);

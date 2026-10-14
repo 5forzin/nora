@@ -1,6 +1,8 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { isSessionIdentity, type SessionIdentity } from "@/lib/session-identity";
+import { isSessionUploadError } from "@/lib/upload-errors";
 
 export interface LiveHighlightItem {
   text: string;
@@ -103,6 +105,14 @@ export function LiveHighlightsProvider({ children }: { children: ReactNode }) {
       }),
     );
     attach(
+      listen<{ message: string }>("live-analysis-error", (event) => {
+        setIsAnalyzing(false);
+        setError(isSessionUploadError(event.payload.message)
+          ? "Entre novamente na conta da gravação para retomar a análise."
+          : event.payload.message);
+      }),
+    );
+    attach(
       listen("clear-highlights", () => {
         clearHighlights();
       }),
@@ -136,11 +146,19 @@ export function useLiveAnalysisTrigger() {
   const lastAnalyzedCountRef = useRef(0);
   const lastAnalyzedTimeRef = useRef(Date.now());
   const chunkSeqRef = useRef(0);
+  const triggerGenerationRef = useRef(0);
+  const retryAfterRef = useRef(0);
 
   const triggerAnalysis = useCallback(
-    async (transcriptLines: { text: string }[], currentHighlights: LiveHighlights, force = false) => {
+    async (transcriptLines: { text: string }[], currentHighlights: LiveHighlights, owner: SessionIdentity | null, force = false) => {
       if (isAnalyzingRef.current) return;
       if (transcriptLines.length === 0) return;
+      if (Date.now() < retryAfterRef.current) return;
+      if (!isSessionIdentity(owner)) {
+        retryAfterRef.current = Date.now() + 15000;
+        await emit("live-analysis-error", { message: "Entre na conta original para retomar a análise ao vivo." });
+        return;
+      }
 
       const newLines = transcriptLines.length - lastAnalyzedCountRef.current;
       const timeSinceLastAnalysis = Date.now() - lastAnalyzedTimeRef.current;
@@ -161,32 +179,46 @@ export function useLiveAnalysisTrigger() {
       }
 
       isAnalyzingRef.current = true;
-      lastAnalyzedCountRef.current = transcriptLines.length;
+      const generation = triggerGenerationRef.current;
+      const analyzedCount = transcriptLines.length;
       lastAnalyzedTimeRef.current = Date.now();
       chunkSeqRef.current += 1;
 
       try {
         await invoke("analyze_live", {
           request: {
+            expectedOwner: owner,
             transcriptChunk,
             chunkSeq: chunkSeqRef.current,
             previousHighlights: hasAnyItem(currentHighlights) ? currentHighlights : null,
             language: "pt-BR",
           },
         });
+        if (generation === triggerGenerationRef.current) {
+          lastAnalyzedCountRef.current = analyzedCount;
+          retryAfterRef.current = 0;
+        }
       } catch (e) {
         console.error("[live-analysis] trigger failed:", e);
+        if (generation === triggerGenerationRef.current) {
+          retryAfterRef.current = Date.now() + 15000;
+          await emit("live-analysis-error", { message: isSessionUploadError(e)
+            ? "Entre novamente na conta da gravação para retomar a análise."
+            : "A análise ao vivo falhou. Tentaremos novamente; a transcrição continua." });
+        }
       } finally {
-        isAnalyzingRef.current = false;
+        if (generation === triggerGenerationRef.current) isAnalyzingRef.current = false;
       }
     },
     [],
   );
 
   const resetTrigger = useCallback(() => {
+    triggerGenerationRef.current += 1;
     lastAnalyzedCountRef.current = 0;
     lastAnalyzedTimeRef.current = Date.now();
     chunkSeqRef.current = 0;
+    retryAfterRef.current = 0;
     isAnalyzingRef.current = false;
   }, []);
 

@@ -10,8 +10,8 @@ import java.util.UUID;
  * one tenant at a time when the operator does not yet know which tenants are behind.
  *
  * <p>It reads and never writes, and it costs nothing: no provider call, only SQL over {@code
- * meetings} and {@code meeting_embeddings}. Same posture as {@code BusinessMetricsSource} (ADR
- * 0024), including which database role answers it — see the adapter.
+ * meetings}, {@code meeting_analyses} and {@code meeting_embeddings}. Same posture as {@code
+ * BusinessMetricsSource} (ADR 0024), including which database role answers it — see the adapter.
  */
 public interface EmbeddingIndexStatusSource {
 
@@ -27,15 +27,21 @@ public interface EmbeddingIndexStatusSource {
     /**
      * Counts over meetings that have an analysed summary. Indexed rows carry a vector from the
      * current model; missingVector has no row at all; staleModel has a row from another provider or
-     * model, which the search ignores just as completely as a missing one.
+     * model; staleContent has the current model but an incomplete summary payload.
      */
-    record Totals(long analysedMeetings, long indexed, long missingVector, long staleModel) {}
+    record Totals(
+            long analysedMeetings,
+            long indexed,
+            long missingVector,
+            long staleModel,
+            long staleContent) {}
 
-    /** The same four counters for one tenant. */
+    /** The same counters for one tenant. */
     record TenantIndexStatus(
             UUID tenantId,
             long analysedMeetings,
             long indexed,
             long missingVector,
-            long staleModel) {}
+            long staleModel,
+            long staleContent) {}
 }

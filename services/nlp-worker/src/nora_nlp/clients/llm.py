@@ -18,7 +18,9 @@ import logging
 from typing import Any
 
 from openai import OpenAI
+from pydantic import BaseModel
 
+from ..models import MeetingAnalysisV1
 from ..settings import Settings
 from ..time_budget import MIN_ATTEMPT_SECONDS, TimeBudget
 
@@ -152,254 +154,58 @@ class LlmClient:
         return content, tokens_input, tokens_output
 
 
+def build_strict_json_schema(model: type[BaseModel]) -> dict[str, Any]:
+    """Keep provider constraints identical to the model used to validate its response."""
+    schema = model.model_json_schema(by_alias=True)
+
+    def make_strict(node: Any) -> None:
+        if isinstance(node, dict):
+            node.pop("default", None)
+            node.pop("title", None)
+            if node.get("type") == "object":
+                # Strict outputs require every key, including nullable fields with defaults.
+                node["required"] = list(node["properties"])
+                node["additionalProperties"] = False
+            for key, value in node.items():
+                if key in {"properties", "$defs"}:
+                    for child in value.values():
+                        make_strict(child)
+                else:
+                    make_strict(value)
+        elif isinstance(node, list):
+            for value in node:
+                make_strict(value)
+
+    make_strict(schema)
+    return schema
+
+
 def build_json_schema_for_analysis() -> dict[str, Any]:
-    """MeetingAnalysisV1 JSON Schema for strict structured output."""
-    return {
-        "type": "object",
-        "properties": {
-            "summary": {"type": "string"},
-            "decisions": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "text": {"type": "string"},
-                        "confidence": {"type": "number"},
-                    },
-                    "required": ["text", "confidence"],
-                    "additionalProperties": False,
-                },
-            },
-            "actionItems": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "title": {"type": "string"},
-                        "assignee": {"type": ["string", "null"]},
-                        # The canonical schema (docs/api/llm-schemas/meeting-analysis-v1)
-                        # constrains this with `"format": "date"`; this hand-maintained copy
-                        # had dropped it, so nothing ever told the model what shape to use
-                        # and it answered with the words from the transcript, in Portuguese.
-                        # `format` is not in the strict structured-output subset, so the
-                        # constraint is carried as a description, which strict mode does honour.
-                        "dueDate": {
-                            "type": ["string", "null"],
-                            "description": (
-                                "Calendar date in ISO 8601, exactly YYYY-MM-DD. Use null when "
-                                "the transcript only gives a relative expression (tomorrow, "
-                                "next Friday, next week, or the same in the transcript's own "
-                                "language) and no absolute date can be derived from it. NEVER "
-                                "write the phrase itself."
-                            ),
-                        },
-                        "priority": {
-                            "type": "string",
-                            "enum": ["LOW", "MEDIUM", "HIGH"],
-                        },
-                        "sourceQuote": {"type": "string"},
-                    },
-                    "required": ["title", "assignee", "dueDate", "priority", "sourceQuote"],
-                    "additionalProperties": False,
-                },
-            },
-            "risks": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "text": {"type": "string"},
-                        "severity": {
-                            "type": "string",
-                            "enum": ["LOW", "MEDIUM", "HIGH"],
-                        },
-                        "category": {
-                            "type": "string",
-                            "enum": [
-                                "COMPETITION",
-                                "PRICE",
-                                "CHURN",
-                                "TIMELINE",
-                                "TECHNICAL",
-                                "COMPLIANCE",
-                                "OTHER",
-                            ],
-                        },
-                        "sourceQuote": {"type": "string"},
-                    },
-                    "required": ["text", "severity", "category", "sourceQuote"],
-                    "additionalProperties": False,
-                },
-            },
-            "opportunities": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "text": {"type": "string"},
-                        "estimatedValue": {
-                            "type": "string",
-                            "enum": ["LOW", "MEDIUM", "HIGH"],
-                        },
-                        "category": {
-                            "type": "string",
-                            "enum": ["UPSELL", "CROSS_SELL", "REFERRAL", "EXPANSION", "OTHER"],
-                        },
-                        "sourceQuote": {"type": "string"},
-                    },
-                    "required": ["text", "estimatedValue", "category", "sourceQuote"],
-                    "additionalProperties": False,
-                },
-            },
-            "sentimentOverall": {
-                "type": "string",
-                "enum": ["POSITIVE", "NEUTRAL", "NEGATIVE", "MIXED"],
-            },
-            "topics": {
-                "type": "array",
-                "items": {"type": "string"},
-            },
-            "participants": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string"},
-                        "role": {"type": ["string", "null"]},
-                        "mentionCount": {"type": "integer"},
-                    },
-                    "required": ["name", "role", "mentionCount"],
-                    "additionalProperties": False,
-                },
-            },
-            # Optional productivity (ADR 0005). When the user did not declare a goal,
-            # the prompt must instruct the LLM to emit productivity = null.
-            "productivity": {
-                "type": ["object", "null"],
-                "properties": {
-                    "score": {"type": "integer"},
-                    "band": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH"]},
-                    "coverage": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "expectedOutcome": {"type": "string"},
-                                "status": {
-                                    "type": "string",
-                                    "enum": ["ADDRESSED", "PARTIAL", "MISSED"],
-                                },
-                                "evidence": {"type": ["string", "null"]},
-                            },
-                            "required": ["expectedOutcome", "status", "evidence"],
-                            "additionalProperties": False,
-                        },
-                    },
-                    "offTopicRatio": {"type": ["number", "null"]},
-                    "decisionDensity": {"type": ["number", "null"]},
-                    "rationale": {"type": "string"},
-                },
-                "required": [
-                    "score",
-                    "band",
-                    "coverage",
-                    "offTopicRatio",
-                    "decisionDensity",
-                    "rationale",
-                ],
-                "additionalProperties": False,
-            },
-            # Optional Customer Confidence (ADR 0006 / ADR 0015). The prompt instructs
-            # the LLM to emit the object only for customer/lead/sales conversations
-            # and null for internal meetings (gating decided by the LLM).
-            "customerConfidence": {
-                "type": ["object", "null"],
-                "properties": {
-                    "score": {"type": "integer"},
-                    "band": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH"]},
-                    "trend": {
-                        "type": ["string", "null"],
-                        "enum": ["IMPROVING", "STABLE", "DECLINING", None],
-                    },
-                    "accountName": {"type": ["string", "null"]},
-                    "buyingSignals": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "type": {
-                                    "type": "string",
-                                    "enum": [
-                                        "BUDGET_DISCUSSED",
-                                        "TIMELINE_DISCUSSED",
-                                        "STAKEHOLDER_INVOLVED",
-                                        "NEXT_STEP_REQUESTED",
-                                        "REFERENCE_REQUESTED",
-                                        "PROPOSAL_REQUESTED",
-                                        "OTHER",
-                                    ],
-                                },
-                                "quote": {"type": "string"},
-                                "weight": {"type": ["number", "null"]},
-                            },
-                            "required": ["type", "quote", "weight"],
-                            "additionalProperties": False,
-                        },
-                    },
-                    "objections": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "type": {
-                                    "type": "string",
-                                    "enum": [
-                                        "PRICE",
-                                        "TIMELINE",
-                                        "AUTHORITY",
-                                        "NEED",
-                                        "COMPETITOR_MENTION",
-                                        "TRUST",
-                                        "FEATURE_GAP",
-                                        "OTHER",
-                                    ],
-                                },
-                                "quote": {"type": "string"},
-                                "severity": {
-                                    "type": "string",
-                                    "enum": ["LOW", "MEDIUM", "HIGH"],
-                                },
-                                "competitor": {"type": ["string", "null"]},
-                            },
-                            "required": ["type", "quote", "severity", "competitor"],
-                            "additionalProperties": False,
-                        },
-                    },
-                    "rationale": {"type": "string"},
-                },
-                "required": [
-                    "score",
-                    "band",
-                    "trend",
-                    "accountName",
-                    "buyingSignals",
-                    "objections",
-                    "rationale",
-                ],
-                "additionalProperties": False,
-            },
-        },
-        "required": [
-            "summary",
-            "decisions",
-            "actionItems",
-            "risks",
-            "opportunities",
-            "sentimentOverall",
-            "topics",
-            "participants",
-            "productivity",
-            "customerConfidence",
-        ],
-        "additionalProperties": False,
-    }
+    schema = build_strict_json_schema(MeetingAnalysisV1)
+    # TF-IDF terms belong to the worker, never to the provider's extraction.
+    del schema["properties"]["baselineTerms"]
+    schema["required"].remove("baselineTerms")
+    del schema["$defs"]["BaselineTerm"]
+    schema["properties"]["summary"]["description"] = (
+        "Executive summary in Markdown, in the transcript's language. Preserve explicitly "
+        "recorded monetary amounts, approved budget ceilings, overruns, quantities, corrected "
+        "dates and approval conditions. Distinguish a proposal from approval and completed "
+        "documentation from financial authorization. Keep each date tied to its stated event; "
+        "a delivery date does not establish an installation date. Do not invent missing values."
+    )
+    schema["$defs"]["Risk"]["properties"]["sourceQuote"]["description"] = (
+        "Verbatim evidence of the cause of the risk, including stated amounts, limits or "
+        "conditions when relevant. A request to record a risk alone is not its underlying "
+        "evidence. Keep PII placeholders unchanged."
+    )
+    schema["properties"]["participants"]["description"] = (
+        "At most 30 participant references supported by the transcript. PERSON_NAME "
+        "placeholders identify individual redacted occurrences, not distinct people. "
+        "Keep placeholders intact; never reconstruct names or merge them into identities. "
+        "Count only mentions supported by the visible text."
+    )
+    schema["$defs"]["ActionItem"]["properties"]["dueDate"]["description"] = (
+        "ISO 8601 date (YYYY-MM-DD), or null when the transcript only gives a relative "
+        "date such as tomorrow or Friday. Never invent an absolute date."
+    )
+    return schema

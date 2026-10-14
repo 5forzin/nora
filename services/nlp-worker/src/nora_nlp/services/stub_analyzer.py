@@ -469,7 +469,9 @@ def analyze(req: AnalyzeRequest, *, pii_redactions_applied: int = 0) -> AnalyzeR
 
     decisions = _decisions(sentences)
     productivity = _productivity(req, sentences, decisions)
-    customer_confidence = _customer_confidence(req, sentences)
+    customer_confidence = (
+        _customer_confidence(req, sentences) if req.options.include_customer_confidence else None
+    )
 
     response = AnalyzeResponse.model_validate(
         {

@@ -7,6 +7,7 @@ import br.com.nora.api.api.security.AuthCookies;
 import br.com.nora.api.api.security.AuthorizationNotRequired;
 import br.com.nora.api.api.security.CurrentUser;
 import br.com.nora.api.application.identity.AuthService;
+import br.com.nora.api.application.tenant.EnterpriseEntitlementService;
 import br.com.nora.api.domain.identity.User;
 import br.com.nora.api.infrastructure.security.JjwtJwtIssuer.AuthenticatedPrincipal;
 import jakarta.validation.Valid;
@@ -29,10 +30,15 @@ public class UsersController {
 
     private final AuthService authService;
     private final AuthCookies cookies;
+    private final EnterpriseEntitlementService entitlements;
 
-    public UsersController(AuthService authService, AuthCookies cookies) {
+    public UsersController(
+            AuthService authService,
+            AuthCookies cookies,
+            EnterpriseEntitlementService entitlements) {
         this.authService = authService;
         this.cookies = cookies;
+        this.entitlements = entitlements;
     }
 
     @PatchMapping("/me")
@@ -40,13 +46,7 @@ public class UsersController {
     public MeResponse updateMe(@Valid @RequestBody UpdateMeRequest req) {
         AuthenticatedPrincipal principal = CurrentUser.require();
         User user = authService.updateDisplayName(principal.userId(), req.displayName());
-        return new MeResponse(
-                user.id(),
-                user.tenantId(),
-                user.email().value(),
-                user.displayName(),
-                user.isEmailVerified(),
-                user.createdAt());
+        return MeResponse.from(user, entitlements.workspaceAccess(user.id(), user.tenantId()));
     }
 
     /**

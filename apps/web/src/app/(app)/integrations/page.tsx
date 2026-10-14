@@ -9,11 +9,11 @@
  * comes back here with ?connected={provider} or ?error={codigo} — both become
  * a friendly notice and the URL is cleaned right after.
  *
- * Product honesty: a connector without an OAuth credential on the server shows
- * as "Não configurado neste ambiente" WITHOUT a dead button; the roadmap of the
- * other connectors is a text block in the footer, without faking integration.
+ * Only configured connectors are offered. Existing connections remain visible
+ * so they can be disconnected if their server configuration is removed.
  */
 import Link from 'next/link';
+import { useWorkspaceAccess } from '@/components/enterprise/workspace-provider';
 import type { Route } from 'next';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState, type ReactNode } from 'react';
@@ -271,6 +271,7 @@ function desdeQuando(iso: string): string {
 /* ── Connector card ────────────────────────────────────────────────────── */
 
 function CardConector({
+  canManage,
   status,
   conectando,
   onConectar,
@@ -278,6 +279,7 @@ function CardConector({
   onStatus,
   onAviso,
 }: {
+  canManage: boolean;
   status: IntegrationStatus;
   conectando: boolean;
   onConectar: () => void;
@@ -427,7 +429,7 @@ function CardConector({
             >
               {meta.name}
             </span>
-            {status.connected ? (
+            {status.connected && status.configured ? (
               <span className="chip" style={{ color: 'var(--success)' }}>
                 <span
                   className="status-dot"
@@ -437,7 +439,7 @@ function CardConector({
               </span>
             ) : !status.configured ? (
               <span className="chip" style={{ color: 'var(--muted)' }}>
-                Não configurado neste ambiente
+                Conexão indisponível
               </span>
             ) : null}
           </div>
@@ -446,7 +448,7 @@ function CardConector({
           </p>
         </div>
 
-        <div style={{ flexShrink: 0, paddingTop: 2 }}>
+        {canManage && <div style={{ flexShrink: 0, paddingTop: 2 }}>
           {status.connected ? (
             confirmando ? (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
@@ -511,7 +513,7 @@ function CardConector({
               </button>
             )
           ) : null}
-        </div>
+        </div>}
       </div>
 
       {status.connected && (
@@ -549,7 +551,7 @@ function CardConector({
         </p>
       )}
 
-      {status.provider === 'telegram' && !status.connected && pareamento && (
+      {canManage && status.provider === 'telegram' && !status.connected && pareamento && (
         <div
           style={{
             marginTop: 14,
@@ -599,7 +601,7 @@ function CardConector({
         </div>
       )}
 
-      {status.provider === 'trello' && !status.connected && coletandoToken && (
+      {canManage && status.provider === 'trello' && !status.connected && coletandoToken && (
         <div
           style={{
             marginTop: 14,
@@ -691,7 +693,7 @@ function CardConector({
 
 /* ── Page ──────────────────────────────────────────────────────────────── */
 
-function HubIntegracoes() {
+function HubIntegracoes({ canManage }: { canManage: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -794,7 +796,7 @@ function HubIntegracoes() {
 
   // Sorts by the hub's fixed order (google first), keeping extras at the end.
   const ordenadas = integracoes
-    ? [...integracoes].sort(
+    ? integracoes.filter((integration) => integration.configured || integration.connected).sort(
         (a, b) =>
           (ORDEM.indexOf(a.provider) + 1 || ORDEM.length + 1) -
           (ORDEM.indexOf(b.provider) + 1 || ORDEM.length + 1),
@@ -878,13 +880,15 @@ function HubIntegracoes() {
         </div>
       ) : ordenadas !== null ? (
         ordenadas.length === 0 ? (
-          <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>
-            O servidor não expôs nenhum conector neste ambiente.
-          </p>
+          <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+            <p style={{ margin: '0 0 12px' }}>Nenhuma integração disponível neste ambiente.</p>
+            <Link href="/flows" className="btn btn-secondary btn-sm">Voltar aos fluxos</Link>
+          </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {ordenadas.map((st) => (
               <CardConector
+                canManage={canManage}
                 key={st.provider}
                 status={st}
                 conectando={conectando === st.provider}
@@ -902,17 +906,6 @@ function HubIntegracoes() {
         )
       ) : null}
 
-      <div style={{ marginTop: 40, paddingTop: 18, borderTop: '1px solid var(--border)' }}>
-        <div className="sec-label" style={{ marginBottom: 6 }}>
-          No radar
-        </div>
-        <p
-          style={{ fontSize: 12, color: 'var(--muted)', margin: 0, lineHeight: 1.6, maxWidth: 560 }}
-        >
-          Jira, Salesforce e Pipedrive estão no roadmap de conectores — ainda sem data. Quando um
-          deles estiver pronto de verdade, aparece nesta página com o botão “Conectar”.
-        </p>
-      </div>
     </div>
   );
 }
@@ -933,9 +926,12 @@ function PaginaSkeleton() {
 }
 
 export default function IntegracoesPage() {
+  const { access, loading } = useWorkspaceAccess();
+  if (loading) return <PaginaSkeleton />;
+  if (!access?.permissions?.readIntegrations) return <div className="page"><h1 className="h1">Integrações</h1><p className="lede">Você não tem permissão para consultar integrações neste workspace.</p></div>;
   return (
     <Suspense fallback={<PaginaSkeleton />}>
-      <HubIntegracoes />
+      <HubIntegracoes canManage={access.permissions.manageIntegrations === true} />
     </Suspense>
   );
 }

@@ -14,6 +14,8 @@
  * where the session cookie is read.
  */
 import { invoke } from "@tauri-apps/api/core";
+import type { SessionIdentity } from "./session-identity.ts";
+import { isSessionUploadError, uploadErrorStatus } from "./upload-errors.ts";
 
 export interface UploadTranscriptRequest {
   title: string;
@@ -27,7 +29,7 @@ export interface UploadTranscriptRequest {
 }
 
 export interface UploadTranscriptOptions {
-  /** Maximum retry attempts on transient failures (network errors / 5xx). Default: 3. */
+  /** Maximum retry attempts on transient failures (network errors / 429 / 5xx). Default: 3. */
   maxRetries?: number;
   /** Initial backoff delay in ms. Default: 500. Doubles each attempt. */
   initialBackoffMs?: number;
@@ -35,31 +37,19 @@ export interface UploadTranscriptOptions {
   onRetry?: (attempt: number, delayMs: number, error: unknown) => void;
 }
 
-/** Extracts an HTTP status from the error: from the `.status` field or the "(NNN)"
- *  in the message (the Rust upload returns "Upload failed (404): ..."). */
-function extractStatus(err: unknown): number | undefined {
-  if (err && typeof err === "object") {
-    const s = (err as { status?: number }).status;
-    if (typeof s === "number") return s;
-  }
-  const msg =
-    typeof err === "string" ? err : err instanceof Error ? err.message : "";
-  const m = msg.match(/\((\d{3})\)/);
-  return m ? Number(m[1]) : undefined;
-}
-
 function isTransient(err: unknown): boolean {
   if (err == null) return false;
-  const status = extractStatus(err);
-  // With a detectable status: only 5xx is worth retrying; 4xx (auth/validation) is permanent.
-  // Before, ANY string/Error was "transient" → retried 4xx for nothing.
-  if (typeof status === "number") return status >= 500 && status < 600;
+  if (isSessionUploadError(err)) return false;
+  const status = uploadErrorStatus(err);
+  if (typeof status === "number") return status === 429 || (status >= 500 && status < 600);
   // No status (network failure/timeout) → transient.
   return typeof err === "string" || err instanceof Error;
 }
 
 export async function uploadTranscript(
   data: UploadTranscriptRequest,
+  owner: SessionIdentity,
+  idempotencyKey: string,
   options: UploadTranscriptOptions = {}
 ): Promise<{ meetingId: string }> {
   const maxRetries = options.maxRetries ?? 3;
@@ -72,6 +62,8 @@ export async function uploadTranscript(
         "upload_meeting",
         {
           request: {
+            expectedOwner: owner,
+            idempotencyKey,
             title: data.title,
             startedAt: data.startedAt,
             endedAt: data.endedAt,

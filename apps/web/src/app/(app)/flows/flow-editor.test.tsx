@@ -21,6 +21,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const push = vi.fn();
 const replace = vi.fn();
+const permissions = vi.hoisted(() => ({ readFlows: true, manageFlows: true, testFlows: true, readIntegrations: true }));
+vi.mock('@/components/enterprise/workspace-provider', () => ({
+  useWorkspaceAccess: () => ({ access: { permissions }, loading: false }),
+}));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push, replace }),
 }));
@@ -74,6 +78,7 @@ vi.mock('@xyflow/react', async () => {
 const getWorkflow = vi.fn();
 const createWorkflow = vi.fn();
 const updateWorkflow = vi.fn();
+const listIntegrations = vi.fn();
 vi.mock('@/lib/api/client', async (importOriginal) => ({
   // `importOriginal` hands back the real module for everything not stubbed below, and its type
   // parameter is the only way to say so. An `import()` type is what the API expects here.
@@ -82,6 +87,7 @@ vi.mock('@/lib/api/client', async (importOriginal) => ({
   getWorkflow: (...args: unknown[]) => getWorkflow(...args),
   createWorkflow: (...args: unknown[]) => createWorkflow(...args),
   updateWorkflow: (...args: unknown[]) => updateWorkflow(...args),
+  listIntegrations: (...args: unknown[]) => listIntegrations(...args),
   deleteWorkflow: vi.fn(),
   listWorkflowExecutions: vi.fn(async () => []),
   testWorkflow: vi.fn(),
@@ -134,14 +140,42 @@ function guard(): HTMLElement | null {
 }
 
 beforeEach(() => {
+  Object.assign(permissions, { readFlows: true, manageFlows: true, testFlows: true, readIntegrations: true });
   push.mockClear();
   replace.mockClear();
   getWorkflow.mockReset();
   createWorkflow.mockReset();
   updateWorkflow.mockReset();
+  listIntegrations.mockReset().mockResolvedValue([]);
 });
 
 afterEach(cleanup);
+
+it('preserves the graph and execution history without offering write or run controls to a reader', async () => {
+  permissions.manageFlows = false;
+  permissions.testFlows = false;
+  getWorkflow.mockResolvedValue({ id: 'wf-1', name: 'Read-only flow', active: true, definition: { nodes: [], edges: [] } });
+  render(<FlowEditor workflowId="wf-1" />);
+  await screen.findByText('Somente leitura');
+  expect((screen.getByLabelText('Nome do fluxo') as HTMLInputElement).readOnly).toBe(true);
+  expect(screen.getByTestId('canvas')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Salvar' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Testar' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Excluir' })).toBeNull();
+  fireEvent.click(screen.getByRole('tab', { name: 'Execuções' }));
+  await screen.findByText('Nenhuma execução registrada.');
+  expect(updateWorkflow).not.toHaveBeenCalled();
+});
+
+it('denies the create route and avoids loading inaccessible flows', () => {
+  permissions.manageFlows = false;
+  const { rerender } = render(<FlowEditor workflowId={null} />);
+  expect(screen.getByText('Você não tem permissão para criar fluxos.')).toBeTruthy();
+  permissions.readFlows = false;
+  rerender(<FlowEditor workflowId="wf-1" />);
+  expect(screen.getByText('Você não tem permissão para consultar este fluxo.')).toBeTruthy();
+  expect(getWorkflow).not.toHaveBeenCalled();
+});
 
 describe('leaving the flow editor with unsaved changes', () => {
   it('lets a clean document close without a prompt', () => {
@@ -248,5 +282,49 @@ describe('leaving the flow editor with unsaved changes', () => {
     await vi.waitFor(() => expect(push).toHaveBeenCalledWith('/flows'));
     // The save cleared the dirty flag, so nothing prompts on the way out.
     expect(fireBeforeUnload()).toBe(true);
+  });
+});
+
+describe('saved integration actions', () => {
+  const definition = {
+    nodes: [
+      { id: 'n1', kind: 'trigger', type: 'meeting.analysis_completed' },
+      { id: 'n2', kind: 'action', type: 'gmail_send_email', params: { to: 'someone@example.com', subject: 'Follow-up' } },
+    ],
+    edges: [{ id: 'e1', source: 'n1', target: 'n2' }],
+  };
+
+  it('preserves disconnected nodes while refusing execution or activation and permits saving paused', async () => {
+    getWorkflow.mockResolvedValue({ id: 'wf-1', name: 'Follow-up', active: true, definition });
+    updateWorkflow.mockResolvedValue({ id: 'wf-1', updatedAt: '2026-10-14T12:00:00Z' });
+    const { container } = render(<FlowEditor workflowId="wf-1" />);
+    await vi.waitFor(() => expect(container.querySelector('.flows-name-input')).not.toBeNull());
+    const testButton = container.querySelector<HTMLButtonElement>('.flows-topbar .btn-secondary')!;
+    const saveButton = container.querySelector<HTMLButtonElement>('.flows-topbar .btn-primary')!;
+    expect(testButton.disabled).toBe(true);
+    expect(screen.getByRole('status')).toBeTruthy();
+    fireEvent.click(saveButton);
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(updateWorkflow).not.toHaveBeenCalled();
+
+    fireEvent.click(container.querySelector<HTMLInputElement>('.flows-switch input')!);
+    fireEvent.click(saveButton);
+    await vi.waitFor(() => expect(updateWorkflow).toHaveBeenCalledOnce());
+    const payload = updateWorkflow.mock.calls[0][1];
+    expect(payload.active).toBe(false);
+    expect(payload.definition.nodes[1]).toMatchObject(definition.nodes[1]);
+    expect(payload.definition.edges).toEqual(definition.edges);
+  });
+
+  it('refreshes connection availability after returning from the integration hub', async () => {
+    getWorkflow.mockResolvedValue({ id: 'wf-1', name: 'Follow-up', active: false, definition });
+    const { container } = render(<FlowEditor workflowId="wf-1" />);
+    await vi.waitFor(() => expect(container.querySelector('.flows-name-input')).not.toBeNull());
+    const testButton = container.querySelector<HTMLButtonElement>('.flows-topbar .btn-secondary')!;
+    expect(testButton.disabled).toBe(true);
+    listIntegrations.mockResolvedValue([{ provider: 'google', configured: true, connected: true }]);
+    fireEvent.focus(window);
+    await vi.waitFor(() => expect(testButton.disabled).toBe(false));
+    expect(screen.queryByRole('status')).toBeNull();
   });
 });

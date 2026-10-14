@@ -14,9 +14,47 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { openAiSseToNdjson, type StreamTrace, type StreamUsage } from '@/lib/chat/sse-to-ndjson';
+import { createMeetingSourceLinkTransform } from '@/lib/chat/source-links';
 
 const IDLE_MS = 45_000;
 const NOTICE = '\n\n_(interrupted)_';
+
+it('appends trusted records after the completed answer and preserves their source links', async () => {
+  const id = '12345678-9012-4012-8012-123456789012';
+  const answer = 'The pilot remains conditional.';
+  const appendix = `\n\n## Current tasks\n- Deliver plan [Source](/meetings/${id})`;
+  const raw = await drain(
+    openAiSseToNdjson(
+      upstreamOf([
+        `data: ${JSON.stringify({ choices: [{ delta: { content: answer } }] })}\n\n`,
+        'data: [DONE]\n\n',
+      ]),
+      {
+        onComplete: vi.fn(),
+        trace: freshTrace(),
+        idleTimeoutMs: IDLE_MS,
+        idleNotice: NOTICE,
+        completionContent: appendix,
+        contentTransform: createMeetingSourceLinkTransform([{ reference: 'M1', id, title: 'Review' }]),
+      },
+    ),
+  );
+  const content = raw.trim().split('\n').map((line) => JSON.parse(line).c).join('');
+  expect(content).toBe(answer + appendix);
+});
+
+it('does not append a complete task list to an interrupted response', async () => {
+  vi.useFakeTimers();
+  const upstream = stalledUpstreamOf(['data: {"choices":[{"delta":{"content":"Partial"}}]}\n\n']);
+  const result = drain(openAiSseToNdjson(upstream.stream, {
+    onComplete: vi.fn(), trace: freshTrace(), idleTimeoutMs: IDLE_MS, idleNotice: NOTICE,
+    completionContent: '\n\n## Current tasks\n- Deliver plan',
+  }));
+  await vi.advanceTimersByTimeAsync(IDLE_MS + 1);
+  const raw = await result;
+  expect(raw).toContain('(interrupted)');
+  expect(raw).not.toContain('Current tasks');
+});
 
 function freshTrace(): StreamTrace {
   return {
@@ -86,6 +124,65 @@ afterEach(() => {
 });
 
 describe('openAiSseToNdjson', () => {
+  it('normalizes citations split across answer deltas without changing reasoning', async () => {
+    const id = '38209128-385f-40f4-a387-c250e9f8432f';
+    const sourceLinks = createMeetingSourceLinkTransform([
+      { reference: 'M1', id, title: 'Planning' },
+    ]);
+    const stream = openAiSseToNdjson(
+      upstreamOf([
+        delta({ reasoning_content: '[thinking](https://example.com/meetings/unknown)' }),
+        delta({ content: 'Decision: [source](https://example.com/meetings/' }),
+        delta({ content: `${id}) Follow-up [pending` }),
+        'data: [DONE]\n\n',
+      ]),
+      {
+        onComplete: () => undefined,
+        trace: freshTrace(),
+        idleTimeoutMs: IDLE_MS,
+        idleNotice: NOTICE,
+        contentTransform: sourceLinks,
+      },
+    );
+
+    const frames = (await drain(stream))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    expect(
+      frames
+        .filter((f) => f.t === 'r')
+        .map((f) => f.c)
+        .join(''),
+    ).toBe('[thinking](https://example.com/meetings/unknown)');
+    expect(
+      frames
+        .filter((f) => f.t === 'c')
+        .map((f) => f.c)
+        .join(''),
+    ).toBe(`Decision: [source](/meetings/${id}) Follow-up [pending`);
+  });
+
+  it('flushes transformed answer text before the idle notice', async () => {
+    vi.useFakeTimers();
+    const upstream = stalledUpstreamOf([delta({ content: 'Text [unfinished' })]);
+    const stream = openAiSseToNdjson(upstream.stream, {
+      onComplete: () => undefined,
+      trace: freshTrace(),
+      idleTimeoutMs: IDLE_MS,
+      idleNotice: NOTICE,
+      contentTransform: createMeetingSourceLinkTransform([]),
+    });
+    const collected = drain(stream);
+    await vi.advanceTimersByTimeAsync(IDLE_MS + 1);
+    const content = (await collected)
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line).c)
+      .join('');
+    expect(content).toBe(`Text [unfinished${NOTICE}`);
+  });
+
   it('frames reasoning and content apart, in arrival order', async () => {
     const trace = freshTrace();
     const stream = openAiSseToNdjson(
@@ -121,7 +218,12 @@ describe('openAiSseToNdjson', () => {
   it('ignores lines that are not SSE data and payloads that do not parse', async () => {
     const trace = freshTrace();
     const stream = openAiSseToNdjson(
-      upstreamOf([': keep-alive\n\n', 'event: ping\n\n', 'data: {oops\n\n', delta({ content: 'ok' })]),
+      upstreamOf([
+        ': keep-alive\n\n',
+        'event: ping\n\n',
+        'data: {oops\n\n',
+        delta({ content: 'ok' }),
+      ]),
       { onComplete: () => undefined, trace, idleTimeoutMs: IDLE_MS, idleNotice: NOTICE },
     );
 

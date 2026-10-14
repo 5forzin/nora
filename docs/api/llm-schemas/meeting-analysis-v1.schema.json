@@ -11,7 +11,7 @@
       "type": "string",
       "minLength": 30,
       "maxLength": 2000,
-      "description": "Resumo executivo em texto puro, 1 a 3 parágrafos, no idioma da transcrição."
+      "description": "Resumo executivo em Markdown, no idioma da transcrição, preservando valores, limites, quantidades, datas corrigidas e condições de aprovação explicitamente registrados."
     },
     "decisions": {
       "type": "array",

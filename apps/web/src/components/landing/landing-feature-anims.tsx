@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from 'react';
 
 // ── 1 · PII Shield ──
 function PIIShieldAnim() {
@@ -19,7 +19,7 @@ function PIIShieldAnim() {
         </span>
         <span> nos campos livres. Mandei mensagem pro </span>
         <span className="pii-span" data-kind="email">
-          <span className="pii-orig">bruno@totvs.com.br</span>
+          <span className="pii-orig">bruno@example.com</span>
           <span className="pii-mask">[[EMAIL_1]]</span>
         </span>
         <span>{'"'}</span>
@@ -84,30 +84,30 @@ function ProductivityAnim() {
             cy="46"
             r={r}
             fill="none"
-            stroke={score < 40 ? "#c97766" : score < 70 ? "#d4a04c" : "#62b585"}
+            stroke={score < 40 ? '#c97766' : score < 70 ? '#d4a04c' : '#62b585'}
             strokeWidth="5"
             strokeLinecap="round"
             strokeDasharray={`${dash} ${c}`}
             transform="rotate(-90 46 46)"
-            style={{ transition: "stroke 240ms ease" }}
+            style={{ transition: 'stroke 240ms ease' }}
           />
         </svg>
         <div className="fa-prod-num">{score}</div>
       </div>
       <div className="fa-prod-outcomes">
-        <div className="fa-prod-row" style={{ animationDelay: "2.4s" }}>
+        <div className="fa-prod-row" style={{ animationDelay: '2.4s' }}>
           <span className="fa-prod-check fa-addressed">✓</span>
           <span>Alinhar escopo</span>
         </div>
-        <div className="fa-prod-row" style={{ animationDelay: "3.0s" }}>
+        <div className="fa-prod-row" style={{ animationDelay: '3.0s' }}>
           <span className="fa-prod-check fa-addressed">✓</span>
           <span>Confirmar regras de PII</span>
         </div>
-        <div className="fa-prod-row" style={{ animationDelay: "3.6s" }}>
+        <div className="fa-prod-row" style={{ animationDelay: '3.6s' }}>
           <span className="fa-prod-check fa-partial">◐</span>
           <span>Definir métricas</span>
         </div>
-        <div className="fa-prod-row" style={{ animationDelay: "4.2s" }}>
+        <div className="fa-prod-row" style={{ animationDelay: '4.2s' }}>
           <span className="fa-prod-check fa-missed">○</span>
           <span>Travar go-live</span>
         </div>
@@ -158,7 +158,7 @@ function ActionsAnim() {
 
 // ── 4 · OAuth connectors ──
 function ConnectorIcon({ kind }: { kind: string }) {
-  if (kind === "linear")
+  if (kind === 'linear')
     return (
       <svg
         width="14"
@@ -173,7 +173,7 @@ function ConnectorIcon({ kind }: { kind: string }) {
         <polyline points="3 12 9 6 15 12 21 6" />
       </svg>
     );
-  if (kind === "calendar")
+  if (kind === 'calendar')
     return (
       <svg
         width="14"
@@ -191,7 +191,7 @@ function ConnectorIcon({ kind }: { kind: string }) {
         <line x1="3" y1="10" x2="21" y2="10" />
       </svg>
     );
-  if (kind === "notion")
+  if (kind === 'notion')
     return (
       <svg
         width="14"
@@ -233,10 +233,10 @@ function ConnectorsAnim() {
     { x1: 160, y1: 110, x2: 270, y2: 170, d: 1.2 },
   ];
   const apps = [
-    { id: "linear", label: "Linear", x: "15%", y: "23%" },
-    { id: "calendar", label: "Calendar", x: "85%", y: "23%" },
-    { id: "notion", label: "Notion", x: "15%", y: "77%" },
-    { id: "github", label: "GitHub", x: "85%", y: "77%" },
+    { id: 'linear', label: 'Linear', x: '15%', y: '23%' },
+    { id: 'calendar', label: 'Calendar', x: '85%', y: '23%' },
+    { id: 'notion', label: 'Notion', x: '15%', y: '77%' },
+    { id: 'github', label: 'GitHub', x: '85%', y: '77%' },
   ];
   return (
     <div className="fa fa-conn">
@@ -265,11 +265,11 @@ function ConnectorsAnim() {
       </svg>
       <div className="fa-conn-center">
         <span className="logo-bars" aria-hidden="true">
-          <span style={{ width: 3, height: "40%", borderRadius: 3 }} />
-          <span style={{ width: 3, height: "75%", borderRadius: 3 }} />
-          <span style={{ width: 3, height: "100%", borderRadius: 3 }} />
-          <span style={{ width: 3, height: "75%", borderRadius: 3 }} />
-          <span style={{ width: 3, height: "40%", borderRadius: 3 }} />
+          <span style={{ width: 3, height: '40%', borderRadius: 3 }} />
+          <span style={{ width: 3, height: '75%', borderRadius: 3 }} />
+          <span style={{ width: 3, height: '100%', borderRadius: 3 }} />
+          <span style={{ width: 3, height: '75%', borderRadius: 3 }} />
+          <span style={{ width: 3, height: '40%', borderRadius: 3 }} />
         </span>
       </div>
       {apps.map((app) => (
@@ -284,14 +284,14 @@ function ConnectorsAnim() {
 
 // ── 5 · Desktop real-time ──
 function DesktopAnim() {
-  const [timer, setTimer] = useState("00:24");
+  const [timer, setTimer] = useState('00:24');
   useEffect(() => {
     let s = 24;
     const id = setInterval(() => {
       s = (s + 1) % 100;
       const m = Math.floor(s / 60);
       const sec = s % 60;
-      setTimer(`${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`);
+      setTimer(`${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`);
     }, 900);
     return () => clearInterval(id);
   }, []);
@@ -371,7 +371,7 @@ function PTBRAnim() {
           <circle cx="12" cy="12" r="9" />
           <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
         </svg>
-        <span>PT-BR · gírias técnicas reconhecidas</span>
+        <span>Exemplo em português</span>
       </div>
     </div>
   );
@@ -380,33 +380,33 @@ function PTBRAnim() {
 const FEATURES = [
   {
     anim: <PIIShieldAnim />,
-    title: "PII Shield",
-    body: "Redação automática de CPF, CNPJ, e-mail, telefone, cartão e nomes brasileiros antes do LLM externo. ADR 0012.",
+    title: 'PII Shield',
+    body: 'Mascaramento de dados pessoais no texto antes da análise por IA. A transcrição de áudio acontece antes desse tratamento.',
   },
   {
     anim: <ProductivityAnim />,
-    title: "Productivity Score",
-    body: "Declare o objetivo da reunião; Nora mede cobertura real (Addressed / Partial / Missed) e devolve score 0–100.",
+    title: 'Productivity Score',
+    body: 'Defina o objetivo da reunião e receba uma avaliação de cobertura: abordado, parcial ou não abordado, com pontuação de 0 a 100.',
   },
   {
     anim: <ActionsAnim />,
-    title: "Action items inteligentes",
-    body: "Detecção com confiança calibrada, citação textual da fonte, prioridade e vencimento estimado.",
+    title: 'Action items inteligentes',
+    body: 'Tarefas extraídas da reunião, com fonte, prioridade e responsável quando identificados.',
   },
   {
     anim: <ConnectorsAnim />,
-    title: "Conectores OAuth",
-    body: "Action items viram issues no Linear ou no GitHub, o resumo vira página no Notion e evento no Calendar — pela sua própria conta, via OAuth. O servidor MCP da Nora é o caminho de entrada: somente leitura.",
+    title: 'Conectores OAuth',
+    body: 'Use fluxos para enviar resultados às ferramentas conectadas pela sua conta. A disponibilidade depende da configuração de cada conector.',
   },
   {
     anim: <DesktopAnim />,
-    title: "Desktop real-time",
-    body: "App Tauri captura áudio do sistema enquanto a reunião acontece — Windows, macOS, Linux.",
+    title: 'Desktop real-time',
+    body: 'O app para Windows captura áudio do sistema enquanto a reunião acontece.',
   },
   {
     anim: <PTBRAnim />,
-    title: "Em português, na sua língua",
-    body: "Treinado em PT-BR. Reconhece gírias, regionalismos, siglas técnicas brasileiras.",
+    title: 'Em português, na sua língua',
+    body: 'Interface, resumos e perguntas em português. Confira as fontes da reunião para validar o resultado da análise.',
   },
 ];
 
@@ -417,9 +417,9 @@ export function LandingFeatures() {
       <div className="container">
         <div style={{ maxWidth: 720 }}>
           <div className="section-label">Produto</div>
-          <h2 className="section-title">Construído pra como você realmente trabalha.</h2>
+          <h2 className="section-title">Da captura ao acompanhamento.</h2>
           <p className="section-subtitle">
-            Cada feature responde a uma dor concreta — não a uma checklist genérica de IA.
+            Recursos disponíveis no Core. As animações abaixo são exemplos ilustrativos.
           </p>
         </div>
         <div className="features-grid-v2">

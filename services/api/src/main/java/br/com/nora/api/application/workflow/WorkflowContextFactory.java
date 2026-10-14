@@ -5,6 +5,7 @@ import br.com.nora.api.application.ports.MeetingAnalysisRepository;
 import br.com.nora.api.application.ports.MeetingRepository;
 import br.com.nora.api.application.ports.MeetingRepository.MeetingFilter;
 import br.com.nora.api.application.ports.ProductivityAssessmentRepository;
+import br.com.nora.api.application.tenant.EnterpriseEntitlementService;
 import br.com.nora.api.application.workflow.WorkflowEventContext.ActionItemView;
 import br.com.nora.api.domain.analysis.MeetingAnalysis;
 import br.com.nora.api.domain.meeting.Meeting;
@@ -31,17 +32,20 @@ public class WorkflowContextFactory {
     private final ProductivityAssessmentRepository assessments;
     private final CustomerConfidenceAssessmentRepository confidences;
     private final String frontendBaseUrl;
+    private final EnterpriseEntitlementService entitlements;
 
     public WorkflowContextFactory(
             MeetingRepository meetings,
             MeetingAnalysisRepository analyses,
             ProductivityAssessmentRepository assessments,
             CustomerConfidenceAssessmentRepository confidences,
-            @Value("${nora.frontend.base-url}") String frontendBaseUrl) {
+            @Value("${nora.frontend.base-url}") String frontendBaseUrl,
+            EnterpriseEntitlementService entitlements) {
         this.meetings = meetings;
         this.analyses = analyses;
         this.assessments = assessments;
         this.confidences = confidences;
+        this.entitlements = entitlements;
         this.frontendBaseUrl =
                 frontendBaseUrl.endsWith("/")
                         ? frontendBaseUrl.substring(0, frontendBaseUrl.length() - 1)
@@ -66,10 +70,12 @@ public class WorkflowContextFactory {
         Integer productivityScore =
                 assessments.findByMeetingId(meetingId, tenantId).map(a -> a.score()).orElse(null);
         Integer confidenceScore =
-                confidences.findByMeetingId(meetingId, tenantId).stream()
-                        .findFirst()
-                        .map(c -> c.score())
-                        .orElse(null);
+                entitlements.isEnterprise(tenantId)
+                        ? confidences.findByMeetingId(meetingId, tenantId).stream()
+                                .findFirst()
+                                .map(c -> c.score())
+                                .orElse(null)
+                        : null;
         List<ActionItemView> actionItems =
                 analysis.actionItems().stream()
                         .map(
@@ -145,7 +151,7 @@ public class WorkflowContextFactory {
                                 LocalDate.now(ZoneOffset.UTC).plusDays(3)),
                         new ActionItemView("Agendar follow-up", "[[PESSOA_2]]", "MEDIUM", null)),
                 62,
-                58,
+                entitlements.isEnterprise(tenantId) ? 58 : null,
                 frontendBaseUrl + "/dashboard",
                 OffsetDateTime.now(ZoneOffset.UTC),
                 true);

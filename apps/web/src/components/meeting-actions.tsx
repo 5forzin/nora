@@ -72,10 +72,14 @@ export function MeetingDangerZone({
   meetingId,
   title,
   canReprocess,
+  canRemove = false,
+  canErase = false,
 }: {
   meetingId: string;
   title: string;
   canReprocess: boolean;
+  canRemove?: boolean;
+  canErase?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -88,6 +92,7 @@ export function MeetingDangerZone({
   const canDelete = confirmText.trim() === title.trim() && !busy;
 
   async function onRemove() {
+    if (!canRemove) return;
     setBusy(true);
     setRemoveError(null);
     try {
@@ -106,7 +111,7 @@ export function MeetingDangerZone({
   }
 
   async function onDelete() {
-    if (!canDelete) return;
+    if (!canErase || !canDelete) return;
     setBusy(true);
     setError(null);
     try {
@@ -128,7 +133,7 @@ export function MeetingDangerZone({
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         {canReprocess && <ReprocessButton meetingId={meetingId} label="Reanalisar reunião" variant="outline" />}
-        {!confirmRemove ? (
+        {canRemove && (!confirmRemove ? (
           <button
             type="button"
             className="btn btn-ghost btn-sm"
@@ -162,8 +167,8 @@ export function MeetingDangerZone({
               Cancelar
             </button>
           </span>
-        )}
-        {!open && (
+        ))}
+        {canErase && !open && (
           <button
             type="button"
             className="btn btn-ghost btn-sm"
@@ -179,7 +184,7 @@ export function MeetingDangerZone({
       {/* The copy stops exactly where the product does. The row survives — that is what the soft
           delete is — but there is no restore endpoint yet, so promising the user they can undo it
           themselves would be the same kind of claim this screen was audited for. */}
-      {confirmRemove && (
+      {canRemove && confirmRemove && (
         <p style={{ fontSize: 12.5, color: "var(--muted)", margin: 0, lineHeight: 1.5 }}>
           A reunião sai da lista e para de contar nos números, mas nada é destruído — transcrição,
           participantes e análise continuam guardados. Diferente de “apagar permanentemente”, isto
@@ -188,7 +193,7 @@ export function MeetingDangerZone({
       )}
       {removeError && <span style={{ fontSize: 12, color: "var(--danger)" }}>{removeError}</span>}
 
-      {open && (
+      {canErase && open && (
         <div
           style={{
             padding: "16px 18px",

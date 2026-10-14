@@ -47,15 +47,6 @@ export default function AuthCardLayout({ children }: { children: React.ReactNode
         }}
       >
         <span>© 2026 Nora</span>
-        <a href="#" style={{ color: "var(--muted)" }}>
-          Privacidade
-        </a>
-        <a href="#" style={{ color: "var(--muted)" }}>
-          Termos
-        </a>
-        <a href="#" style={{ color: "var(--muted)" }}>
-          Status
-        </a>
       </footer>
     </main>
   );

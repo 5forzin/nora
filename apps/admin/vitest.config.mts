@@ -12,8 +12,8 @@ import { defineConfig } from "vitest/config";
  * broken and lint, typecheck and build all passed.
  *
  * Scope, stated so nobody reads more into a green run than is there: this suite covers the pure
- * server-side modules — access, data, operator — and the security headers. It renders nothing. The
- * screens have no unit tests, exactly as in `apps/web`.
+ * server-side modules, security headers and model-catalog interactions. Component tests opt into
+ * jsdom; the rest use the Node environment.
  */
 export default defineConfig({
   resolve: {
@@ -24,12 +24,10 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.{ts,tsx}"],
     exclude: ["node_modules/**", ".next/**"],
 
-    // `node`, and no DOM anywhere: every module under test runs server-side by construction (they
-    // read `next/headers`, `process.env` and `fetch`). A jsdom default would buy nothing and hide
-    // an accidental browser-only dependency behind a global that production does not have.
+    // Server modules stay in Node. Individual component tests request jsdom explicitly.
     environment: "node",
 
     // Both flags pinned OFF because both gate a module-level constant read at import time.
@@ -51,7 +49,7 @@ export default defineConfig({
       // nineties for an app whose screens have no unit tests is the overstatement this repository
       // keeps removing from its own documents.
       include: ["src/**/*.{ts,tsx}"],
-      exclude: ["src/**/*.test.ts", "src/lib/contracts.ts", "src/lib/mock.ts", "next-env.d.ts"],
+      exclude: ["src/**/*.test.{ts,tsx}", "src/lib/contracts.ts", "src/lib/mock.ts", "next-env.d.ts"],
 
       // FLOORS, not targets, and only on the module whose failure mode is silent. `access.ts` can
       // regress from fail-closed to fail-open without a single visible symptom — the console keeps

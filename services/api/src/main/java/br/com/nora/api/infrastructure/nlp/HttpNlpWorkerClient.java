@@ -3,6 +3,7 @@ package br.com.nora.api.infrastructure.nlp;
 import br.com.nora.api.application.analysis.AnalysisException;
 import br.com.nora.api.application.ports.NlpWorkerClient;
 import br.com.nora.api.application.ports.NlpWorkerClient.CustomerConfidenceCarrier;
+import br.com.nora.api.application.tenant.EnterpriseEntitlementService;
 import br.com.nora.api.domain.analysis.ActionItem;
 import br.com.nora.api.domain.analysis.Decision;
 import br.com.nora.api.domain.analysis.MeetingAnalysis;
@@ -61,9 +62,14 @@ public class HttpNlpWorkerClient implements NlpWorkerClient {
     private final WebClient client;
     private final WebClient liveClient;
     private final NlpWorkerProperties props;
+    private final EnterpriseEntitlementService entitlements;
 
-    public HttpNlpWorkerClient(WebClient.Builder builder, NlpWorkerProperties props) {
+    public HttpNlpWorkerClient(
+            WebClient.Builder builder,
+            NlpWorkerProperties props,
+            EnterpriseEntitlementService entitlements) {
         this.props = props;
+        this.entitlements = entitlements;
         long timeoutMs = Math.max(1_000L, props.getTimeoutMillis());
         HttpClient http =
                 HttpClient.create()
@@ -135,14 +141,15 @@ public class HttpNlpWorkerClient implements NlpWorkerClient {
             String transcript,
             Optional<TenantContext> tenantContext,
             Optional<MeetingGoal> goal) {
+        boolean enterprise = entitlements.isEnterprise(tenantId);
         WorkerDtos.AnalyzeRequest body =
                 new WorkerDtos.AnalyzeRequest(
                         meetingId.toString(),
                         tenantId.toString(),
                         language == null || language.isBlank() ? "pt-BR" : language,
                         transcript,
-                        toWorkerContext(tenantContext),
-                        new WorkerDtos.Options(true, true, 20, "meeting-analysis-v1"),
+                        toWorkerContext(enterprise ? tenantContext : Optional.empty()),
+                        new WorkerDtos.Options(true, true, 20, "meeting-analysis-v1", enterprise),
                         toWorkerGoal(goal));
 
         WorkerDtos.AnalyzeResponse response;
@@ -155,10 +162,7 @@ public class HttpNlpWorkerClient implements NlpWorkerClient {
                             .bodyToMono(WorkerDtos.AnalyzeResponse.class)
                             .block(Duration.ofMillis(Math.max(1_000L, props.getTimeoutMillis())));
         } catch (WebClientResponseException ex) {
-            LOG.error(
-                    "NLP worker responded with error status={} body={}",
-                    ex.getStatusCode(),
-                    ex.getResponseBodyAsString());
+            LOG.error("NLP worker responded with error status={}", ex.getStatusCode());
             throw new AnalysisException.WorkerUnavailable("status " + ex.getStatusCode(), ex);
         } catch (RuntimeException ex) {
             LOG.error("Failed to call NLP worker", ex);
@@ -207,10 +211,7 @@ public class HttpNlpWorkerClient implements NlpWorkerClient {
             }
             return response;
         } catch (WebClientResponseException ex) {
-            LOG.error(
-                    "NLP worker live responded with error status={} body={}",
-                    ex.getStatusCode(),
-                    ex.getResponseBodyAsString());
+            LOG.error("NLP worker live responded with error status={}", ex.getStatusCode());
             throw new AnalysisException.WorkerUnavailable("live: status " + ex.getStatusCode(), ex);
         } catch (RuntimeException ex) {
             LOG.error("Failed to call NLP worker (live)", ex);
@@ -237,10 +238,7 @@ public class HttpNlpWorkerClient implements NlpWorkerClient {
             }
             return response;
         } catch (WebClientResponseException ex) {
-            LOG.error(
-                    "NLP worker split responded with error status={} body={}",
-                    ex.getStatusCode(),
-                    ex.getResponseBodyAsString());
+            LOG.error("NLP worker split responded with error status={}", ex.getStatusCode());
             throw new AnalysisException.WorkerUnavailable(
                     "split: status " + ex.getStatusCode(), ex);
         } catch (AnalysisException.WorkerUnavailable ex) {

@@ -15,6 +15,7 @@
 import Link from "next/link";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
+import { useWorkspaceAccess } from "@/components/enterprise/workspace-provider";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -38,9 +39,11 @@ import {
   createWorkflow,
   deleteWorkflow,
   getWorkflow,
+  listIntegrations,
   listWorkflowExecutions,
   testWorkflow,
   updateWorkflow,
+  type IntegrationStatus,
   type WorkflowDefinition,
   type WorkflowExecutionResponse,
 } from "@/lib/api/client";
@@ -58,6 +61,7 @@ import { installUnsavedChangesGuard } from "@/lib/unsaved-changes";
 import { BlockNode, type RFNode } from "./block-node";
 import { SidePanel, type PanelTab } from "./side-panel";
 import { BlockPalette } from "./block-palette";
+import { isActionAvailable } from "./availability";
 import { shortTime } from "./relative-time";
 
 // nodeTypes needs a stable reference (outside the component) — otherwise
@@ -127,7 +131,7 @@ function paraDefinicao(nos: RFNode[], arestas: Edge[]): WorkflowDefinition {
 
 type Aviso = { tipo: "erro" | "ok"; msg: string };
 
-function FlowEditorInterno({ workflowId }: { workflowId: string | null }) {
+function FlowEditorInterno({ workflowId, readOnly, canTest, canReadIntegrations }: { workflowId: string | null; readOnly: boolean; canTest: boolean; canReadIntegrations: boolean }) {
   const router = useRouter();
   const fluxoSalvo = workflowId !== null;
 
@@ -143,6 +147,25 @@ function FlowEditorInterno({ workflowId }: { workflowId: string | null }) {
   // ── Loading state (existing flow) ──
   const [carregando, setCarregando] = useState(fluxoSalvo);
   const [erroCarga, setErroCarga] = useState<string | null>(null);
+  const [integrations, setIntegrations] = useState<IntegrationStatus[] | null>(null);
+  const [integrationError, setIntegrationError] = useState(false);
+  const [integrationAttempt, setIntegrationAttempt] = useState(0);
+  const [savedActionTypes, setSavedActionTypes] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!canReadIntegrations) return;
+    let active = true;
+    const refresh = () => {
+      setIntegrations(null);
+      setIntegrationError(false);
+      listIntegrations()
+        .then((result) => { if (active) setIntegrations(result); })
+        .catch(() => { if (active) setIntegrationError(true); });
+    };
+    refresh();
+    window.addEventListener("focus", refresh);
+    return () => { active = false; window.removeEventListener("focus", refresh); };
+  }, [integrationAttempt, canReadIntegrations]);
 
   // ── UI state ──
   const [selId, setSelId] = useState<string | null>(null);
@@ -172,6 +195,7 @@ function FlowEditorInterno({ workflowId }: { workflowId: string | null }) {
         if (!vivo) return;
         setNome(w.name);
         setAtivo(w.active);
+        setSavedActionTypes(w.definition.nodes.filter((node) => node.kind === "action").map((node) => node.type));
         const { nos, arestas } = paraCanvas(w.definition);
         setNodes(nos);
         setEdges(arestas);
@@ -233,6 +257,10 @@ function FlowEditorInterno({ workflowId }: { workflowId: string | null }) {
     [selId, nodes],
   );
   const hasTrigger = nodes.some((n) => n.data.kind === "trigger");
+  const unavailableActions = nodes.filter((node) =>
+    node.data.kind === "action" && !isActionAvailable(node.data.blockType, integrations),
+  );
+  const savedActionsUnavailable = savedActionTypes.some((type) => !isActionAvailable(type, integrations));
 
   /** CLICK on the palette: adds the block near the rightmost node, already selected. */
   function adicionarBloco(bloco: BlockMeta) {
@@ -281,6 +309,8 @@ function FlowEditorInterno({ workflowId }: { workflowId: string | null }) {
   /** Client-side validation before hitting the API. Returns the 1st pending item. */
   function validar(): string | null {
     if (!nome.trim()) return "Dê um nome ao fluxo antes de salvar.";
+    if (ativo && unavailableActions.length > 0)
+      return "Conecte as contas necessárias em Integrações ou pause o fluxo antes de salvar.";
     const gatilhos = nodes.filter((n) => n.data.kind === "trigger");
     if (gatilhos.length === 0)
       return "O fluxo precisa de um gatilho — adicione “Reunião analisada” pela paleta.";
@@ -377,6 +407,7 @@ function FlowEditorInterno({ workflowId }: { workflowId: string | null }) {
       if (workflowId) {
         const w = await updateWorkflow(workflowId, { name: nome.trim(), active: ativo, definition });
         setSalvoAs(shortTime(w.updatedAt));
+        setSavedActionTypes(definition.nodes.filter((node) => node.kind === "action").map((node) => node.type));
         setSujo(false);
         sujoRef.current = false;
         setTentouSalvar(false);
@@ -425,7 +456,7 @@ function FlowEditorInterno({ workflowId }: { workflowId: string | null }) {
   }, [aviso]);
 
   async function testar() {
-    if (!workflowId) return;
+    if (!workflowId || savedActionsUnavailable) return;
     setTestando(true);
     setAviso(null);
     try {
@@ -534,6 +565,7 @@ function FlowEditorInterno({ workflowId }: { workflowId: string | null }) {
 
         <input
           className={`flows-name-input${tentouSalvar && !nome.trim() ? " is-err" : ""}`}
+          readOnly={readOnly}
           value={nome}
           onChange={(e) => {
             setNome(e.target.value);
@@ -552,7 +584,8 @@ function FlowEditorInterno({ workflowId }: { workflowId: string | null }) {
           <span style={{ fontSize: 11.5, color: "var(--muted)" }}>Alterações não salvas</span>
         )}
 
-        {fluxoSalvo &&
+        {readOnly && <span className="chip">Somente leitura</span>}
+        {fluxoSalvo && !readOnly &&
           (confirmaExcluir ? (
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontSize: 12.5, color: "var(--danger)" }}>Excluir fluxo?</span>
@@ -584,6 +617,7 @@ function FlowEditorInterno({ workflowId }: { workflowId: string | null }) {
         <label className="flows-switch" title={ativo ? "Fluxo ativo — roda nos gatilhos" : "Fluxo pausado"}>
           <input
             type="checkbox"
+            disabled={readOnly}
             checked={ativo}
             onChange={(e) => {
               setAtivo(e.target.checked);
@@ -596,24 +630,26 @@ function FlowEditorInterno({ workflowId }: { workflowId: string | null }) {
 
         <span aria-hidden style={{ width: 1, height: 20, background: "var(--border)", flexShrink: 0 }} />
 
-        <button
+        {canTest && <button
           type="button"
           className="btn btn-secondary"
           onClick={testar}
-          disabled={!fluxoSalvo || testando}
+          disabled={!fluxoSalvo || testando || savedActionsUnavailable}
           title={
             !fluxoSalvo
               ? "Salve o fluxo para testar"
+              : savedActionsUnavailable
+                ? "Conecte as contas usadas na versão salva antes de testar"
               : sujo
                 ? "Testa a última versão salva — salve pra incluir as mudanças recentes"
                 : "Executa o fluxo agora contra a sua última reunião analisada"
           }
         >
           {testando ? "Testando…" : "Testar"}
-        </button>
-        <button type="button" className="btn btn-primary" onClick={salvar} disabled={salvando}>
+        </button>}
+        {!readOnly && <button type="button" className="btn btn-primary" onClick={salvar} disabled={salvando}>
           {salvando ? "Salvando…" : "Salvar"}
-        </button>
+        </button>}
       </div>
 
       {/* ── Leaving with unsaved work ──
@@ -682,9 +718,22 @@ function FlowEditorInterno({ workflowId }: { workflowId: string | null }) {
         </div>
       )}
 
+      {!readOnly && unavailableActions.length > 0 && (integrations !== null || integrationError) && (
+        <div className="notice notice--danger" role="status" style={{ margin: 0, borderRadius: 0 }}>
+          Conexão indisponível: {[...new Set(unavailableActions.map((node) => blockMeta(node.data.blockType)?.name ?? node.data.blockType))].join(", ")}.
+          {" "}Os blocos foram preservados. Conecte a conta em <Link href="/integrations">Integrações</Link> ou pause o fluxo.
+        </div>
+      )}
+
       {/* ── Body: palette | canvas | panel ── */}
       <div className="flows-body">
-        <BlockPalette hasTrigger={hasTrigger} onAdd={adicionarBloco} />
+        {!readOnly && <BlockPalette
+          hasTrigger={hasTrigger}
+          onAdd={adicionarBloco}
+          integrations={integrations}
+          integrationError={integrationError}
+          onRetry={() => setIntegrationAttempt((attempt) => attempt + 1)}
+        />}
 
         <div className="flows-canvas">
           {aviso && (
@@ -732,12 +781,15 @@ function FlowEditorInterno({ workflowId }: { workflowId: string | null }) {
             edges={edges}
             onNodesChange={aoMudarNos}
             onEdgesChange={aoMudarArestas}
-            onConnect={aoConectar}
+            onConnect={readOnly ? undefined : aoConectar}
+            nodesDraggable={!readOnly}
+            nodesConnectable={!readOnly}
+            edgesReconnectable={!readOnly}
             onSelectionChange={aoSelecionar}
             nodeTypes={NODE_TYPES}
             fitView
             fitViewOptions={{ padding: 0.3, maxZoom: 1.1 }}
-            deleteKeyCode={["Backspace", "Delete"]}
+            deleteKeyCode={readOnly ? null : ["Backspace", "Delete"]}
             style={{ background: "var(--canvas)" }}
           >
             <Background
@@ -751,6 +803,8 @@ function FlowEditorInterno({ workflowId }: { workflowId: string | null }) {
         </div>
 
         <SidePanel
+          readOnly={readOnly}
+          canTest={canTest}
           no={noSelecionado}
           nos={nodes}
           fluxoSalvo={fluxoSalvo}
@@ -772,9 +826,15 @@ function FlowEditorInterno({ workflowId }: { workflowId: string | null }) {
 }
 
 export function FlowEditor({ workflowId }: { workflowId: string | null }) {
+  const { access, loading } = useWorkspaceAccess();
+  if (loading) return <div className="page" role="status">Carregando acesso…</div>;
+  const permissions = access?.permissions;
+  if (!permissions?.readFlows || (!workflowId && !permissions.manageFlows)) {
+    return <div className="page"><h1 className="h1">Fluxos</h1><p className="lede">Você não tem permissão para {workflowId ? 'consultar este fluxo' : 'criar fluxos'}.</p><Link href="/dashboard" className="btn btn-ghost" style={{ marginTop: 20 }}>Voltar às reuniões</Link></div>;
+  }
   return (
     <ReactFlowProvider>
-      <FlowEditorInterno workflowId={workflowId} />
+      <FlowEditorInterno workflowId={workflowId} readOnly={!permissions.manageFlows} canTest={permissions.testFlows === true} canReadIntegrations={permissions.readIntegrations === true} />
     </ReactFlowProvider>
   );
 }

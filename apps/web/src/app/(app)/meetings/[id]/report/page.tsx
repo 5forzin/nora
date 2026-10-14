@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Route } from "next";
 import { notFound } from "next/navigation";
 
+import { getWorkspaceAccess } from "@/lib/enterprise/access";
 import { ApiRequestError, getMeeting } from "@/lib/api/client";
 import type { MeetingDetail, Severity } from "@/lib/api/types";
 import { formatDateTime, meetingInstant } from "@/lib/utils";
@@ -80,7 +81,8 @@ export default async function MeetingReportPage({ params }: { params: Promise<{ 
   const { id } = await params;
   let meeting: MeetingDetail | undefined;
   try {
-    meeting = await getMeeting(id);
+    const [detail, access] = await Promise.all([getMeeting(id), getWorkspaceAccess()]);
+    meeting = access.plan === "ENTERPRISE" ? detail : { ...detail, customerConfidence: null };
   } catch (err) {
     if (err instanceof ApiRequestError && err.status === 404) {
       notFound();

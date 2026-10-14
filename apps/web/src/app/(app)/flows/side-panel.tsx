@@ -919,7 +919,7 @@ function FormParams({
 }
 
 /** Tab "Fluxo": graph summary + builder usage tips. */
-function TabFluxo({ nos }: { nos: RFNode[] }) {
+function TabFluxo({ nos, readOnly, canTest }: { nos: RFNode[]; readOnly: boolean; canTest: boolean }) {
   const gatilho = nos.find((n) => n.data.kind === "trigger");
   const nomeGatilho = gatilho ? blockMeta(gatilho.data.blockType)?.name ?? "—" : null;
   const nCond = nos.filter((n) => n.data.kind === "condition").length;
@@ -951,7 +951,7 @@ function TabFluxo({ nos }: { nos: RFNode[] }) {
         </div>
       </div>
 
-      <div>
+      {!readOnly && <div>
         <div className="sec-label" style={{ marginBottom: 8 }}>
           Como usar
         </div>
@@ -975,12 +975,12 @@ function TabFluxo({ nos }: { nos: RFNode[] }) {
           </li>
           <li>Condições são opcionais — gatilho direto na ação também vale.</li>
         </ul>
-      </div>
+      </div>}
 
-      <div className="notice" style={{ fontSize: 12 }}>
+      {canTest && <div className="notice" style={{ fontSize: 12 }}>
         “Testar” executa o fluxo de verdade contra a sua última reunião analisada — inclusive o
         envio de e-mail.
-      </div>
+      </div>}
     </div>
   );
 }
@@ -993,6 +993,7 @@ function TabExecucoes({
   onRecarregar,
   expandida,
   onExpandir,
+  canTest,
 }: {
   execucoes: WorkflowExecutionResponse[] | null;
   carregando: boolean;
@@ -1000,6 +1001,7 @@ function TabExecucoes({
   onRecarregar: () => void;
   expandida: string | null;
   onExpandir: (id: string | null) => void;
+  canTest: boolean;
 }) {
   return (
     <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1029,8 +1031,7 @@ function TabExecucoes({
         </div>
       ) : (execucoes ?? []).length === 0 && !erro ? (
         <p style={{ fontSize: 12.5, color: "var(--muted)", margin: 0, lineHeight: 1.55 }}>
-          Nenhuma execução ainda. Clique em “Testar” pra rodar o fluxo agora, ou aguarde a próxima
-          reunião analisada.
+          {canTest ? 'Nenhuma execução ainda. Clique em “Testar” para executar o fluxo.' : 'Nenhuma execução registrada.'}
         </p>
       ) : (
         (execucoes ?? []).map((ex) => {
@@ -1094,6 +1095,8 @@ function TabExecucoes({
 }
 
 export function SidePanel({
+  readOnly = false,
+  canTest = true,
   no,
   nos,
   fluxoSalvo,
@@ -1109,6 +1112,8 @@ export function SidePanel({
   expandida,
   onExpandir,
 }: {
+  readOnly?: boolean;
+  canTest?: boolean;
   no: RFNode | null;
   nos: RFNode[];
   fluxoSalvo: boolean;
@@ -1166,15 +1171,15 @@ export function SidePanel({
           )}
         </div>
 
-        <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 14, flex: 1 }}>
+        <fieldset disabled={readOnly} style={{ padding: 14, margin: 0, border: 0, minWidth: 0, display: "flex", flexDirection: "column", gap: 14, flex: 1 }}>
           <FormParams
             no={no}
             mostrarErros={tentouSalvar}
             onChange={(chave, valor) => onAtualizarParam(no.id, chave, valor)}
           />
-        </div>
+        </fieldset>
 
-        <div style={{ padding: 14, borderTop: "1px solid var(--border)" }}>
+        {!readOnly && <div style={{ padding: 14, borderTop: "1px solid var(--border)" }}>
           <button
             type="button"
             className="btn btn-ghost"
@@ -1183,7 +1188,7 @@ export function SidePanel({
           >
             Remover nó
           </button>
-        </div>
+        </div>}
       </aside>
     );
   }
@@ -1215,9 +1220,10 @@ export function SidePanel({
       </div>
 
       {tab === "flow" || !fluxoSalvo ? (
-        <TabFluxo nos={nos} />
+        <TabFluxo nos={nos} readOnly={readOnly} canTest={canTest} />
       ) : (
         <TabExecucoes
+          canTest={canTest}
           execucoes={execucoes}
           carregando={carregandoExec}
           erro={erroExec}

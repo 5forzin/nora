@@ -2,27 +2,20 @@
 
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiRequestError,
   changePassword,
   deleteAccount,
   getMe,
   getTenant,
-  getTenantContext,
-  getTenantContextVersion,
-  listTenantContextVersions,
   logoutAllSessions,
   renameTenant,
   resendVerificationEmail,
   updateMe,
-  upsertTenantContext,
   type MeResponse,
-  type TenantContextDto,
-  type TenantContextVersionDto,
   type TenantInfo,
 } from "@/lib/api/client";
-import { formatDateTime } from "@/lib/utils";
 import {
   clearLocalSession,
   getCurrentUser,
@@ -30,67 +23,16 @@ import {
   type SessionUser,
 } from "@/lib/auth";
 import { Avatar } from "@/components/core/avatar";
+import { useWorkspaceAccess } from "@/components/enterprise/workspace-provider";
 
-interface ProductForm {
-  name: string;
-  description: string;
-  keyDifferentiators: string; // newline-separated string
-}
-
-interface FormState {
-  companyName: string;
-  industry: string;
-  valueProposition: string;
-  idealCustomerProfile: string;
-  competitors: string;
-  objectionHandling: string;
-  products: ProductForm[];
-}
-
-const EMPTY_PRODUCT: ProductForm = { name: "", description: "", keyDifferentiators: "" };
-
-const EMPTY_FORM: FormState = {
-  companyName: "",
-  industry: "",
-  valueProposition: "",
-  idealCustomerProfile: "",
-  competitors: "",
-  objectionHandling: "",
-  products: [],
-};
-
-function fromDto(dto: TenantContextDto): FormState {
-  return {
-    companyName: dto.companyName ?? "",
-    industry: dto.industry ?? "",
-    valueProposition: dto.valueProposition ?? "",
-    idealCustomerProfile: dto.idealCustomerProfile ?? "",
-    competitors: (dto.competitors ?? []).join("\n"),
-    objectionHandling: (dto.objectionHandling ?? []).join("\n"),
-    products: (dto.products ?? []).map((p) => ({
-      name: p.name,
-      description: p.description ?? "",
-      keyDifferentiators: (p.keyDifferentiators ?? []).join("\n"),
-    })),
-  };
-}
-
-function splitLines(s: string): string[] {
-  return s
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
-}
-
-// ── hub sections (IAM is not one of them: it is its own route, settings/iam) ──
-const SECTIONS = ["conta", "seguranca", "workspace", "contexto"] as const;
+// Personal settings remain separate from the Enterprise workspace.
+const SECTIONS = ["conta", "seguranca", "workspace"] as const;
 type Section = (typeof SECTIONS)[number];
 
 const SECTION_LABELS: Record<Section, string> = {
   conta: "Conta",
   seguranca: "Segurança",
   workspace: "Workspace",
-  contexto: "Contexto da empresa",
 };
 
 function CheckIcon() {
@@ -130,9 +72,12 @@ function strengthOf(pw: string): number {
   return s;
 }
 
-export default function TenantContextPage() {
+export default function SettingsPage() {
+  const { access } = useWorkspaceAccess();
+  const canReadWorkspace = access?.permissions?.readWorkspace === true;
   // ── internal hub navigation (hash) ──
   const [section, setSection] = useState<Section>("conta");
+  const activeSection = section === 'workspace' && !canReadWorkspace ? 'conta' : section;
 
   useEffect(() => {
     const fromHash = (location.hash || "").slice(1) as Section;
@@ -151,12 +96,12 @@ export default function TenantContextPage() {
       <style>{SET_STYLES}</style>
 
       <nav className="set-nav" aria-label="Seções de configurações">
-        {SECTIONS.map((s) => (
+        {SECTIONS.filter((s) => s !== 'workspace' || canReadWorkspace).map((s) => (
           <a
             key={s}
             href={`#${s}`}
-            className={s === section ? "is-active" : undefined}
-            aria-current={s === section ? "page" : undefined}
+            className={s === activeSection ? "is-active" : undefined}
+            aria-current={s === activeSection ? "page" : undefined}
             onClick={(e) => {
               e.preventDefault();
               goTo(s);
@@ -168,10 +113,9 @@ export default function TenantContextPage() {
       </nav>
 
       <div className="set-pane">
-        {section === "conta" && <AccountSection />}
-        {section === "seguranca" && <SecuritySection />}
-        {section === "workspace" && <WorkspaceSection />}
-        {section === "contexto" && <CompanyContextSection />}
+        {activeSection === "conta" && <AccountSection />}
+        {activeSection === "seguranca" && <SecuritySection />}
+        {activeSection === "workspace" && <WorkspaceSection canRename={access?.permissions?.renameWorkspace === true} />}
       </div>
     </div>
   );
@@ -298,7 +242,6 @@ function AccountSection() {
           <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.5 }}>
             Seu avatar é gerado a partir da conta.
             <br />
-            Upload de foto chega depois do piloto.
           </div>
         </div>
 
@@ -629,7 +572,7 @@ function formatPlan(plan: string): string {
   return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
 }
 
-function WorkspaceSection() {
+function WorkspaceSection({ canRename }: { canRename: boolean }) {
   const [tenant, setTenant] = useState<TenantInfo | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [wsName, setWsName] = useState("");
@@ -679,6 +622,7 @@ function WorkspaceSection() {
 
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
+    if (!canRename) return;
     const name = wsName.trim();
     if (!name) {
       setError("O nome do workspace não pode ficar vazio.");
@@ -741,6 +685,7 @@ function WorkspaceSection() {
               <input
                 className="input"
                 id="ws-name"
+                readOnly={!canRename}
                 value={wsName}
                 onChange={(e) => {
                   dirtyRef.current = true;
@@ -756,7 +701,7 @@ function WorkspaceSection() {
                   cadastro.
                 </>
               ) : (
-                "Definido no cadastro — dá pra renomear quando quiser."
+                "Definido no cadastro."
               )}
             </div>
           </div>
@@ -774,8 +719,7 @@ function WorkspaceSection() {
                   {tenant ? formatPlan(tenant.plan) : "Core"}
                 </span>
                 <div style={{ flex: 1, fontSize: 12.5, color: "var(--muted)", lineHeight: 1.5 }}>
-                  Workspace individual: reuniões, chat e projetos ilimitados pra uma pessoa. Times
-                  e permissões são do Enterprise.
+                  {tenant?.plan === 'ENTERPRISE' ? 'Workspace de equipe com contexto compartilhado e gestão de acesso.' : 'Workspace pessoal para reuniões, chat, projetos e tarefas.'}
                 </div>
               </div>
             )}
@@ -783,7 +727,7 @@ function WorkspaceSection() {
 
           {error && <div className="notice notice--danger">{error}</div>}
 
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {canRename && <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <button
               className="btn btn-primary btn-sm"
               type="submit"
@@ -805,7 +749,7 @@ function WorkspaceSection() {
                 Salvo
               </span>
             )}
-          </div>
+          </div>}
         </form>
       </section>
 
@@ -926,438 +870,6 @@ function WorkspaceSection() {
    Re-skin only: design system classes, without touching the
    data/API flow.
    ───────────────────────────────────────────────────────────── */
-function CompanyContextSection() {
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  // ── history (US31) ──
-  const [versions, setVersions] = useState<TenantContextVersionDto[]>([]);
-  const [currentVersion, setCurrentVersion] = useState(0);
-  const [historyError, setHistoryError] = useState<string | null>(null);
-  const [openVersion, setOpenVersion] = useState<number | null>(null);
-  const [openDocument, setOpenDocument] = useState<TenantContextDto | null>(null);
-  const [openLoading, setOpenLoading] = useState(false);
-
-  // Reloaded after every successful save, because a save is exactly what adds an entry.
-  async function reloadHistory() {
-    try {
-      const listing = await listTenantContextVersions();
-      setVersions(listing.items);
-      setCurrentVersion(listing.currentVersion);
-      setHistoryError(null);
-    } catch (err) {
-      setHistoryError(
-        err instanceof ApiRequestError ? err.message : "Falha ao carregar o histórico.",
-      );
-    }
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-    getTenantContext()
-      .then((dto) => {
-        if (!cancelled) setForm(fromDto(dto));
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        if (err instanceof ApiRequestError && err.status === 404) {
-          // not configured yet; carry on with an empty form
-        } else {
-          setError(err instanceof Error ? err.message : "Falha ao carregar contexto.");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    void reloadHistory();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function onOpenVersion(version: number) {
-    if (openVersion === version) {
-      setOpenVersion(null);
-      setOpenDocument(null);
-      return;
-    }
-    setOpenVersion(version);
-    setOpenDocument(null);
-    setOpenLoading(true);
-    try {
-      const detail = await getTenantContextVersion(version);
-      setOpenDocument(detail.document);
-      setHistoryError(null);
-    } catch (err) {
-      setOpenVersion(null);
-      setHistoryError(
-        err instanceof ApiRequestError ? err.message : "Falha ao carregar a versão.",
-      );
-    } finally {
-      setOpenLoading(false);
-    }
-  }
-
-  // Restoring is deliberately not a server call: it fills the form and the user saves, which
-  // appends a NEW version with them as the author. History is never rewritten.
-  function onRestore(dto: TenantContextDto) {
-    setForm(fromDto(dto));
-    setOpenVersion(null);
-    setOpenDocument(null);
-    setMessage(null);
-    setError(null);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  function update<K extends keyof FormState>(key: K, value: FormState[K]) {
-    setForm((s) => ({ ...s, [key]: value }));
-  }
-
-  function updateProduct(idx: number, patch: Partial<ProductForm>) {
-    setForm((s) => ({
-      ...s,
-      products: s.products.map((p, i) => (i === idx ? { ...p, ...patch } : p)),
-    }));
-  }
-
-  function addProduct() {
-    setForm((s) => ({ ...s, products: [...s.products, { ...EMPTY_PRODUCT }] }));
-  }
-
-  function removeProduct(idx: number) {
-    setForm((s) => ({ ...s, products: s.products.filter((_, i) => i !== idx) }));
-  }
-
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setMessage(null);
-    setSaving(true);
-    try {
-      const saved = await upsertTenantContext({
-        companyName: form.companyName.trim(),
-        industry: form.industry.trim() || undefined,
-        valueProposition: form.valueProposition.trim() || undefined,
-        idealCustomerProfile: form.idealCustomerProfile.trim() || undefined,
-        competitors: splitLines(form.competitors),
-        objectionHandling: splitLines(form.objectionHandling),
-        products: form.products
-          .filter((p) => p.name.trim())
-          .map((p) => ({
-            name: p.name.trim(),
-            description: p.description.trim() || undefined,
-            keyDifferentiators: splitLines(p.keyDifferentiators),
-          })),
-      });
-      setForm(fromDto(saved));
-      setMessage("Contexto salvo com sucesso.");
-      await reloadHistory();
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : "Falha ao salvar contexto.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  if (loading) {
-    return (
-      <section className="section">
-        <div className="section-head">
-          <h2 className="sec-label">Contexto da empresa</h2>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div className="skel" style={{ height: 38, maxWidth: 320 }} />
-          <div className="skel" style={{ height: 38 }} />
-          <div className="skel" style={{ height: 72 }} />
-        </div>
-      </section>
-    );
-  }
-
-  return (
-    <section className="section">
-      <div className="section-head">
-        <h2 className="sec-label">Contexto da empresa</h2>
-      </div>
-      <p
-        style={{
-          fontSize: 13,
-          color: "var(--muted)",
-          lineHeight: 1.6,
-          margin: "0 0 18px",
-        }}
-      >
-        Esses dados entram em toda análise de reunião — quanto mais contexto, mais precisa a Nora
-        fica sobre riscos, concorrentes e oportunidades.
-      </p>
-
-      <form onSubmit={onSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        <div className="field">
-          <label className="field-label" htmlFor="ctx-company">
-            Nome da empresa <span className="req">*</span>
-          </label>
-          <input
-            className="input"
-            id="ctx-company"
-            required
-            value={form.companyName}
-            onChange={(e) => update("companyName", e.target.value)}
-            style={{ maxWidth: 320 }}
-          />
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          <div className="field">
-            <label className="field-label" htmlFor="ctx-industry">
-              Indústria
-            </label>
-            <input
-              className="input"
-              id="ctx-industry"
-              value={form.industry}
-              onChange={(e) => update("industry", e.target.value)}
-              placeholder="ex.: Software B2B"
-            />
-          </div>
-          <div className="field">
-            <label className="field-label" htmlFor="ctx-icp">
-              ICP
-            </label>
-            <input
-              className="input"
-              id="ctx-icp"
-              value={form.idealCustomerProfile}
-              onChange={(e) => update("idealCustomerProfile", e.target.value)}
-              placeholder="ex.: mid-market varejo"
-            />
-          </div>
-        </div>
-
-        <div className="field">
-          <label className="field-label" htmlFor="ctx-value">
-            Proposta de valor
-          </label>
-          <textarea
-            className="textarea"
-            id="ctx-value"
-            rows={3}
-            value={form.valueProposition}
-            onChange={(e) => update("valueProposition", e.target.value)}
-          />
-        </div>
-
-        <div className="field">
-          <label className="field-label" htmlFor="ctx-comp">
-            Concorrentes{" "}
-            <span style={{ fontWeight: 400, color: "var(--muted)" }}>(um por linha)</span>
-          </label>
-          <textarea
-            className="textarea"
-            id="ctx-comp"
-            rows={3}
-            value={form.competitors}
-            onChange={(e) => update("competitors", e.target.value)}
-          />
-        </div>
-
-        <div className="field">
-          <label className="field-label" htmlFor="ctx-obj">
-            Objection handling{" "}
-            <span style={{ fontWeight: 400, color: "var(--muted)" }}>(um por linha)</span>
-          </label>
-          <textarea
-            className="textarea"
-            id="ctx-obj"
-            rows={3}
-            value={form.objectionHandling}
-            onChange={(e) => update("objectionHandling", e.target.value)}
-          />
-        </div>
-
-        <div className="field">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span className="field-label">Produtos</span>
-            <button className="btn btn-ghost btn-sm" type="button" onClick={addProduct}>
-              + Adicionar produto
-            </button>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {form.products.length === 0 ? (
-              <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>
-                Nenhum produto cadastrado.
-              </p>
-            ) : (
-              form.products.map((p, i) => (
-                <div
-                  key={i}
-                  className="card"
-                  style={{ display: "flex", flexDirection: "column", gap: 8 }}
-                >
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <input
-                      className="input"
-                      value={p.name}
-                      onChange={(e) => updateProduct(i, { name: e.target.value })}
-                      placeholder="Nome do produto"
-                      style={{ flex: 1 }}
-                    />
-                    <button
-                      className="btn btn-ghost btn-sm"
-                      type="button"
-                      onClick={() => removeProduct(i)}
-                      style={{ color: "var(--danger)" }}
-                    >
-                      Remover
-                    </button>
-                  </div>
-                  <textarea
-                    className="textarea"
-                    rows={2}
-                    value={p.description}
-                    onChange={(e) => updateProduct(i, { description: e.target.value })}
-                    placeholder="Descrição"
-                  />
-                  <textarea
-                    className="textarea"
-                    rows={2}
-                    value={p.keyDifferentiators}
-                    onChange={(e) => updateProduct(i, { keyDifferentiators: e.target.value })}
-                    placeholder="Diferenciais (um por linha)"
-                  />
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {error && <div className="notice notice--danger">{error}</div>}
-        {message && (
-          <span
-            className="saved-note is-show"
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--success)" }}
-          >
-            <CheckIcon />
-            {message}
-          </span>
-        )}
-
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button className="btn btn-primary btn-sm" type="submit" disabled={saving}>
-            {saving ? "Salvando…" : "Salvar contexto"}
-          </button>
-        </div>
-      </form>
-
-      {/* ── Version history (US31) ──
-          The backend keeps every edit in tenant_context_versions. This block is the read path:
-          a history nobody can consult is a backup, not an audit trail — which is exactly the
-          state iam_policy_versions has been in since V006. */}
-      <div style={{ marginTop: 30, paddingTop: 22, borderTop: "1px solid var(--border)" }}>
-        <div className="section-head">
-          <h2 className="sec-label">Histórico de versões</h2>
-        </div>
-        <p style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.6, margin: "0 0 14px" }}>
-          Cada alteração do contexto vira uma versão. Salvar sem mudar nada não cria versão nova.
-        </p>
-
-        {historyError && <div className="notice notice--danger">{historyError}</div>}
-
-        {versions.length === 0 && !historyError ? (
-          <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>
-            Nenhuma versão ainda — a primeira aparece assim que você salvar o contexto.
-          </p>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {versions.map((v) => (
-              <div key={v.version} className="card" style={{ padding: "10px 14px" }}>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <span style={{ fontSize: 13.5, fontWeight: 500 }}>Versão {v.version}</span>
-                  {v.version === currentVersion && <span className="chip">Em uso</span>}
-                  <span style={{ flex: 1, fontSize: 12.5, color: "var(--muted)" }}>
-                    {formatDateTime(v.createdAt)}
-                    {" · "}
-                    {v.createdByName ?? "autor removido"}
-                  </span>
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    type="button"
-                    onClick={() => void onOpenVersion(v.version)}
-                    aria-expanded={openVersion === v.version}
-                  >
-                    {openVersion === v.version ? "Fechar" : "Ver"}
-                  </button>
-                </div>
-
-                {openVersion === v.version && (
-                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)" }}>
-                    {openLoading || !openDocument ? (
-                      <div className="skel" style={{ height: 60 }} />
-                    ) : (
-                      <>
-                        <VersionPreview dto={openDocument} />
-                        <button
-                          className="btn btn-ghost btn-sm"
-                          type="button"
-                          style={{ marginTop: 10 }}
-                          onClick={() => onRestore(openDocument)}
-                        >
-                          Restaurar no formulário
-                        </button>
-                        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>
-                          Carrega esta versão no formulário acima. Ela só passa a valer quando você
-                          salvar — e isso cria uma versão nova, sem apagar as anteriores.
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-/** Read-only rendering of a past version's document. Empty fields are simply omitted. */
-function VersionPreview({ dto }: { dto: TenantContextDto }) {
-  const rows: [string, string][] = [];
-  if (dto.companyName) rows.push(["Empresa", dto.companyName]);
-  if (dto.industry) rows.push(["Indústria", dto.industry]);
-  if (dto.idealCustomerProfile) rows.push(["ICP", dto.idealCustomerProfile]);
-  if (dto.valueProposition) rows.push(["Proposta de valor", dto.valueProposition]);
-  if (dto.competitors?.length) rows.push(["Concorrentes", dto.competitors.join(", ")]);
-  if (dto.objectionHandling?.length)
-    rows.push(["Objection handling", dto.objectionHandling.join(" · ")]);
-  if (dto.products?.length) rows.push(["Produtos", dto.products.map((p) => p.name).join(", ")]);
-
-  return (
-    <dl style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "6px 12px", margin: 0 }}>
-      {rows.map(([label, value]) => (
-        <Fragment key={label}>
-          <dt style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{label}</dt>
-          <dd style={{ fontSize: 12.5, margin: 0, lineHeight: 1.5 }}>{value}</dd>
-        </Fragment>
-      ))}
-    </dl>
-  );
-}
-
 /* ── hub-only styles (there is no class in components.css) ── */
 const SET_STYLES = `
 .set-layout { display: flex; gap: 40px; align-items: flex-start; }

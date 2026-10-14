@@ -162,6 +162,19 @@ public class IamRepositoryAdapter implements IamRepository {
     // ===================== policies =====================
 
     @Override
+    @Transactional(readOnly = true)
+    @SuppressWarnings("unchecked")
+    public List<UUID> listGroupPolicyIds(UUID groupId, UUID tenantId) {
+        return (List<UUID>)
+                em.createNativeQuery(
+                                "SELECT policy_id FROM iam_group_policies "
+                                        + "WHERE group_id = :g AND tenant_id = :t ORDER BY policy_id")
+                        .setParameter("g", groupId)
+                        .setParameter("t", tenantId)
+                        .getResultList();
+    }
+
+    @Override
     @Transactional
     public IamPolicy createPolicy(
             UUID tenantId, String name, String description, String documentJson, UUID createdBy) {

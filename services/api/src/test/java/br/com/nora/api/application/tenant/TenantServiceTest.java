@@ -320,6 +320,11 @@ class TenantServiceTest {
         }
 
         @Override
+        public List<UUID> listGroupPolicyIds(UUID groupId, UUID tenantId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public void detachPolicyFromGroup(UUID policyId, UUID groupId, UUID tenantId) {
             throw new UnsupportedOperationException();
         }

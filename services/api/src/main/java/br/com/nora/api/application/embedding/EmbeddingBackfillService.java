@@ -27,7 +27,7 @@ import org.springframework.stereotype.Service;
  * was {@code POST /meetings/{id}/reprocess}, which re-runs the whole LLM analysis to obtain one
  * vector.
  *
- * <p>It does not need the model. The input is the summary snippet already persisted on the meeting,
+ * <p>It does not need the analysis model. The input is the full summary persisted on the analysis,
  * which is exactly what the live path indexes (ADR 0012: the summary has been through the PII
  * Shield, the title has not). One embedding call per meeting, orders of magnitude cheaper than an
  * analysis.
@@ -109,6 +109,7 @@ public class EmbeddingBackfillService {
                     totals.indexed(),
                     totals.missingVector(),
                     totals.staleModel(),
+                    totals.staleContent(),
                     tenants,
                     tenants.size() >= MAX_TENANT_ROWS);
         } catch (DataAccessException ex) {
@@ -118,8 +119,8 @@ public class EmbeddingBackfillService {
 
     /**
      * Indexes up to {@code limit} pending meetings of one tenant. Idempotent — a meeting that
-     * already carries a vector from the current model is never a candidate, so running it twice
-     * costs nothing the second time.
+     * already carries a full-summary vector from the current model is never a candidate, so running
+     * it twice costs nothing the second time.
      */
     public RunOutcome run(UUID tenantId, Integer requestedLimit, String operator) {
         if (tenantId == null) {
@@ -232,6 +233,7 @@ public class EmbeddingBackfillService {
             long indexed,
             long missingVector,
             long staleModel,
+            long staleContent,
             List<EmbeddingIndexStatusSource.TenantIndexStatus> tenants,
             boolean tenantsTruncated) {}
 

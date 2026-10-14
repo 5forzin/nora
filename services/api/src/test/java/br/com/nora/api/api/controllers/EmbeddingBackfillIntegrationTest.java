@@ -40,7 +40,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * fix: a meeting analysed while no embedding credential was configured has a summary but no vector,
  * so semantic search cannot see it, and nothing ever comes back for it.
  *
- * <p>The async analysis pipeline does not run in the test profile, so the summary snippet is
+ * <p>The async analysis pipeline does not run in the test profile, so the analysis summary is
  * written straight to the row — which is exactly the state a meeting is left in when the analysis
  * succeeded and the indexing did not.
  */
@@ -84,8 +84,8 @@ class EmbeddingBackfillIntegrationTest {
         UUID idB = UUID.fromString(b.get("id").asText());
 
         // The state the defect leaves behind: analysed (there is a summary) and unindexed.
-        setSnippet(idA, "renovação de contrato e negociação de preço com a Acme");
-        setSnippet(idB, "onboarding de novo cliente e configuração de suporte");
+        setSummary(idA, "renovação de contrato e negociação de preço com a Acme");
+        setSummary(idB, "onboarding de novo cliente e configuração de suporte");
 
         // Search is blind to both, and says so by returning nothing at all.
         JsonNode before = read(authGet("/meetings/search?q=" + enc("preço do contrato"), token));
@@ -125,6 +125,72 @@ class EmbeddingBackfillIntegrationTest {
     }
 
     @Test
+    void backfill_replacesLegacySnippetVectorsWithFullUnicodeSummary() throws Exception {
+        String token = signupAndLogin("legacy-index@nora.dev", "StrongPassword123", "Owner");
+        JsonNode meeting = upload(token, "Private title never sent to embeddings");
+        UUID tenantId = UUID.fromString(meeting.get("tenantId").asText());
+        UUID meetingId = UUID.fromString(meeting.get("id").asText());
+        String summary = "General context. ".repeat(25) + "Launch blocked by procurement. 🚀";
+        setSummary(meetingId, summary);
+        jdbc.update(
+                "INSERT INTO meeting_embeddings"
+                        + " (meeting_id, tenant_id, model, dim, embedding, source_chars)"
+                        + " VALUES (?, ?, 'stub:test', 1, '[1]', 240)",
+                meetingId,
+                tenantId);
+
+        JsonNode preview =
+                tenantRow(read(adminGet("/admin/platform/embeddings/backfill")), tenantId);
+        assertThat(preview.get("staleContent").asLong()).isEqualTo(1);
+        assertThat(preview.get("staleModel").asLong()).isZero();
+        assertThat(preview.get("indexed").asLong()).isZero();
+
+        JsonNode result = read(adminPost(Map.of("tenantId", tenantId.toString())));
+        assertThat(result.get("indexed").asInt()).isEqualTo(1);
+        assertThat(result.get("remaining").asLong()).isZero();
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT source_chars FROM meeting_embeddings WHERE meeting_id = ?",
+                                Integer.class,
+                                meetingId))
+                .isEqualTo(summary.codePointCount(0, summary.length()));
+        JsonNode second = read(adminPost(Map.of("tenantId", tenantId.toString())));
+        assertThat(second.get("candidates").asInt()).isZero();
+        JsonNode after = tenantRow(read(adminGet("/admin/platform/embeddings/backfill")), tenantId);
+        assertThat(after.get("staleContent").asLong()).isZero();
+        assertThat(after.get("indexed").asLong()).isEqualTo(1);
+    }
+
+    @Test
+    void backfill_skipsDeletedMeetingsAndOtherTenants() throws Exception {
+        String token = signupAndLogin("index-scope@nora.dev", "StrongPassword123", "Owner");
+        JsonNode visible = upload(token, "Visible meeting");
+        JsonNode deleted = upload(token, "Deleted meeting");
+        UUID tenantId = UUID.fromString(visible.get("tenantId").asText());
+        UUID visibleId = UUID.fromString(visible.get("id").asText());
+        UUID deletedId = UUID.fromString(deleted.get("id").asText());
+        String otherToken =
+                signupAndLogin("other-index-scope@nora.dev", "StrongPassword123", "Other");
+        UUID otherId = UUID.fromString(upload(otherToken, "Other tenant").get("id").asText());
+        setSummary(visibleId, "Visible analysis");
+        setSummary(deletedId, "Deleted analysis");
+        setSummary(otherId, "Other tenant analysis");
+        jdbc.update("UPDATE meetings SET deleted_at = now() WHERE id = ?", deletedId);
+
+        JsonNode preview =
+                tenantRow(read(adminGet("/admin/platform/embeddings/backfill")), tenantId);
+        assertThat(preview.get("analysedMeetings").asInt()).isEqualTo(1);
+        JsonNode result = read(adminPost(Map.of("tenantId", tenantId.toString())));
+        assertThat(result.get("indexed").asInt()).isEqualTo(1);
+        assertThat(
+                        jdbc.queryForList(
+                                "SELECT meeting_id FROM meeting_embeddings WHERE meeting_id IN (?, ?)",
+                                deletedId,
+                                otherId))
+                .isEmpty();
+    }
+
+    @Test
     void backfill_requiresATenant() throws Exception {
         ResponseEntity<String> r = adminPost(Map.of());
         assertThat(r.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
@@ -132,8 +198,14 @@ class EmbeddingBackfillIntegrationTest {
 
     /* ---------- helpers ---------- */
 
-    private void setSnippet(UUID meetingId, String snippet) {
+    private void setSummary(UUID meetingId, String summary) {
+        String snippet = summary.length() <= 240 ? summary : summary.substring(0, 237) + "...";
         jdbc.update("UPDATE meetings SET summary_snippet = ? WHERE id = ?", snippet, meetingId);
+        jdbc.update(
+                "INSERT INTO meeting_analyses (meeting_id, tenant_id, summary, sentiment_overall)"
+                        + " SELECT id, tenant_id, ?, 'NEUTRAL' FROM meetings WHERE id = ?",
+                summary,
+                meetingId);
     }
 
     private JsonNode tenantRow(JsonNode preview, UUID tenantId) {

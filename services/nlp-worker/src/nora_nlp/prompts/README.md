@@ -19,7 +19,7 @@ and no line of Python ever loaded it — see the note below.
 | Prompt | Version | Loaded by | Schema |
 |---|---|---|---|
 | Meeting Analysis | v1 | `llm_analyzer.analyze` | `meeting-analysis-v1.schema.json` |
-| Live Highlights | v1 | `live_analyzer.analyze` | inline in `live_analyzer._build_json_schema_for_live` |
+| Live Highlights | v1 | `live_analyzer.analyze` | generated from `LiveHighlightsV1` by `live_analyzer._build_json_schema_for_live` |
 | Meeting Split | v1 | `split_analyzer.analyze` | inline in `split_analyzer._build_json_schema_for_split` |
 
 ## Removed: `pii-shield-v1.md`

@@ -33,7 +33,7 @@ import { ApiRequestError } from '@/lib/api/client';
 const TITLE = 'Discovery Acme — Renovação 2026';
 
 function renderZone() {
-  return render(<MeetingDangerZone meetingId="m-1" title={TITLE} canReprocess={false} />);
+  return render(<MeetingDangerZone meetingId="m-1" title={TITLE} canReprocess={false} canRemove canErase />);
 }
 
 beforeEach(() => {
@@ -44,6 +44,14 @@ beforeEach(() => {
 });
 
 afterEach(cleanup);
+
+it('hides ungranted removal and erasure actions', () => {
+  render(<MeetingDangerZone meetingId="m-1" title={TITLE} canReprocess={false} />);
+  expect(screen.queryByTestId('meeting-remove')).toBeNull();
+  expect(screen.queryByTestId('meeting-erase')).toBeNull();
+  expect(removeMeeting).not.toHaveBeenCalled();
+  expect(eraseMeeting).not.toHaveBeenCalled();
+});
 
 describe('reversible removal', () => {
   it('asks once before removing, and removes nothing on the first click', () => {

@@ -113,6 +113,8 @@ public class GlobalExceptionHandler {
                     case "MEETING_NOT_FOUND" -> HttpStatus.NOT_FOUND;
                     case "TRANSCRIPT_TOO_LARGE", "FILE_TOO_LARGE" -> HttpStatus.PAYLOAD_TOO_LARGE;
                     case "MEETING_RATE_LIMITED" -> HttpStatus.TOO_MANY_REQUESTS;
+                    case "UPLOAD_IDEMPOTENCY_CONFLICT", "UPLOAD_ALREADY_REMOVED" ->
+                            HttpStatus.CONFLICT;
                     default -> HttpStatus.BAD_REQUEST;
                 };
         return ResponseEntity.status(status)
@@ -156,6 +158,7 @@ public class GlobalExceptionHandler {
         HttpStatus status =
                 switch (ex.code()) {
                     case "TENANT_NOT_FOUND" -> HttpStatus.NOT_FOUND;
+                    case "ENTERPRISE_REQUIRED" -> HttpStatus.FORBIDDEN;
                     case "TENANT_DOMAIN_INVALID" -> HttpStatus.UNPROCESSABLE_ENTITY;
                     default -> HttpStatus.BAD_REQUEST;
                 };

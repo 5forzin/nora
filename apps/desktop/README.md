@@ -35,6 +35,11 @@ straight to the provider — it does not pass through NORA's infrastructure.
 
 ## Development
 
+Open the recorder using the recording control in the main window or the tray menu. Choose audio
+sources in the dock before recording. The microphone and Windows output can be
+captured independently; at least one must be enabled. Stop from the dock or the
+transcript window to finish and upload the meeting, including the final STT result.
+
 ```bash
 # At the monorepo root
 cd apps/desktop

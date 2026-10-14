@@ -164,7 +164,11 @@ public class OpenAiRealtimeSessionBroker implements RealtimeSttBroker {
         ObjectNode transcription = input.putObject("transcription");
         transcription.put("model", cfg.model());
         if (!language.isBlank()) {
-            transcription.put("language", language);
+            if (cfg.model().startsWith("gpt-live-transcribe")) {
+                transcription.putArray("languages").add(language);
+            } else {
+                transcription.put("language", language);
+            }
         }
 
         if (cfg.turnDetection().isBlank()) {

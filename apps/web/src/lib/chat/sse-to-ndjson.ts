@@ -7,6 +7,7 @@
  * idle budget below) and it had no test at all while it sat there.
  */
 import { encodeChatFrame } from '@/lib/chat/ndjson';
+import type { ChatContentTransform } from '@/lib/chat/source-links';
 
 export interface StreamUsage {
   promptTokens: number;
@@ -55,12 +56,13 @@ export interface SseToNdjsonOptions {
    * it is user-facing copy, and user-facing copy is pt-BR and lives with the route.
    */
   idleNotice: string;
+  /** Transforms answer text across deltas; reasoning is deliberately passed through untouched. */
+  contentTransform?: ChatContentTransform;
+  /** Trusted current records appended only after a normally completed model response. */
+  completionContent?: string;
 }
 
-type ReadOutcome =
-  | { kind: 'chunk'; value: Uint8Array }
-  | { kind: 'done' }
-  | { kind: 'idle' };
+type ReadOutcome = { kind: 'chunk'; value: Uint8Array } | { kind: 'done' } | { kind: 'idle' };
 
 /**
  * Turns the SSE stream (OpenAI-compatible) into NDJSON frames and captures the final `usage`
@@ -71,7 +73,7 @@ export function openAiSseToNdjson(
   upstream: ReadableStream<Uint8Array>,
   options: SseToNdjsonOptions,
 ): ReadableStream<Uint8Array> {
-  const { onComplete, trace, idleTimeoutMs, idleNotice } = options;
+  const { onComplete, trace, idleTimeoutMs, idleNotice, contentTransform, completionContent } = options;
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   let buffer = '';
@@ -81,9 +83,21 @@ export function openAiSseToNdjson(
 
   const frame = (kind: 'r' | 'c', text: string) => encoder.encode(encodeChatFrame(kind, text));
 
+  const flushContent = (controller: ReadableStreamDefaultController<Uint8Array>) => {
+    const tail = contentTransform?.flush();
+    if (tail) controller.enqueue(frame('c', tail));
+  };
+
   const finish = (controller: ReadableStreamDefaultController<Uint8Array>) => {
     if (finished) return;
     finished = true;
+    flushContent(controller);
+    if (!trace.idleTimedOut && completionContent) {
+      const text = contentTransform
+        ? contentTransform.push(completionContent) + contentTransform.flush()
+        : completionContent;
+      if (text) controller.enqueue(frame('c', text));
+    }
     try {
       onComplete(usage);
     } catch {
@@ -114,9 +128,11 @@ export function openAiSseToNdjson(
     });
     try {
       return await Promise.race([
-        reader.read().then<ReadOutcome>(({ done, value }) =>
-          done || value === undefined ? { kind: 'done' } : { kind: 'chunk', value },
-        ),
+        reader
+          .read()
+          .then<ReadOutcome>(({ done, value }) =>
+            done || value === undefined ? { kind: 'done' } : { kind: 'chunk', value },
+          ),
         idle,
       ]);
     } finally {
@@ -168,6 +184,7 @@ export function openAiSseToNdjson(
           // The provider went quiet mid-body. Say so in the answer instead of closing on a
           // half-sentence that reads like a complete one, then release the upstream socket.
           trace.idleTimedOut = true;
+          flushContent(controller);
           if (idleNotice) controller.enqueue(frame('c', idleNotice));
           void reader.cancel().catch(() => undefined);
           finish(controller);
@@ -204,7 +221,8 @@ export function openAiSseToNdjson(
             const text = delta?.content;
             if (text) {
               trace.contentChunks += 1;
-              controller.enqueue(frame('c', text));
+              const transformed = contentTransform ? contentTransform.push(text) : text;
+              if (transformed) controller.enqueue(frame('c', transformed));
             }
             if (json.usage) {
               usage.promptTokens = json.usage.prompt_tokens ?? usage.promptTokens;
