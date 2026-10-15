@@ -122,6 +122,15 @@ function meetingLines(
         1_000,
       ),
     );
+  } else {
+    const quotes = [
+      ...new Set(
+        (analysis.actionItems ?? [])
+          .map((item) => clampContextValue(item.sourceQuote?.normalize('NFC') ?? '', 500))
+          .filter(Boolean),
+      ),
+    ];
+    lines.push(...section('Protected transcript evidence:', quotes.map((quote) => `- ${quote}`), 2_000));
   }
   return lines;
 }
