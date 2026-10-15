@@ -58,3 +58,44 @@ test('evidence resumed from the upload page opens a meeting before reading evide
   await assert.rejects(runner.evidence(), (error) => error === meetingOpened);
   assert.equal(meetingCalls, 1);
 });
+
+test('read-only navigation retries a closed or reset connection once before checking the page', async () => {
+  for (const code of ['CLOSED', 'RESET']) {
+    const runner = Object.create(PresentationRunner.prototype);
+    runner.scope = new AsyncLocalStorage();
+    const navigations = [];
+    let readyChecks = 0;
+    runner.page = {
+      bringToFront: async () => {},
+      url: () => 'https://nora.systems/meetings/upload',
+      goto: async (url) => {
+        navigations.push(url);
+        if (navigations.length === 1) throw new Error(`page.goto: net::ERR_CONNECTION_${code}`);
+      },
+      locator: () => ({ first: () => ({ waitFor: async () => { readyChecks++; } }) }),
+    };
+
+    await runner.goto('/enterprise');
+    assert.deepEqual(navigations, ['https://nora.systems/enterprise', 'https://nora.systems/enterprise']);
+    assert.equal(readyChecks, 1);
+  }
+});
+
+test('aborting during the navigation retry delay prevents a second request', async () => {
+  const runner = Object.create(PresentationRunner.prototype);
+  runner.scope = new AsyncLocalStorage();
+  const controller = new AbortController();
+  let navigations = 0;
+  runner.page = {
+    bringToFront: async () => {},
+    url: () => 'https://nora.systems/meetings/upload',
+    goto: async () => { navigations++; throw new Error('page.goto: net::ERR_CONNECTION_CLOSED'); },
+    locator: () => assert.fail('An aborted navigation must not inspect the page'),
+  };
+
+  const operation = runner.scope.run(controller.signal, () => runner.goto('/enterprise'));
+  const timer = setTimeout(() => controller.abort(), 20);
+  try { await assert.rejects(operation, /Interrompido/); }
+  finally { clearTimeout(timer); }
+  assert.equal(navigations, 1);
+});

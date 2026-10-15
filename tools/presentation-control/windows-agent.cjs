@@ -155,7 +155,17 @@ class PresentationRunner {
     if (!/^\/(dashboard|meetings(?:\/upload|\/[a-f0-9-]+)?|enterprise(?:\/company)?|tasks(?:\?meetingId=[a-f0-9-]+(?:#task-[a-f0-9-]+)?)?|chat(?:\?.*)?)$/.test(route)) throw new Error('Destino fora do roteiro.');
     await page.bringToFront();
     this.check();
-    if (page.url() !== WEB + route) await page.goto(WEB + route, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    if (page.url() !== WEB + route) {
+      const options = { waitUntil: 'domcontentloaded', timeout: 20000 };
+      try { await page.goto(WEB + route, options); }
+      catch (error) {
+        this.check();
+        if (!/net::ERR_CONNECTION_(CLOSED|RESET)\b/.test(String(error.message))) throw error;
+        await sleep(450);
+        this.check();
+        await page.goto(WEB + route, options);
+      }
+    }
     if (route.startsWith('/chat')) await page.getByRole('textbox', { name: 'Pergunte qualquer coisa para a Nora', exact: true }).waitFor({ timeout: 20000 });
     else await page.locator('h1').first().waitFor({ timeout: 20000 });
     this.check();
