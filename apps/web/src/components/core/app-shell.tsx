@@ -11,7 +11,6 @@
  * Enterprise entries use authenticated workspace capabilities from the API.
  *
  * Deliberate deviations from the default shell:
- *  - the sidebar logo is only the "Nora" wordmark (no soundwave);
  *  - "Integrações" leaves the main nav and becomes the "Conectores" category;
  *  - the "Sessões" block uses `.side-sec-label--tight` (label pinned close).
  */
@@ -24,6 +23,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } f
 import { SESSION_USER_EVENT, clearSession, getCurrentUser, resumeSessionRefresh, type SessionUser } from "@/lib/auth";
 
 import { useWorkspaceAccess } from "@/components/enterprise/workspace-provider";
+import { TotvsSymbol } from "@/components/brand/totvs-symbol";
 
 import { AppSidebarSessions } from "./app-sidebar-sessions";
 import { Avatar } from "./avatar";
@@ -173,13 +173,16 @@ function SearchIcon() {
   );
 }
 
-/** "Nora" wordmark — no soundwave, by design. DM Sans 500, -0.02em. */
+/** Compact Nora wordmark with the TOTVS symbol. DM Sans 500, -0.02em. */
 function NoraWordmark() {
   return (
     <span
       role="img"
       aria-label="Nora"
       style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
         fontFamily: "var(--font-sans), system-ui, sans-serif",
         fontWeight: 500,
         fontSize: 19,
@@ -188,6 +191,7 @@ function NoraWordmark() {
         color: "var(--ink)",
       }}
     >
+      <TotvsSymbol size={22} />
       Nora
     </span>
   );

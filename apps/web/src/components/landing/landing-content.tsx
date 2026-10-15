@@ -416,7 +416,7 @@ export function LandingFooter() {
         <div className="footer-inner">
           <div className="footer-brand">
             <NoraLogo size={22} animate={false} />
-            <p>Reuniões, decisões e próximos passos. Projeto FIAP × TOTVS 2026.</p>
+            <p>Reuniões, decisões e próximos passos.</p>
           </div>
           <div className="footer-col">
             <h4>Produto</h4>
@@ -453,15 +453,6 @@ export function LandingFooter() {
                   rel="noopener noreferrer"
                 >
                   ADRs
-                </a>
-              </li>
-              <li>
-                <a
-                  href={`${REPO_URL}/tree/main/docs/challenge`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Challenge FIAP
                 </a>
               </li>
             </ul>

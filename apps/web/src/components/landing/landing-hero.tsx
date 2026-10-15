@@ -161,17 +161,6 @@ export function LandingHero() {
         </div>
       </div>
 
-      <div className="container">
-        {/* Replaces the old logo strip: NORA has no customers, so the only context
-            worth showing is where the project itself comes from. */}
-        <div className="context-strip">
-          <span className="lead">Projeto do Challenge FIAP × TOTVS 2026</span>
-          <span className="note">
-            Em construção aberta: cada decisão de arquitetura vira um ADR no repositório público.
-          </span>
-        </div>
-      </div>
-
       <a href="#como-funciona" className="hero-scroll-hint" aria-label="Rolar para baixo">
         <span>Role pra explorar</span>
         <span className="hero-scroll-hint-arrow" />

@@ -290,6 +290,7 @@
 /* Soundwave decoration */
 .nora-landing .hero-soundwave {
   position: absolute;
+  overflow: hidden;
   top: 50%;
   right: 0;
   transform: translateY(-50%);
