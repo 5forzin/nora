@@ -198,6 +198,266 @@
         },
         "rationale": { "type": "string", "minLength": 10, "maxLength": 1000 }
       }
+    },
+    "commercialIntelligence": {
+      "description": "Optional Enterprise observations grounded in the shielded transcript. Omitted or null for older responses and Core workspaces.",
+      "anyOf": [{ "$ref": "#/$defs/CommercialIntelligence" }, { "type": "null" }],
+      "default": null
+    }
+  },
+  "$defs": {
+    "BudgetApproval": {
+      "enum": [
+        "APPROVED",
+        "NOT_APPROVED",
+        "UNKNOWN"
+      ],
+      "title": "BudgetApproval",
+      "type": "string"
+    },
+    "BudgetKind": {
+      "enum": [
+        "BUDGET",
+        "PROPOSAL",
+        "PRICE",
+        "REVENUE",
+        "OTHER"
+      ],
+      "title": "BudgetKind",
+      "type": "string"
+    },
+    "CommercialBudget": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Amount"
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Z]{3}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Currency"
+        },
+        "kind": {
+          "$ref": "#/$defs/BudgetKind"
+        },
+        "approval": {
+          "$ref": "#/$defs/BudgetApproval"
+        },
+        "period": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Period"
+        },
+        "sourceQuote": {
+          "maxLength": 500,
+          "minLength": 5,
+          "title": "Sourcequote",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "approval",
+        "sourceQuote"
+      ],
+      "title": "CommercialBudget",
+      "type": "object"
+    },
+    "CommercialPersona": {
+      "additionalProperties": false,
+      "properties": {
+        "speaker": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Speaker"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role"
+        },
+        "decisionRole": {
+          "$ref": "#/$defs/DecisionRole"
+        },
+        "sourceQuote": {
+          "maxLength": 500,
+          "minLength": 5,
+          "title": "Sourcequote",
+          "type": "string"
+        }
+      },
+      "required": [
+        "decisionRole",
+        "sourceQuote"
+      ],
+      "title": "CommercialPersona",
+      "type": "object"
+    },
+    "CommercialProduct": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "relationship": {
+          "$ref": "#/$defs/ProductRelationship"
+        },
+        "sourceQuote": {
+          "maxLength": 500,
+          "minLength": 5,
+          "title": "Sourcequote",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "relationship",
+        "sourceQuote"
+      ],
+      "title": "CommercialProduct",
+      "type": "object"
+    },
+    "DecisionRole": {
+      "enum": [
+        "DECISION_MAKER",
+        "INFLUENCER",
+        "USER",
+        "UNKNOWN"
+      ],
+      "title": "DecisionRole",
+      "type": "string"
+    },
+    "ProductRelationship": {
+      "enum": [
+        "CURRENT",
+        "OPPORTUNITY",
+        "COMPETITOR",
+        "MENTIONED"
+      ],
+      "title": "ProductRelationship",
+      "type": "string"
+    },
+    "Sentiment": {
+      "enum": [
+        "POSITIVE",
+        "NEUTRAL",
+        "NEGATIVE",
+        "MIXED"
+      ],
+      "title": "Sentiment",
+      "type": "string"
+    },
+    "TopicSentiment": {
+      "additionalProperties": false,
+      "properties": {
+        "topic": {
+          "maxLength": 120,
+          "minLength": 2,
+          "title": "Topic",
+          "type": "string"
+        },
+        "sentiment": {
+          "$ref": "#/$defs/Sentiment"
+        },
+        "sourceQuote": {
+          "maxLength": 500,
+          "minLength": 5,
+          "title": "Sourcequote",
+          "type": "string"
+        }
+      },
+      "required": [
+        "topic",
+        "sentiment",
+        "sourceQuote"
+      ],
+      "title": "TopicSentiment",
+      "type": "object"
+    },
+    "CommercialIntelligence": {
+      "additionalProperties": false,
+      "description": "Evidence-backed observations, separate from participant identity and sales forecasts.",
+      "properties": {
+        "products": {
+          "items": {
+            "$ref": "#/$defs/CommercialProduct"
+          },
+          "maxItems": 30,
+          "title": "Products",
+          "type": "array"
+        },
+        "personas": {
+          "items": {
+            "$ref": "#/$defs/CommercialPersona"
+          },
+          "maxItems": 30,
+          "title": "Personas",
+          "type": "array"
+        },
+        "budgets": {
+          "items": {
+            "$ref": "#/$defs/CommercialBudget"
+          },
+          "maxItems": 30,
+          "title": "Budgets",
+          "type": "array"
+        },
+        "sentimentByTopic": {
+          "items": {
+            "$ref": "#/$defs/TopicSentiment"
+          },
+          "maxItems": 30,
+          "title": "Sentimentbytopic",
+          "type": "array"
+        }
+      },
+      "title": "CommercialIntelligence",
+      "type": "object"
     }
   }
 }

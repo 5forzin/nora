@@ -2,6 +2,7 @@ package br.com.nora.api.api.dto.meeting;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -28,7 +29,8 @@ public record MeetingDetailResponse(
         ProductivityAssessmentResponse productivity,
         CustomerConfidenceResponse customerConfidence,
         OffsetDateTime createdAt,
-        OffsetDateTime updatedAt) {
+        OffsetDateTime updatedAt,
+        Map<String, String> attributes) {
 
     public record OwnerSummary(UUID id, String displayName) {}
 

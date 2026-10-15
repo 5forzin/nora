@@ -70,7 +70,7 @@ class MeetingUploadIdempotencyIntegrationTest {
     @Test
     void retryAfterLostResponseReturnsOriginalWithoutCreatingOrDispatchingAgain() throws Exception {
         Account account = account();
-        String key = UUID.randomUUID().toString();
+        String key = "import:v1:" + UUID.randomUUID();
         JsonNode first = read(upload(account, key, "Pilot", TEXT), HttpStatus.ACCEPTED);
         UUID id = UUID.fromString(first.path("id").asText());
         jdbc.update("UPDATE meetings SET processing_status = 'FAILED' WHERE id = ?", id);

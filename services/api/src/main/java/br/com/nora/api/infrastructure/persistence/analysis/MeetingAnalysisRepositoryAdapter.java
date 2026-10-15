@@ -94,6 +94,7 @@ public class MeetingAnalysisRepositoryAdapter implements MeetingAnalysisReposito
         e.setId(a.id());
         e.setMeetingId(a.meetingId());
         e.setTenantId(a.tenantId());
+        e.setCommercialIntelligence(a.commercialIntelligence());
         e.setSummary(a.summary());
         e.setSentimentOverall(a.sentimentOverall().name());
         e.setTopics(a.topics().toArray(new String[0]));
@@ -223,6 +224,7 @@ public class MeetingAnalysisRepositoryAdapter implements MeetingAnalysisReposito
                 e.getProcessingMillis(),
                 e.getPiiRedactionsApplied(),
                 e.getGeneratedAt(),
-                e.getCreatedAt());
+                e.getCreatedAt(),
+                e.getCommercialIntelligence());
     }
 }

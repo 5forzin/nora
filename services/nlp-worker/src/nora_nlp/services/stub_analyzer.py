@@ -19,6 +19,8 @@ from ..models import (
     AnalyzeResponse,
     BuyingSignal,
     BuyingSignalType,
+    CommercialIntelligence,
+    CommercialProduct,
     ConfidenceBand,
     CoverageStatus,
     CustomerConfidence,
@@ -37,6 +39,7 @@ from ..models import (
     Sentiment,
     Severity,
 )
+from .commercial_grounding import ground_commercial_intelligence
 
 _NEGATIVE_KEYWORDS = {
     "concorrente",
@@ -457,6 +460,27 @@ def _participants(text: str) -> list[Participant]:
     ]
 
 
+def _commercial_intelligence(req: AnalyzeRequest) -> CommercialIntelligence:
+    # The stub only recognizes literal catalogue mentions; semantic observations need the LLM.
+    products: list[CommercialProduct] = []
+    terms = [(p.name, "MENTIONED") for p in req.tenant_context.products]
+    terms += [(name, "MENTIONED") for name in req.tenant_context.competitors]
+    for name, relationship in terms:
+        if not name.strip() or len(name) > 160:
+            continue
+        match = re.search(re.escape(name), req.transcript, re.I)
+        if match is None:
+            continue
+        start = max(0, match.start() - 100)
+        quote = req.transcript[start : max(match.end(), start + 500)]
+        if len(quote.strip()) < 5:
+            continue
+        products.append(CommercialProduct(name=name, relationship=relationship, sourceQuote=quote))
+        if len(products) == 30:
+            break
+    return CommercialIntelligence(products=products)
+
+
 def analyze(req: AnalyzeRequest, *, pii_redactions_applied: int = 0) -> AnalyzeResponse:
     """Analyzes the transcript deterministically. No external call."""
     started = time.monotonic()
@@ -471,6 +495,11 @@ def analyze(req: AnalyzeRequest, *, pii_redactions_applied: int = 0) -> AnalyzeR
     productivity = _productivity(req, sentences, decisions)
     customer_confidence = (
         _customer_confidence(req, sentences) if req.options.include_customer_confidence else None
+    )
+    intelligence, commercial_accepted, commercial_rejected = ground_commercial_intelligence(
+        _commercial_intelligence(req) if req.options.include_customer_confidence else None,
+        req.transcript,
+        req.language,
     )
 
     response = AnalyzeResponse.model_validate(
@@ -488,6 +517,7 @@ def analyze(req: AnalyzeRequest, *, pii_redactions_applied: int = 0) -> AnalyzeR
             "customerConfidence": (
                 customer_confidence.model_dump(by_alias=True) if customer_confidence else None
             ),
+            "commercialIntelligence": intelligence,
             "metadata": {
                 "modelVersion": "stub-deterministic-v1",
                 "promptVersion": req.options.prompt_version,
@@ -495,6 +525,8 @@ def analyze(req: AnalyzeRequest, *, pii_redactions_applied: int = 0) -> AnalyzeR
                 "tokensOutput": 0,
                 "processingMillis": int((time.monotonic() - started) * 1000),
                 "piiRedactionsApplied": pii_redactions_applied,
+                "commercialItemsAccepted": commercial_accepted,
+                "commercialItemsRejected": commercial_rejected,
             },
         }
     )

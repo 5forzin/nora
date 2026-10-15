@@ -1,5 +1,6 @@
 package br.com.nora.api.infrastructure.persistence.analysis;
 
+import br.com.nora.api.domain.analysis.CommercialIntelligence;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -19,6 +20,18 @@ import org.hibernate.type.SqlTypes;
 @Entity
 @Table(name = "meeting_analyses")
 public class MeetingAnalysisJpaEntity {
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "commercial_intelligence", columnDefinition = "jsonb")
+    private CommercialIntelligence commercialIntelligence;
+
+    public CommercialIntelligence getCommercialIntelligence() {
+        return commercialIntelligence;
+    }
+
+    public void setCommercialIntelligence(CommercialIntelligence value) {
+        commercialIntelligence = value;
+    }
 
     @Id private UUID id;
 

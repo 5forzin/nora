@@ -1604,6 +1604,25 @@ Deleting the policy behind a cap is refused (**409 `IAM_POLICY_IN_USE_AS_BOUNDAR
 V033's `ON DELETE NO ACTION`): under a cascade, the ordinary policy-delete endpoint would remove a
 cap while the audit trail recorded only "policy deleted".
 
+## Structured imports and commercial evidence (ADR 0053)
+
+The web client reads JSON, JSON Lines and CSV exports locally, previews individual records and
+preserves meeting IDs, client codes and encounter dates. Selected records use the existing TXT
+upload endpoint with stable idempotency keys. Two processing slots remain occupied until their
+analyses finish; limiting only upload requests would exhaust the API's bounded executor queue.
+Pausing or leaving the page stops unsent records. Already accepted meetings remain on the server.
+
+Enterprise analyses persist optional `commercialIntelligence` in the existing analysis row as
+JSONB. Products, stakeholder roles, monetary mentions and topic sentiment retain source evidence;
+revenue, prices and proposals remain distinct from approved purchase budgets. The worker applies
+the privacy shield before extraction and excludes unsupported observations. Legacy analyses can
+have no commercial object. Core masks it on REST and MCP, including after a plan downgrade.
+
+`GET /meetings/customer-history` groups imported encounters by the tenant's client code, orders
+them by their meeting dates and applies IAM to each meeting. Customer Confidence trends also use
+the encounter date and require access to the previous meeting. A client code does not establish
+that its meetings belong to one opportunity, and this history is not an Account Health score.
+
 ## Next architectural refactors
 
 Catalogued technical debt, prioritization and planned successor ADRs live in **`docs/operations/production-readiness-gaps.md`** (written in Sub-phase 1.10, formalized via ADR 0016). Read that document with ADR 0038 §6 beside it: several of its gaps are now **declared deferrals with a written reason** rather than open work, and parts of it still describe Azure primitives (Key Vault, Application Insights, Flexible Server PITR) that no longer exist. Summary of the main ones:

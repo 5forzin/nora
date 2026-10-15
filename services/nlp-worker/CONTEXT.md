@@ -89,6 +89,73 @@ first load, and ~2ms per sentence.
 
 ## Output Schema (MeetingAnalysisV1)
 
+Enterprise analysis also supports the optional `commercialIntelligence` extension defined in
+`docs/api/llm-schemas/commercial-intelligence-v1.schema.json`. It contains products, anonymous
+speaker roles, monetary observations and sentiment by topic, each backed by a literal source
+quote. `services/commercial_grounding.py` removes unsupported observations after validation.
+The API's existing `includeCustomerConfidence` option gates both commercial blocks; Core
+responses force both to null. Quality counters in response metadata report accepted/rejected
+observations, not accuracy or recall. The deterministic stub recognizes literal catalogue
+mentions only; the real provider performs semantic extraction.
+
+The internal Enterprise provider contract uses numbered evidence segments, v1. Each segment
+is an unchanged, contiguous slice of the already shielded transcript, at most 500 characters;
+speaker turns are kept separate and long turns split without dropping or overlapping text.
+The prompt contains that segmented representation once. Commercial provider items return an
+integer `evidenceId` instead of `sourceQuote`; the worker resolves it to the original slice
+before applying the existing product, persona and monetary grounding. Unknown or malformed
+references are discarded and counted as rejected observations. Public models and schemas keep
+`sourceQuote`, and legacy literal-quote responses still go through the same grounding. Core
+neither constructs nor resolves these segments. Anonymized placeholders identify no product;
+current usage takes priority over competitor-catalogue membership when classifying products.
+For Enterprise prompts, the context's competitor list is presented as `vendorCompetitorReference`
+to distinguish seller-side catalogue information from customer-side usage. The provider's
+`relationship` field defines mutually exclusive customer relationships: current usage wins;
+`COMPETITOR` requires an explicitly compared alternative that is not currently used. No vendor
+lookup or deterministic reclassification changes the model's selected relationship.
+
+Before grounding, configured product and competitor names from the already shielded context
+also supply literal candidates when that exact name appears in the shielded transcript with
+word boundaries. Candidates preserve source spelling, enter only as MENTIONED, and share the
+30-product limit with extracted items. Normalized names are deduplicated, anonymized names are
+excluded, and provider items rejected for invalid evidence are not resurrected. These candidates
+still pass the same grounding and product verification; catalogue membership never proves a
+customer relationship. Aggregate logs distinguish extracted, candidate, grounded and verified
+product counts without exposing names or quotes.
+
+After grounding and summary verification, Enterprise analyses with retained products run a
+separate product verifier. It receives those products and the complete shielded transcript,
+once as the original evidence segments, without tenant context, a catalogue or a second raw
+copy. For each product, the worker supplies a list of original evidence IDs whose eligible
+windows contain that product's literal name, with grounding's case and whitespace rules.
+The strict response requires exactly product0/product1/... properties, each returning only a
+relationship and a zero-based choice in that product's list, or both null to remove the item.
+Each choice has its own numeric bound; no large ID enums are generated. Invalid choices,
+unknown/missing properties, duplicate keys and inconsistent null pairs fail the analysis.
+It cannot add products,
+change names, generate quotes or restore rejected evidence. The worker resolves a contiguous
+window from the selected segment, prepending complete previous neighbors while they fit 500
+characters, then appending complete following neighbors within that same limit. It never skips
+text or cuts a PII placeholder. This permits multi-turn questions and short answers to retain
+their context. Selected names and original-source quotes pass grounding again before storage.
+The reviewer receives no draft relationship or citation hint; it determines both independently
+from the source. A seller-only pitch establishes a mention, not a customer opportunity. There is
+no fallback to an old quote, and no additional provider call is introduced.
+Past abandoned implementations and returned
+licences do not establish current use. Invalid responses fail the analysis rather than silently
+preserving unverified classifications. Core and empty product lists skip this call.
+The extraction, conditional summary verification and conditional product verification execute
+sequentially with one client and request budget; metadata sums all successful calls' tokens.
+The extra pass increases provider cost and is not a guarantee of semantic accuracy.
+Approximate amounts and numeric bounds retain their monetary observation with amount null;
+exact independent values in the same quote remain eligible.
+
+The final analyzer sends the complete shielded transcript; it does not chunk or truncate it.
+The one-million-character request cap is not a guarantee that any configured model can accept
+that many tokens. Enterprise output allows up to 8,192 tokens, and a provider response ending
+at its output limit is rejected rather than persisted as a complete analysis. The separate
+`/split` windows detect meeting boundaries; they are not a long-meeting analysis reducer.
+
 ```json
 {
   "summary": "## Objetivo\n...\n\n## Próximos Passos\n- ...",

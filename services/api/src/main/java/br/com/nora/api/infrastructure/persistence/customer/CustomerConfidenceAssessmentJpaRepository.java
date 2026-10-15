@@ -13,15 +13,28 @@ public interface CustomerConfidenceAssessmentJpaRepository
     List<CustomerConfidenceAssessmentJpaEntity> findByMeetingIdAndTenantId(
             UUID meetingId, UUID tenantId);
 
-    /**
-     * Previous assessments for an account (excludes the current meeting) ordered by {@code
-     * created_at} desc. The service uses only the first (most recent) one to compute the trend;
-     * using a list avoids coupling {@code Pageable}/{@code Optional} here — the thin edge stays in
-     * the adapter.
-     */
-    List<CustomerConfidenceAssessmentJpaEntity>
-            findByCustomerAccountIdAndTenantIdAndMeetingIdNotOrderByCreatedAtDesc(
-                    UUID customerAccountId, UUID tenantId, UUID meetingId);
+    @Query(
+            value =
+                    "SELECT a.* FROM customer_confidence_assessments a "
+                            + "JOIN meetings prior ON prior.id = a.meeting_id AND prior.tenant_id = a.tenant_id "
+                            + "JOIN meetings current ON current.id = :meetingId AND current.tenant_id = :tenantId "
+                            + "WHERE a.customer_account_id = :accountId AND a.tenant_id = :tenantId "
+                            + "AND prior.deleted_at IS NULL AND current.deleted_at IS NULL "
+                            + "AND prior.started_at < current.started_at "
+                            + "ORDER BY prior.started_at DESC, prior.id DESC LIMIT 1",
+            nativeQuery = true)
+    List<CustomerConfidenceAssessmentJpaEntity> findPreviousByEncounterDate(
+            @Param("accountId") UUID accountId,
+            @Param("tenantId") UUID tenantId,
+            @Param("meetingId") UUID meetingId);
+
+    @Modifying
+    @Query(
+            value =
+                    "DELETE FROM customer_confidence_assessments "
+                            + "WHERE meeting_id = :meetingId AND tenant_id = :tenantId",
+            nativeQuery = true)
+    int deleteByMeetingNative(@Param("meetingId") UUID meetingId, @Param("tenantId") UUID tenantId);
 
     /**
      * Deletes the assessment of a (meeting, account) pair via native SQL so that Postgres' ON

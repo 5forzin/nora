@@ -59,6 +59,8 @@ ALLOWED=(
   "apps/web/src/components/"                    # inline pt-BR UI copy not lifted into strings.ts yet
   "apps/web/src/lib/api/client.ts"              # pt-BR error copy surfaced directly in the UI
   "apps/web/src/lib/password-policy.ts"         # pt-BR password-rule copy shown in the UI
+  "apps/web/src/lib/transcript-import.ts"       # pt-BR import validation messages shown in the preview
+  "apps/web/src/lib/commercial-intelligence.ts" # pt-BR commercial evidence labels used in the UI and reports
   "apps/web/src/lib/report/markdown.ts"         # pt-BR headings of the exported meeting report
   "apps/web/src/lib/report/tasks-export.ts"     # pt-BR column headers and labels of the exported task list
   "apps/web/src/lib/report/usage-report.ts"     # pt-BR headings, columns and caveats of the exported period report
@@ -100,6 +102,8 @@ ALLOWED=(
   "apps/web/src/lib/report/usage-report.test.ts"                          # asserts on the pt-BR caveats of the exported period report
   "apps/web/src/lib/pii/redact.test.ts"                                   # pt-BR sample sentences carrying the BR PII under test
   "apps/web/src/lib/api/client.test.ts"                                   # asserts on the pt-BR error copy the client maps API codes to
+  "apps/web/src/lib/transcript-import.test.ts"                            # pt-BR source transcripts and import validation messages
+  "apps/web/src/lib/commercial-intelligence.test.ts"                      # asserts localized commercial labels
   "apps/web/src/lib/chat/pending-evidence.test.ts"                         # pt-BR task fixtures and rendered headings
   "apps/web/src/lib/chat/source-links.test.ts"                             # pt-BR meeting-title and citation fixtures
   "apps/web/src/lib/chat/workspace-context.test.ts"                        # pt-BR meeting/analysis context fixtures
@@ -115,6 +119,8 @@ ALLOWED=(
   "services/nlp-worker/src/nora_nlp/prompts/"                       # LLM prompt templates — translating them changes model behaviour
   "services/nlp-worker/src/nora_nlp/services/llm_analyzer.py"       # pt-BR prompt fragments concatenated into the prompt at runtime
   "services/nlp-worker/src/nora_nlp/services/date_grounding.py"    # pt-BR date words used to ground transcript deadlines
+  "services/nlp-worker/src/nora_nlp/services/commercial_grounding.py" # pt-BR monetary and role markers used to validate source evidence
+  "services/nlp-worker/src/nora_nlp/services/commercial_money.py"  # pt-BR numeral vocabulary used to validate literal monetary amounts
   "services/nlp-worker/src/nora_nlp/services/summary_verifier.py"   # pt-BR evidence headings and transcript status/date matching
   "services/nlp-worker/src/nora_nlp/services/live_analyzer.py"      # pt-BR prompt fragment concatenated into the prompt at runtime
   "services/nlp-worker/src/nora_nlp/services/baseline.py"           # cites a pt-BR term as a worked example

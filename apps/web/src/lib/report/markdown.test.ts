@@ -330,6 +330,50 @@ describe('meetingToMarkdown', () => {
     expect(md).toContain('Cliente engajado.');
   });
 
+  it('uses the declared customer code instead of a generated account label', () => {
+    const md = meetingToMarkdown(meeting({ customerConfidence: {
+      score: 60, band: 'MEDIUM', trend: null, accountName: 'Client C-18', clientCode: 'C-18',
+      rationale: '', buyingSignals: [], objections: [],
+    } }));
+    expect(md).toContain('cliente: C-18');
+    expect(md).not.toContain('Client C-18');
+  });
+
+  it('exports commercial findings with evidence and distinguishes missing amounts from zero', () => {
+    const md = meetingToMarkdown(meeting({ analysis: {
+      summary: '', decisions: [], actionItems: [], risks: [], opportunities: [], topics: [], sentimentOverall: 'NEUTRAL',
+      commercialIntelligence: {
+        products: [{ name: 'ERP', relationship: 'CURRENT', sourceQuote: 'We use ERP.\nEvery day.' }],
+        personas: [
+          { speaker: 'Ana', role: 'Director', decisionRole: 'DECISION_MAKER', sourceQuote: 'I approve the purchase.' },
+          { speaker: null, role: null, decisionRole: 'UNKNOWN', sourceQuote: 'Ask the team.' },
+        ],
+        budgets: [
+          { amount: 170000, currency: 'BRL', kind: 'BUDGET', approval: 'APPROVED', period: '2026', sourceQuote: 'The approved cap is BRL 170000 for 2026.' },
+          { amount: null, currency: null, kind: 'PROPOSAL', approval: 'UNKNOWN', period: null, sourceQuote: 'No proposal amount yet.' },
+        ],
+        sentimentByTopic: [{ topic: 'Implementation', sentiment: 'MIXED', sourceQuote: 'Good product, tight deadline.' }],
+      },
+    } }));
+    expect(md).toContain('**ERP** — Em uso');
+    expect(md).toContain('> We use ERP.\n> Every day.');
+    expect(md).toContain('**Ana** — Director · Decisor');
+    expect(md).toContain('**Pessoa não identificada** — Função não identificada');
+    expect(md).toContain('170.000,00');
+    expect(md).toContain('Orçamento · Aprovado · 2026');
+    expect(md).toContain('**Valor não identificado** — Proposta · Aprovação não identificada');
+    expect(md).toContain('**Implementation** — Misto');
+    expect(md).not.toContain('R$ 0,00');
+  });
+
+  it('reports unobserved commercial categories without invented values', () => {
+    const md = meetingToMarkdown(meeting({ analysis: {
+      summary: '', decisions: [], actionItems: [], risks: [], opportunities: [], topics: [], sentimentOverall: 'NEUTRAL',
+      commercialIntelligence: { products: [], personas: [], budgets: [], sentimentByTopic: [] },
+    } }));
+    expect(md.match(/Não identificado\./g)).toHaveLength(4);
+  });
+
   it('always ends with the generation footer', () => {
     const md = meetingToMarkdown(meeting());
     expect(md).toContain('---');

@@ -41,6 +41,29 @@ public class CustomerAccountRepositoryAdapter implements CustomerAccountReposito
 
     @Override
     @Transactional
+    public CustomerAccount getOrCreateByExternalCode(UUID tenantId, String clientCode) {
+        String label =
+                "Client "
+                        + clientCode.substring(0, Math.min(190, clientCode.length()))
+                        + " - "
+                        + UUID.nameUUIDFromBytes(
+                                clientCode.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        em.createNativeQuery(
+                        "INSERT INTO customer_accounts "
+                                + "(id, tenant_id, name, external_client_code, created_at, updated_at) "
+                                + "VALUES (:id, :tenant, :name, :code, now(), now()) ON CONFLICT DO NOTHING")
+                .setParameter("id", UUID.randomUUID())
+                .setParameter("tenant", tenantId)
+                .setParameter("name", label)
+                .setParameter("code", clientCode)
+                .executeUpdate();
+        return jpa.findByTenantIdAndExternalClientCode(tenantId, clientCode)
+                .map(this::toDomain)
+                .orElseThrow();
+    }
+
+    @Override
+    @Transactional
     public void linkMeeting(UUID meetingId, UUID accountId, UUID tenantId) {
         // Idempotent: composite PK (meeting_id, customer_account_id). ON CONFLICT DO NOTHING
         // avoids an error on re-link (e.g. reprocessing the same meeting).
@@ -58,6 +81,7 @@ public class CustomerAccountRepositoryAdapter implements CustomerAccountReposito
         e.setId(a.id());
         e.setTenantId(a.tenantId());
         e.setName(a.name());
+        e.setExternalClientCode(a.externalClientCode());
         e.setOwnerUserId(a.ownerUserId());
         e.setStage(a.stage());
         e.setCreatedAt(a.createdAt());
@@ -73,6 +97,7 @@ public class CustomerAccountRepositoryAdapter implements CustomerAccountReposito
                 e.getOwnerUserId(),
                 e.getStage(),
                 e.getCreatedAt(),
-                e.getUpdatedAt());
+                e.getUpdatedAt(),
+                e.getExternalClientCode());
     }
 }

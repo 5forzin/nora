@@ -12,6 +12,10 @@ public interface MeetingRepository {
 
     Meeting save(Meeting meeting);
 
+    default List<Meeting> findByClientCode(UUID tenantId, String clientCode) {
+        throw new UnsupportedOperationException("Customer history is not supported");
+    }
+
     Optional<Meeting> findByIdAndTenant(UUID id, UUID tenantId);
 
     /**

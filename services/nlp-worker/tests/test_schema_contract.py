@@ -15,7 +15,12 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from nora_nlp.clients.llm import build_json_schema_for_analysis
-from nora_nlp.models import AnalyzeRequest, LiveHighlightsV1, MeetingAnalysisV1
+from nora_nlp.models import (
+    AnalyzeRequest,
+    CommercialIntelligence,
+    LiveHighlightsV1,
+    MeetingAnalysisV1,
+)
 from nora_nlp.services.live_analyzer import _build_json_schema_for_live
 from nora_nlp.services.stub_analyzer import analyze
 
@@ -49,6 +54,26 @@ def _stub_response(transcript_file: str, tenant: str) -> dict:
 def test_canonical_schema_is_valid_json_schema():
     """The canonical schema must be a valid Draft 2020-12."""
     Draft202012Validator.check_schema(_canonical_schema())
+
+
+def test_commercial_v1_artifact_matches_runtime_and_the_optional_analysis_extension():
+    artifact = json.loads(
+        (SCHEMA_PATH.parent / "commercial-intelligence-v1.schema.json").read_text(encoding="utf-8")
+    )
+    Draft202012Validator.check_schema(artifact)
+    assert artifact.pop("$id") == "urn:nora:schemas:commercial-intelligence:v1"
+    artifact.pop("$schema")
+    assert artifact == CommercialIntelligence.model_json_schema(by_alias=True)
+    canonical = _canonical_schema()
+    for name, definition in artifact["$defs"].items():
+        assert canonical["$defs"][name] == definition
+    assert canonical["$defs"]["CommercialIntelligence"] == {
+        key: value for key, value in artifact.items() if key != "$defs"
+    }
+    assert "commercialIntelligence" not in canonical["required"]
+    legacy = _provider_payload()
+    legacy.pop("commercialIntelligence", None)
+    Draft202012Validator(canonical).validate(legacy)
 
 
 def test_canonical_schema_declares_account_name():
@@ -272,6 +297,8 @@ def test_provider_schema_requires_all_keys_and_forbids_extras(build):
 
     def check(node):
         if isinstance(node, dict):
+            if "$ref" in node:
+                assert set(node) == {"$ref"}, "Strict providers reject siblings beside $ref"
             if node.get("type") == "object":
                 assert set(node["required"]) == set(node["properties"])
                 assert node["additionalProperties"] is False

@@ -173,7 +173,10 @@ public class HttpNlpWorkerClient implements NlpWorkerClient {
         }
 
         try {
-            MeetingAnalysis analysis = toDomain(meetingId, tenantId, response);
+            MeetingAnalysis analysis =
+                    toDomain(meetingId, tenantId, response)
+                            .withCommercialIntelligence(
+                                    enterprise ? response.commercialIntelligence() : null);
             ProductivityAssessment productivity =
                     response.productivity() == null
                             ? null

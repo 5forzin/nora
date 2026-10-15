@@ -1,5 +1,6 @@
 package br.com.nora.api.application.customer;
 
+import br.com.nora.api.application.iam.AuthorizationService;
 import br.com.nora.api.application.meeting.MeetingException;
 import br.com.nora.api.application.ports.CustomerAccountRepository;
 import br.com.nora.api.application.ports.CustomerConfidenceAssessmentRepository;
@@ -19,11 +20,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Persists the Customer Confidence emitted by the worker (ADR 0015): resolves the customer account
- * (get-or-create by name, case-insensitive dedup), links meeting&lt;-&gt;account, computes the
- * trend server-side (backend is authoritative) and writes the assessment + signals + objections.
- *
- * <p>Always scoped by {@code tenantId} (ADR 0002). Internal meetings (without {@code accountName})
- * are a no-op: no account created.
+ * by external client code when supplied, otherwise by a detected non-placeholder name. Keeps
+ * anonymized clients separate without reconstructing their identities. Trend follows encounter
+ * dates, including when historical meetings are analyzed out of order.
  */
 @Service
 public class CustomerConfidenceService {
@@ -40,12 +39,15 @@ public class CustomerConfidenceService {
     private final CustomerConfidenceAssessmentRepository assessments;
     private final MeetingRepository meetings;
     private final EnterpriseEntitlementService entitlements;
+    private final AuthorizationService authz;
 
     public CustomerConfidenceService(
             CustomerAccountRepository accounts,
             CustomerConfidenceAssessmentRepository assessments,
             MeetingRepository meetings,
-            EnterpriseEntitlementService entitlements) {
+            EnterpriseEntitlementService entitlements,
+            AuthorizationService authz) {
+        this.authz = authz;
         this.accounts = accounts;
         this.assessments = assessments;
         this.meetings = meetings;
@@ -53,25 +55,41 @@ public class CustomerConfidenceService {
     }
 
     /**
-     * Persists the worker carrier. No-op when {@code accountName} is null/blank (internal meeting).
-     * Otherwise: get-or-create of the account, idempotent meeting&lt;-&gt;account link, recomputed
-     * trend and assessment written.
+     * Replaces the previous assessment, resolving imported anonymous clients by their stable code.
+     * Without a code or a meaningful detected account name, no account is created.
      *
      * @return the persisted assessment, or empty when it was a no-op
      */
     @Transactional
     public Optional<CustomerConfidenceAssessment> persist(
             UUID tenantId, UUID meetingId, CustomerConfidenceCarrier carrier) {
-        if (!entitlements.isEnterprise(tenantId)
-                || carrier == null
-                || carrier.accountName() == null
-                || carrier.accountName().isBlank()) {
-            // Internal meeting: worker did not identify a customer. No account/assessment created.
+        if (!entitlements.isEnterprise(tenantId)) {
             return Optional.empty();
         }
 
-        String accountName = carrier.accountName().trim();
-        CustomerAccount account = getOrCreateAccount(tenantId, accountName);
+        assessments.deleteByMeetingId(meetingId, tenantId);
+        if (carrier == null) {
+            return Optional.empty();
+        }
+        var meeting =
+                meetings.findByIdAndTenant(meetingId, tenantId)
+                        .orElseThrow(MeetingException.NotFound::new);
+        String code = meeting.attributes().get("clientCode");
+        if (code != null) {
+            code = code.trim();
+        }
+        String accountName = carrier.accountName() == null ? null : carrier.accountName().trim();
+        if ((code == null || code.isBlank())
+                && (accountName == null
+                        || accountName.isBlank()
+                        || accountName.matches(
+                                "(?i).*\\[(?:EMPRESA|PESSOA|PERSON_NAME|ORG)(?:[ _]\\d+)?\\].*"))) {
+            return Optional.empty();
+        }
+        CustomerAccount account =
+                code != null && !code.isBlank()
+                        ? accounts.getOrCreateByExternalCode(tenantId, code)
+                        : getOrCreateAccount(tenantId, accountName);
         accounts.linkMeeting(meetingId, account.id(), tenantId);
 
         ConfidenceTrend trend = computeTrend(tenantId, meetingId, account.id(), carrier.score());
@@ -113,7 +131,7 @@ public class CustomerConfidenceService {
      * application layer, leaving the controller thin. Scoped by tenant.
      */
     @Transactional(readOnly = true)
-    public List<ConfidenceView> findViewByMeetingId(UUID meetingId, UUID tenantId) {
+    public List<ConfidenceView> findViewByMeetingId(UUID meetingId, UUID tenantId, UUID userId) {
         if (!entitlements.isEnterprise(tenantId)) {
             return List.of();
         }
@@ -121,17 +139,45 @@ public class CustomerConfidenceService {
         return assessments.findByMeetingId(meetingId, tenantId).stream()
                 .map(
                         a -> {
-                            String accountName =
-                                    accounts.findById(a.customerAccountId(), tenantId)
-                                            .map(CustomerAccount::name)
-                                            .orElse(null);
-                            return new ConfidenceView(a, accountName);
+                            var resolved = accounts.findById(a.customerAccountId(), tenantId);
+                            String code =
+                                    resolved.map(CustomerAccount::externalClientCode).orElse(null);
+                            String name =
+                                    code == null
+                                            ? resolved.map(CustomerAccount::name).orElse(null)
+                                            : "Client " + code;
+                            var trend =
+                                    computeTrend(
+                                            tenantId,
+                                            meetingId,
+                                            a.customerAccountId(),
+                                            a.score(),
+                                            userId);
+                            var dated =
+                                    new CustomerConfidenceAssessment(
+                                            a.id(),
+                                            a.tenantId(),
+                                            a.meetingId(),
+                                            a.customerAccountId(),
+                                            a.score(),
+                                            a.band(),
+                                            trend,
+                                            a.buyingSignals(),
+                                            a.objections(),
+                                            a.rationale(),
+                                            a.createdAt());
+                            return new ConfidenceView(dated, name, code);
                         })
                 .toList();
     }
 
     /** Assessment + resolved account name, for projection in the API. */
-    public record ConfidenceView(CustomerConfidenceAssessment assessment, String accountName) {}
+    public record ConfidenceView(
+            CustomerConfidenceAssessment assessment, String accountName, String clientCode) {
+        public ConfidenceView(CustomerConfidenceAssessment assessment, String accountName) {
+            this(assessment, accountName, null);
+        }
+    }
 
     private CustomerAccount getOrCreateAccount(UUID tenantId, String name) {
         return accounts.findByTenantAndLowerName(tenantId, name)
@@ -145,8 +191,29 @@ public class CustomerConfidenceService {
      */
     private ConfidenceTrend computeTrend(
             UUID tenantId, UUID meetingId, UUID accountId, int newScore) {
+        return computeTrend(tenantId, meetingId, accountId, newScore, null);
+    }
+
+    private ConfidenceTrend computeTrend(
+            UUID tenantId, UUID meetingId, UUID accountId, int newScore, UUID userId) {
         return assessments
                 .findLatestByAccountId(accountId, meetingId, tenantId)
+                .filter(
+                        prior ->
+                                userId == null
+                                        || meetings.findByIdAndTenant(prior.meetingId(), tenantId)
+                                                .map(
+                                                        meeting ->
+                                                                authz.isAllowed(
+                                                                        userId,
+                                                                        tenantId,
+                                                                        "meeting:read",
+                                                                        "nora:tenant/"
+                                                                                + tenantId
+                                                                                + ":meeting/"
+                                                                                + meeting.id(),
+                                                                        meeting.attributes()))
+                                                .orElse(false))
                 .map(
                         prior -> {
                             int delta = newScore - prior.score();

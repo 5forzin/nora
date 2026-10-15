@@ -141,7 +141,13 @@ public class AnalysisService {
         AnalysisResult result =
                 worker.analyze(
                         meetingId, tenantId, meeting.language(), transcript.rawText(), ctx, goal);
-        MeetingAnalysis saved = analyses.save(result.analysis());
+        MeetingAnalysis saved =
+                analyses.save(
+                        result.analysis()
+                                .withCommercialIntelligence(
+                                        entitlements.isEnterprise(tenantId)
+                                                ? result.analysis().commercialIntelligence()
+                                                : null));
         result.productivity()
                 .ifPresentOrElse(
                         p -> assessments.save(p),
@@ -231,11 +237,9 @@ public class AnalysisService {
      * the productivity tolerance).
      */
     private void persistCustomerConfidence(UUID meetingId, UUID tenantId, AnalysisResult result) {
-        if (result.customerConfidence().isEmpty()) {
-            return;
-        }
         try {
-            customerConfidence.persist(tenantId, meetingId, result.customerConfidence().get());
+            customerConfidence.persist(
+                    tenantId, meetingId, result.customerConfidence().orElse(null));
         } catch (RuntimeException ex) {
             // PII-safe: do not log accountName nor quotes, only ids and the cause.
             LOG.warn(
@@ -279,7 +283,13 @@ public class AnalysisService {
     public Optional<MeetingAnalysis> findByMeeting(UUID meetingId, UUID tenantId) {
         // Ensures scope: meeting must exist in the tenant.
         meetings.findByIdAndTenant(meetingId, tenantId).orElseThrow(MeetingException.NotFound::new);
-        return analyses.findByMeetingId(meetingId, tenantId);
+        return analyses.findByMeetingId(meetingId, tenantId)
+                .map(
+                        analysis ->
+                                analysis.withCommercialIntelligence(
+                                        entitlements.isEnterprise(tenantId)
+                                                ? analysis.commercialIntelligence()
+                                                : null));
     }
 
     /** Retrieves the persisted productivity (opt-in). Empty when there is none. */

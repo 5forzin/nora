@@ -96,6 +96,34 @@ class ObjectionType(str, Enum):
     OTHER = "OTHER"
 
 
+class ProductRelationship(str, Enum):
+    CURRENT = "CURRENT"
+    OPPORTUNITY = "OPPORTUNITY"
+    COMPETITOR = "COMPETITOR"
+    MENTIONED = "MENTIONED"
+
+
+class DecisionRole(str, Enum):
+    DECISION_MAKER = "DECISION_MAKER"
+    INFLUENCER = "INFLUENCER"
+    USER = "USER"
+    UNKNOWN = "UNKNOWN"
+
+
+class BudgetKind(str, Enum):
+    BUDGET = "BUDGET"
+    PROPOSAL = "PROPOSAL"
+    PRICE = "PRICE"
+    REVENUE = "REVENUE"
+    OTHER = "OTHER"
+
+
+class BudgetApproval(str, Enum):
+    APPROVED = "APPROVED"
+    NOT_APPROVED = "NOT_APPROVED"
+    UNKNOWN = "UNKNOWN"
+
+
 # ---------- Meeting Analysis v1 ----------
 
 
@@ -282,6 +310,55 @@ class BaselineTerm(BaseModel):
     score: Annotated[float, Field(ge=0.0, le=1.0)]
 
 
+class CommercialProduct(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    name: Annotated[str, Field(min_length=1, max_length=160)]
+    relationship: ProductRelationship
+    source_quote: Annotated[str, Field(min_length=5, max_length=500, alias="sourceQuote")]
+
+
+class CommercialPersona(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    speaker: str | None = Field(default=None, max_length=120)
+    role: str | None = Field(default=None, max_length=160)
+    decision_role: DecisionRole = Field(alias="decisionRole")
+    source_quote: Annotated[str, Field(min_length=5, max_length=500, alias="sourceQuote")]
+
+
+class CommercialBudget(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    amount: float | None = Field(default=None, ge=0, allow_inf_nan=False, strict=True)
+    currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
+    kind: BudgetKind
+    approval: BudgetApproval
+    period: str | None = Field(default=None, max_length=120)
+    source_quote: Annotated[str, Field(min_length=5, max_length=500, alias="sourceQuote")]
+
+
+class TopicSentiment(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    topic: Annotated[str, Field(min_length=2, max_length=120)]
+    sentiment: Sentiment
+    source_quote: Annotated[str, Field(min_length=5, max_length=500, alias="sourceQuote")]
+
+
+class CommercialIntelligence(BaseModel):
+    """Evidence-backed observations, separate from participant identity and sales forecasts."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    products: list[CommercialProduct] = Field(default_factory=list, max_length=30)
+    personas: list[CommercialPersona] = Field(default_factory=list, max_length=30)
+    budgets: list[CommercialBudget] = Field(default_factory=list, max_length=30)
+    sentiment_by_topic: list[TopicSentiment] = Field(
+        default_factory=list, max_length=30, alias="sentimentByTopic"
+    )
+
+
 class MeetingAnalysisV1(BaseModel):
     """Mirror of docs/api/llm-schemas/meeting-analysis-v1.schema.json."""
 
@@ -313,6 +390,9 @@ class MeetingAnalysisV1(BaseModel):
     # The decision to emit vs null is the LLM's own (no Python-side gating); the
     # accountName is the customer/company name detected in the transcript.
     customer_confidence: CustomerConfidence | None = Field(default=None, alias="customerConfidence")
+    commercial_intelligence: CommercialIntelligence | None = Field(
+        default=None, alias="commercialIntelligence"
+    )
 
 
 # ---------- PII Redaction v1 ----------
@@ -449,6 +529,8 @@ class AnalyzeMetadata(BaseModel):
     tokens_output: int = Field(default=0, alias="tokensOutput")
     processing_millis: int = Field(default=0, alias="processingMillis")
     pii_redactions_applied: int = Field(default=0, alias="piiRedactionsApplied")
+    commercial_items_accepted: int = Field(default=0, ge=0, alias="commercialItemsAccepted")
+    commercial_items_rejected: int = Field(default=0, ge=0, alias="commercialItemsRejected")
 
 
 class AnalyzeResponse(MeetingAnalysisV1):

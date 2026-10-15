@@ -38,7 +38,7 @@ public class MeetingUploadService {
         if (key == null) {
             return meetings.upload(command);
         }
-        if (!key.matches("[A-Za-z0-9_-]{1,128}")) {
+        if (!key.matches("[A-Za-z0-9_:-]{1,128}")) {
             throw new IllegalArgumentException("Invalid Idempotency-Key");
         }
         String fingerprint = fingerprint(command);

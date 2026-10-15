@@ -45,6 +45,13 @@ public class CustomerConfidenceAssessmentRepositoryAdapter
     }
 
     @Override
+    @Transactional
+    public void deleteByMeetingId(UUID meetingId, UUID tenantId) {
+        jpa.deleteByMeetingNative(meetingId, tenantId);
+        jpa.flush();
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public List<CustomerConfidenceAssessment> findByMeetingId(UUID meetingId, UUID tenantId) {
         return jpa.findByMeetingIdAndTenantId(meetingId, tenantId).stream()
@@ -56,10 +63,7 @@ public class CustomerConfidenceAssessmentRepositoryAdapter
     @Transactional(readOnly = true)
     public Optional<CustomerConfidenceAssessment> findLatestByAccountId(
             UUID accountId, UUID excludeMeetingId, UUID tenantId) {
-        return jpa
-                .findByCustomerAccountIdAndTenantIdAndMeetingIdNotOrderByCreatedAtDesc(
-                        accountId, tenantId, excludeMeetingId)
-                .stream()
+        return jpa.findPreviousByEncounterDate(accountId, tenantId, excludeMeetingId).stream()
                 .findFirst()
                 .map(this::toDomain);
     }

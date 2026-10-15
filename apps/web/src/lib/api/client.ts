@@ -20,6 +20,7 @@ import type {
   ChatMessage,
   ChatSessionDetail,
   ChatSessionSummary,
+  CustomerMeetingHistory,
   IntegrationProvider,
   IntegrationStatus,
   Invite,
@@ -242,7 +243,13 @@ export interface UploadMeetingInput {
   endedAt?: string;
   participants?: { displayName: string; email?: string; isInternal?: boolean }[];
   tags?: string[];
+  attributes?: Record<string, string>;
+  idempotencyKey?: string;
   file: File;
+}
+
+export async function getCustomerMeetingHistory(clientCode: string): Promise<CustomerMeetingHistory> {
+  return request<CustomerMeetingHistory>(`/meetings/customer-history?${new URLSearchParams({ clientCode })}`);
 }
 
 export async function uploadMeeting(input: UploadMeetingInput) {
@@ -255,11 +262,13 @@ export async function uploadMeeting(input: UploadMeetingInput) {
     endedAt: input.endedAt,
     participants: input.participants ?? [],
     tags: input.tags ?? [],
+    attributes: input.attributes ?? {},
   };
   fd.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
   fd.append('file', input.file);
   return request<{ id: string; processingStatus: string }>(`/meetings`, {
     method: 'POST',
+    headers: input.idempotencyKey ? { 'Idempotency-Key': input.idempotencyKey } : undefined,
     body: fd,
   });
 }

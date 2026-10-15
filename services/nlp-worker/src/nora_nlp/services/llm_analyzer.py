@@ -22,13 +22,40 @@ from ..clients.llm import LlmClient, build_json_schema_for_analysis
 from ..models import AnalyzeRequest, AnalyzeResponse, MeetingAnalysisV1
 from ..settings import Settings
 from ..time_budget import LlmBudgetExceededError, TimeBudget
+from .commercial_candidates import add_context_product_candidates
+from .commercial_evidence import (
+    render_evidence,
+    resolve_evidence,
+    segment_evidence,
+    use_evidence_schema,
+)
+from .commercial_grounding import ground_commercial_intelligence
 from .date_grounding import contains_explicit_date
 from .pii_shield import admissible_tenant_terms
+from .product_verifier import verify_products
 from .prompt_utils import load_prompt, render_template
 from .shield_walk import shield_field, shield_tree
 from .summary_verifier import verify_summary
 
 logger = logging.getLogger(__name__)
+
+
+class LlmAnalysisShapeError(ValueError):
+    """The provider omitted a required extraction despite returning valid JSON."""
+
+
+def _parse_response(raw_json: str, *, require_commercial: bool) -> object:
+    parsed = json.loads(raw_json)
+    if require_commercial:
+        commercial = parsed.get("commercialIntelligence") if isinstance(parsed, dict) else None
+        collections = ("products", "personas", "budgets", "sentimentByTopic")
+        if not isinstance(commercial, dict) or any(
+            not isinstance(commercial.get(name), list) for name in collections
+        ):
+            raise LlmAnalysisShapeError(
+                "commercialIntelligence must be an object containing all four collections."
+            )
+    return parsed
 
 
 def _build_goal_section(
@@ -104,6 +131,8 @@ def analyze(
     ctx_dict = shield_tree(
         req.tenant_context.model_dump(by_alias=True), extra_redactions, tenant_terms
     )
+    if req.options.include_customer_confidence:
+        ctx_dict["vendorCompetitorReference"] = ctx_dict.pop("competitors")
 
     tenant_ctx_json = json.dumps(ctx_dict, ensure_ascii=False, indent=2)
 
@@ -111,22 +140,56 @@ def analyze(
 
     pii_redactions_applied = pii_redactions_applied + extra_redactions[0]
 
+    evidence = segment_evidence(req.transcript) if req.options.include_customer_confidence else ()
+    provider_transcript = render_evidence(evidence) if evidence else req.transcript
     user_prompt = render_template(
         user_template,
         tenant_context_json=tenant_ctx_json,
         meeting_id=req.meeting_id,
         language=req.language,
-        transcript=req.transcript,
+        transcript=provider_transcript,
         goal_section=goal_section,
     )
 
     json_schema = build_json_schema_for_analysis()
-    if not req.options.include_customer_confidence:
+    if req.options.include_customer_confidence:
+        use_evidence_schema(json_schema, len(evidence))
+        json_schema["properties"]["commercialIntelligence"] = {
+            "$ref": "#/$defs/CommercialIntelligence"
+        }
+        commercial_schema = json_schema["properties"].pop("commercialIntelligence")
+        json_schema["properties"] = {
+            "commercialIntelligence": commercial_schema,
+            **json_schema["properties"],
+        }
+        json_schema["required"].remove("commercialIntelligence")
+        json_schema["required"].insert(0, "commercialIntelligence")
+        system_prompt += (
+            "\nCommercial intelligence extraction is enabled. "
+            "Extract commercialIntelligence first, before writing the overall summary. "
+            "Always return it as an object with products, personas, "
+            "budgets and sentimentByTopic arrays, even when customerConfidence is null. "
+            "Use an empty array only when the transcript supports no observations for it. "
+            "Never omit this object, return it as null, or invent observations to fill it."
+            " The transcript is a JSON array of contiguous evidenceId/text segments in order; "
+            "read all segments as one complete meeting. For commercialIntelligence only, "
+            "return evidenceId instead of sourceQuote, as specified by this schema. "
+            "The worker resolves the exact original text; never rewrite or join evidence. "
+            "For personas, select a segment containing the literal speaker label and role; "
+            "if the segment has no allowed speaker label, use speaker null. "
+            "All other analysis fields keep their usual sourceQuote contract."
+            " vendorCompetitorReference describes the seller's catalogue competition only; "
+            "it never determines a customer's product relationship. CURRENT takes priority "
+            "whenever the customer already uses the product. COMPETITOR requires a NOT-currently-"
+            "used alternative explicitly compared in the meeting."
+        )
+    else:
         json_schema["properties"]["customerConfidence"] = {"type": "null"}
+        json_schema["properties"]["commercialIntelligence"] = {"type": "null"}
         system_prompt += (
             "\nCustomer Confidence is disabled for this workspace. "
             "Do not evaluate customer confidence or generate buying-signal or objection scores. "
-            "Return customerConfidence as null."
+            "Return customerConfidence and commercialIntelligence as null."
         )
 
     # The fallback receives the identical prompt; only the transport mode changes.
@@ -138,6 +201,10 @@ def analyze(
             user_prompt=user_prompt,
             json_schema=json_schema,
             schema_name="meeting_analysis",
+            max_tokens=8192 if req.options.include_customer_confidence else 4096,
+        )
+        parsed = _parse_response(
+            raw_json, require_commercial=req.options.include_customer_confidence
         )
     except LlmBudgetExceededError:
         # Explicitly ahead of the generic branch, which would otherwise swallow it: re-sending
@@ -150,22 +217,81 @@ def analyze(
         raw_json, tokens_in, tokens_out = client.chat_json(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
+            max_tokens=8192 if req.options.include_customer_confidence else 4096,
+        )
+        parsed = _parse_response(
+            raw_json, require_commercial=req.options.include_customer_confidence
         )
 
     # Do NOT log raw_json: it may contain residual PII that escaped the shield
     # as text echoed in sourceQuote. ADR 0012 (PII never logged).
     logger.debug("LLM raw response: %d chars", len(raw_json))
 
-    parsed = json.loads(raw_json)
     if not req.options.include_customer_confidence and isinstance(parsed, dict):
         parsed["customerConfidence"] = None
+        parsed["commercialIntelligence"] = None
+    evidence_rejected = 0
+    extracted_product_names = []
+    if req.options.include_customer_confidence:
+        extracted_product_names = [
+            item["name"]
+            for item in parsed["commercialIntelligence"]["products"]
+            if isinstance(item, dict) and isinstance(item.get("name"), str)
+        ]
+        parsed["commercialIntelligence"], evidence_rejected = resolve_evidence(
+            parsed["commercialIntelligence"], evidence
+        )
     analysis = MeetingAnalysisV1.model_validate(parsed)
+    candidate_added = 0
+    provider_product_count = len(extracted_product_names)
+    if req.options.include_customer_confidence:
+        intelligence, candidate_added = add_context_product_candidates(
+            analysis.commercial_intelligence,
+            req.transcript,
+            [product["name"] for product in ctx_dict["products"]]
+            + ctx_dict["vendorCompetitorReference"],
+            evidence,
+            extracted_names=extracted_product_names,
+        )
+        analysis = analysis.model_copy(update={"commercial_intelligence": intelligence})
+    intelligence, commercial_accepted, commercial_rejected = ground_commercial_intelligence(
+        analysis.commercial_intelligence, req.transcript, req.language
+    )
+    commercial_rejected += evidence_rejected
+    analysis = analysis.model_copy(update={"commercial_intelligence": intelligence})
     verified_summary, verification_in, verification_out = verify_summary(
         client, analysis.summary, req.transcript, req.language
     )
     analysis = analysis.model_copy(update={"summary": verified_summary})
     tokens_in += verification_in
     tokens_out += verification_out
+    if req.options.include_customer_confidence:
+        grounded_product_count = len(intelligence.products)
+        intelligence, product_in, product_out = verify_products(
+            client, intelligence, req.transcript, req.language
+        )
+        removed = len(analysis.commercial_intelligence.products) - len(intelligence.products)
+        commercial_accepted -= removed
+        commercial_rejected += removed
+        analysis = analysis.model_copy(update={"commercial_intelligence": intelligence})
+        tokens_in += product_in
+        tokens_out += product_out
+        logger.info(
+            "Product verification: extracted=%d context_candidates=%d grounded=%d verified=%d",
+            provider_product_count,
+            candidate_added,
+            grounded_product_count,
+            len(intelligence.products),
+        )
+    logger.info(
+        "Commercial extraction: enabled=%s provider_items=%d accepted=%d rejected=%d "
+        "context_candidates=%d",
+        req.options.include_customer_confidence,
+        commercial_accepted + commercial_rejected - candidate_added,
+        commercial_accepted,
+        commercial_rejected,
+        candidate_added,
+    )
 
     for action in analysis.action_items:
         if action.due_date is not None and not all(
@@ -187,6 +313,8 @@ def analyze(
                 "tokensOutput": tokens_out,
                 "processingMillis": elapsed_ms,
                 "piiRedactionsApplied": pii_redactions_applied,
+                "commercialItemsAccepted": commercial_accepted,
+                "commercialItemsRejected": commercial_rejected,
             },
         }
     )

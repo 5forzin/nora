@@ -40,6 +40,7 @@ from ..services import (
     stub_analyzer,
     stub_split_analyzer,
 )
+from ..services.product_verifier import ProductVerificationError
 from ..settings import Settings, get_settings
 from ..time_budget import LlmBudgetExceededError, TimeBudget
 
@@ -136,12 +137,13 @@ def analyze(req: AnalyzeRequest, settings: Settings = Depends(get_settings)) -> 
         raise _budget_exceeded(
             exc, message="The analysis did not finish within the worker's time budget."
         ) from exc
-    except ValidationError as exc:
+    except (ValidationError, llm_analyzer.LlmAnalysisShapeError, ProductVerificationError) as exc:
         # MUST come before ValueError: pydantic's ValidationError IS a ValueError, so without
         # this branch a model that answers off-contract was reported as "Invalid LLM
         # configuration" — sending whoever read the log to inspect an env file that was fine.
         # It is a provider-response fault, and the message says so.
-        logger.error("LLM response failed schema validation: %s", _schema_error_summary(exc))
+        detail = _schema_error_summary(exc) if isinstance(exc, ValidationError) else str(exc)
+        logger.error("LLM response failed schema validation: %s", detail)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={

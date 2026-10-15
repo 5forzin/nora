@@ -58,6 +58,12 @@ _FAKE_ANALYSIS = {
     "participants": [],
     "productivity": None,
     "customerConfidence": None,
+    "commercialIntelligence": {
+        "products": [],
+        "personas": [],
+        "budgets": [],
+        "sentimentByTopic": [],
+    },
 }
 
 _FAKE_LIVE = {"decisions": [], "nextSteps": [], "observations": [], "tasks": []}
@@ -156,7 +162,10 @@ def test_the_json_fallback_sends_the_shielded_prompt(MockClient) -> None:
         for prompt in ("system_prompt", "user_prompt"):
             assert structured.kwargs[prompt] == fallback.kwargs[prompt]
     verification = json.loads(structured_calls[1].kwargs["user_prompt"])
-    assert verification["transcript"] in structured_calls[0].kwargs["user_prompt"]
+    rendered = re.search(
+        r"Transcrição da reunião.*?```\n(.*?)\n```", structured_calls[0].kwargs["user_prompt"], re.S
+    )[1]
+    assert verification["transcript"] == "".join(item["text"] for item in json.loads(rendered))
 
 
 @patch("nora_nlp.services.live_analyzer.LlmClient")

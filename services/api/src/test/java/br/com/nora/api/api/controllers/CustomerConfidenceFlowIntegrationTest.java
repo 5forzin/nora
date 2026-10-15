@@ -7,6 +7,7 @@ import br.com.nora.api.application.ports.NlpWorkerClient;
 import br.com.nora.api.application.ports.NlpWorkerClient.CustomerConfidenceCarrier;
 import br.com.nora.api.application.tenant.TenantContextService;
 import br.com.nora.api.application.workflow.WorkflowContextFactory;
+import br.com.nora.api.domain.analysis.CommercialIntelligence;
 import br.com.nora.api.domain.analysis.MeetingAnalysis;
 import br.com.nora.api.domain.analysis.Sentiment;
 import br.com.nora.api.domain.customer.BuyingSignal;
@@ -125,6 +126,7 @@ class CustomerConfidenceFlowIntegrationTest {
         assertThat(script.lastContext.get()).isEmpty();
         JsonNode detail = authGet("/meetings/" + meetingId, token).read(HttpStatus.OK);
         assertThat(detail.path("customerConfidence").isNull()).isTrue();
+        assertThat(detail.path("analysis").path("commercialIntelligence").isNull()).isTrue();
         assertThat(
                         jdbc.queryForObject(
                                 "SELECT count(*) FROM customer_confidence_assessments WHERE tenant_id = ?",
@@ -263,6 +265,167 @@ class CustomerConfidenceFlowIntegrationTest {
 
     /* ---------- builders ---------- */
 
+    private static CommercialIntelligence commercialFacts() {
+        return new CommercialIntelligence(
+                List.of(
+                        new CommercialIntelligence.Product(
+                                "ERP", CommercialIntelligence.Relationship.CURRENT, "We use ERP")),
+                List.of(
+                        new CommercialIntelligence.Persona(
+                                null,
+                                null,
+                                CommercialIntelligence.DecisionRole.UNKNOWN,
+                                "We use ERP")),
+                List.of(
+                        new CommercialIntelligence.Budget(
+                                new java.math.BigDecimal("4000"),
+                                "BRL",
+                                CommercialIntelligence.BudgetKind.PROPOSAL,
+                                CommercialIntelligence.Approval.NOT_APPROVED,
+                                "monthly",
+                                "The proposal is BRL 4000 monthly and is not approved")),
+                List.of(
+                        new CommercialIntelligence.TopicSentiment(
+                                "Support", Sentiment.NEGATIVE, "Support is slow")));
+    }
+
+    @Test
+    void commercialFactsRoundTripAndDowngradeMasksStoredData() throws Exception {
+        String token =
+                signupAndLogin("commercial-facts@nora.dev", "StrongPass123!", "Commercial Owner");
+        UUID tenant = principalTenantId(token);
+        UUID id =
+                uploadMeeting(
+                        token,
+                        "Commercial encounter",
+                        Map.of(
+                                "attributes",
+                                Map.of("clientCode", "C-42", "externalId", "source-42")));
+        script.set(carrier(null, 60, ConfidenceBand.MEDIUM));
+        analysisService.run(id, tenant);
+        JsonNode detail = authGet("/meetings/" + id, token).read(HttpStatus.OK);
+        assertThat(
+                        detail.path("analysis")
+                                .path("commercialIntelligence")
+                                .path("products")
+                                .get(0)
+                                .path("name")
+                                .asText())
+                .isEqualTo("ERP");
+        assertThat(
+                        detail.path("analysis")
+                                .path("commercialIntelligence")
+                                .path("personas")
+                                .get(0)
+                                .path("role")
+                                .isNull())
+                .isTrue();
+        assertThat(detail.path("attributes").path("externalId").asText()).isEqualTo("source-42");
+        assertThat(detail.path("customerConfidence").path("clientCode").asText()).isEqualTo("C-42");
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT commercial_intelligence IS NOT NULL FROM meeting_analyses WHERE meeting_id = ?",
+                                Boolean.class,
+                                id))
+                .isTrue();
+        jdbc.update("UPDATE tenants SET plan = 'FREE' WHERE id = ?", tenant);
+        JsonNode downgraded = authGet("/meetings/" + id, token).read(HttpStatus.OK);
+        assertThat(downgraded.path("analysis").path("commercialIntelligence").isNull()).isTrue();
+        assertThat(downgraded.path("customerConfidence").isNull()).isTrue();
+        assertThat(
+                        authGet("/meetings/customer-history?clientCode=C-42", token)
+                                .read(HttpStatus.FORBIDDEN)
+                                .path("code")
+                                .asText())
+                .isEqualTo("ENTERPRISE_REQUIRED");
+    }
+
+    @Test
+    void externalCodesGroupAnonymousEncountersByDateEvenWhenAnalyzedOutOfOrder() throws Exception {
+        String token =
+                signupAndLogin("commercial-history@nora.dev", "StrongPass123!", "History Owner");
+        UUID tenant = principalTenantId(token);
+        UUID newer =
+                uploadMeeting(
+                        token,
+                        "Later encounter",
+                        Map.of(
+                                "startedAt",
+                                "2026-03-10T15:00:00Z",
+                                "attributes",
+                                Map.of("clientCode", "T03585")));
+        script.set(carrier("[EMPRESA]", 80, ConfidenceBand.HIGH));
+        analysisService.run(newer, tenant);
+        UUID older =
+                uploadMeeting(
+                        token,
+                        "Earlier encounter",
+                        Map.of(
+                                "startedAt",
+                                "2026-02-10T15:00:00Z",
+                                "attributes",
+                                Map.of("clientCode", "T03585")));
+        script.set(carrier(null, 50, ConfidenceBand.MEDIUM));
+        analysisService.run(older, tenant);
+        UUID undated =
+                uploadMeeting(
+                        token,
+                        "Unknown date",
+                        Map.of("attributes", Map.of("clientCode", "T03585")));
+        script.set(carrier(null, 40, ConfidenceBand.MEDIUM));
+        analysisService.run(undated, tenant);
+        UUID unrelated =
+                uploadMeeting(
+                        token,
+                        "Other client",
+                        Map.of(
+                                "startedAt",
+                                "2026-03-11T15:00:00Z",
+                                "attributes",
+                                Map.of("clientCode", "OTHER")));
+        analysisService.run(unrelated, tenant);
+        JsonNode history =
+                authGet("/meetings/customer-history?clientCode=T03585", token).read(HttpStatus.OK);
+        assertThat(history.path("items").findValuesAsText("id"))
+                .containsExactly(older.toString(), newer.toString(), undated.toString());
+        assertThat(history.path("truncated").asBoolean()).isFalse();
+        assertThat(history.path("items").get(0).path("customerConfidence").path("trend").isNull())
+                .isTrue();
+        assertThat(history.path("items").get(1).path("customerConfidence").path("trend").asText())
+                .isEqualTo("IMPROVING");
+        assertThat(history.path("items").get(2).path("customerConfidence").path("trend").isNull())
+                .isTrue();
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT count(*) FROM customer_accounts WHERE tenant_id = ? AND external_client_code = 'T03585'",
+                                Integer.class,
+                                tenant))
+                .isEqualTo(1);
+        assertThat(
+                        authGet("/meetings/customer-history?clientCode=absent", token)
+                                .read(HttpStatus.OK)
+                                .path("items")
+                                .isEmpty())
+                .isTrue();
+        String outsider =
+                signupAndLogin(
+                        "commercial-history-outsider@nora.dev", "StrongPass123!", "Other Tenant");
+        assertThat(
+                        authGet("/meetings/customer-history?clientCode=T03585", outsider)
+                                .read(HttpStatus.OK)
+                                .path("items")
+                                .isEmpty())
+                .isTrue();
+        script.set(null);
+        analysisService.run(newer, tenant);
+        assertThat(
+                        authGet("/meetings/" + newer, token)
+                                .read(HttpStatus.OK)
+                                .path("customerConfidence")
+                                .isNull())
+                .isTrue();
+    }
+
     private static CustomerConfidenceCarrier carrier(
             String accountName, int score, ConfidenceBand band) {
         BuyingSignal signal =
@@ -298,9 +461,14 @@ class CustomerConfidenceFlowIntegrationTest {
     }
 
     private UUID uploadMeeting(String token, String title) throws Exception {
-        String metadata =
-                mapper.writeValueAsString(
-                        Map.of("title", title, "language", "pt-BR", "transcriptFormat", "TXT"));
+        return uploadMeeting(token, title, Map.of("startedAt", OffsetDateTime.now().toString()));
+    }
+
+    private UUID uploadMeeting(String token, String title, Map<String, Object> extra)
+            throws Exception {
+        Map<String, Object> fields = new java.util.HashMap<>(extra);
+        fields.putAll(Map.of("title", title, "language", "pt-BR", "transcriptFormat", "TXT"));
+        String metadata = mapper.writeValueAsString(fields);
         String content =
                 "Lucas: bom dia. Marina: bom dia.\n"
                         + "Lucas: vamos discutir o tema da reuniao. Marina: certo.";
@@ -453,7 +621,10 @@ class CustomerConfidenceFlowIntegrationTest {
                                     50,
                                     10,
                                     0);
-                    return AnalysisResult.of(analysis, null, scriptBean.current());
+                    return AnalysisResult.of(
+                            analysis.withCommercialIntelligence(commercialFacts()),
+                            null,
+                            scriptBean.current());
                 }
 
                 @Override
