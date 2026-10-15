@@ -8,16 +8,16 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: state.push }), use
 vi.mock('@/lib/api/client', () => ({ getTrends: state.trends, getUsage: state.usage, getMe: state.getMe }));
 
 import TrendsFilters from '@/app/(app)/trends/Filters';
-import UsageFilters from '@/app/(app)/usage/Filters';
+import UsageFilters from '@/app/(app)/settings/usage/Filters';
 import TrendsPage from '@/app/(app)/trends/page';
-import UsagePage from '@/app/(app)/usage/page';
+import UsagePage from '@/app/(app)/settings/usage/page';
 
 beforeEach(() => { vi.clearAllMocks(); state.params = new URLSearchParams(); state.getMe.mockResolvedValue(readerWorkspace); });
 afterEach(cleanup);
 
 describe.each([
   { path: '/trends', Filter: TrendsFilters, unit: 'WEEK' as const },
-  { path: '/usage', Filter: UsageFilters, unit: 'MONTH' as const },
+  { path: '/settings/usage', Filter: UsageFilters, unit: 'MONTH' as const },
 ])('$path calendar filters', ({ path, Filter, unit }) => {
   it('submits the inclusive day in the reporting zone, then restores it from the exclusive query', () => {
     const view = render(<Filter granularity={unit} timezone="America/Sao_Paulo" />);

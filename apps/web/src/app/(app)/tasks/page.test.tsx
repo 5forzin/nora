@@ -6,6 +6,8 @@ import type { ListTasksParams, TaskListItemDto } from '@/lib/api/client';
 
 const listTasks = vi.fn();
 const updateTask = vi.fn();
+const navigation = vi.hoisted(() => ({ query: '' }));
+vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams(navigation.query) }));
 const permissions = vi.hoisted(() => ({ readTasks: true, writeTasks: true, createMeetings: true }));
 vi.mock('@/components/enterprise/workspace-provider', () => ({
   useWorkspaceAccess: () => ({ access: { permissions }, loading: false }),
@@ -27,6 +29,7 @@ function pagination() {
 }
 
 beforeEach(() => {
+  navigation.query = '';
   permissions.readTasks = true;
   permissions.writeTasks = true;
   permissions.createMeetings = true;
@@ -41,9 +44,10 @@ beforeEach(() => {
   }));
   listTasks
     .mockReset()
-    .mockImplementation(async ({ status, page = 0, size = 100 }: ListTasksParams) => {
+    .mockImplementation(async ({ status, page = 0, size = 100, meetingId }: ListTasksParams) => {
       const matching = rows
         .filter((row) => !status || row.status === status)
+        .filter((row) => !meetingId || row.meetingId === meetingId)
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       return {
         items: matching.slice(page * size, (page + 1) * size),
@@ -178,7 +182,7 @@ it('refreshes server ordering after editing a task on a later page', async () =>
   const taskRow = screen.getByLabelText('Marcar "Task 101" como concluída')
     .parentElement as HTMLElement;
   fireEvent.click(within(taskRow).getByRole('button', { name: 'Editar' }));
-  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Updated task' } });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Título' }), { target: { value: 'Updated task' } });
   fireEvent.click(within(taskRow).getByRole('button', { name: 'Salvar' }));
   await screen.findByText('Task 100');
   expect(screen.queryByText('Updated task')).toBeNull();
@@ -186,11 +190,53 @@ it('refreshes server ordering after editing a task on a later page', async () =>
   expect(await screen.findByText('Updated task')).toBeTruthy();
 });
 
+it('keeps meeting scope and its evidence when editing the responsible person and exporting', async () => {
+  navigation.query = 'meetingId=meeting';
+  rows = rows.slice(0, 2);
+  rows[0].sourceQuote = 'Speaker 1: I will review the proposal.';
+  rows[1].meetingId = 'another-meeting';
+  render(<TasksPage />);
+  await screen.findByText('Task 1');
+  expect(screen.queryByText('Task 2')).toBeNull();
+  expect(screen.getByText('Speaker 1: I will review the proposal.')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Responsável' }), { target: { value: '  Marina  ' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+  await screen.findByText('Marina');
+  expect(updateTask).toHaveBeenLastCalledWith('1', { assignee: 'Marina' });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Exportar' }).hasAttribute('disabled')).toBe(false));
+  fireEvent.click(screen.getByRole('button', { name: 'Exportar' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'CSV (.csv)' }));
+  await waitFor(() => expect(createObjectURL).toHaveBeenCalledOnce());
+  const csv = await (createObjectURL.mock.calls[0][0] as NodeBlob).text();
+  expect(csv).toContain('Marina');
+  expect(csv).not.toContain('Task 2');
+  expect(listTasks).toHaveBeenLastCalledWith({ status: undefined, page: 0, size: 100, meetingId: 'meeting' });
+});
+
+it('restores the responsible person when an update fails and allows explicitly clearing it', async () => {
+  rows = rows.slice(0, 1);
+  rows[0].assignee = 'Marina';
+  render(<TasksPage />);
+  await screen.findByText('Marina');
+  updateTask.mockRejectedValueOnce(new Error('Unavailable'));
+  fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Responsável' }), { target: { value: '' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+  await screen.findByRole('alert');
+  expect(screen.getByText('Marina')).toBeTruthy();
+  expect(updateTask).toHaveBeenLastCalledWith('1', { assignee: '' });
+  fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Responsável' }), { target: { value: '' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+  expect(await screen.findByText('Sem responsável')).toBeTruthy();
+});
+
 it('distinguishes a load failure from an empty list and retries the current page', async () => {
   listTasks.mockRejectedValueOnce(new Error('Temporary outage'));
   render(<TasksPage />);
   await screen.findByRole('alert');
-  expect(screen.queryByText('Nenhum action item por aqui.')).toBeNull();
+  expect(screen.queryByText('Nenhuma tarefa.')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
   expect(await screen.findByText('Task 1')).toBeTruthy();
   expect(screen.queryByRole('alert')).toBeNull();

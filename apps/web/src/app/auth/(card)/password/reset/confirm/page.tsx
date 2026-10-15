@@ -70,8 +70,8 @@ function ConfirmForm() {
 
   return (
     <div>
-      <h2 style={cardTitle}>Escolha a nova senha.</h2>
-      <p style={cardSub}>Mínimo {PASSWORD_MIN} caracteres. Recomendamos número + símbolo.</p>
+      <h2 style={cardTitle}>Nova senha</h2>
+      <p style={cardSub}>Mínimo {PASSWORD_MIN} caracteres, com letras e números.</p>
 
       <form
         onSubmit={onSubmit}

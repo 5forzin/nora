@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
 from pydantic import ValidationError
 
+from nora_nlp.clients.llm import build_json_schema_for_analysis
 from nora_nlp.main import app
 from nora_nlp.models import AnalyzeRequest, CommercialIntelligence
 from nora_nlp.services import llm_analyzer
@@ -111,6 +112,45 @@ def test_reviewer_input_is_independent_of_draft_relationship_and_citation(fallba
         if fallback:
             assert client.chat_json.call_args.kwargs["user_prompt"] == request["user_prompt"]
     assert requests[0] == requests[1]
+
+
+@pytest.mark.parametrize("fallback", [False, True])
+def test_review_contract_distinguishes_approved_purchase_from_present_use(fallback):
+    transcript = (
+        "BUYER: We approved the budget for NovaSuite. Delivery is next month and "
+        "installation is not scheduled. We have not started using it."
+    )
+    intelligence = CommercialIntelligence(
+        products=[{"name": "NovaSuite", "relationship": "CURRENT", "sourceQuote": transcript}]
+    )
+    client = MagicMock()
+    verdict = (json.dumps({"product0": {"relationship": "OPPORTUNITY", "choice": 0}}), 13, 5)
+    client.chat_structured.return_value = verdict
+    client.chat_json.return_value = verdict
+    if fallback:
+        client.chat_structured.side_effect = RuntimeError("Strict output unsupported")
+
+    result, tokens_in, tokens_out = verify_products(client, intelligence, transcript, "en")
+
+    request = client.chat_structured.call_args.kwargs
+    instructions = request["system_prompt"]
+    assert "Require explicit evidence of actual present use" in instructions
+    assert "Budget approval" in instructions and "a signed order or contract" in instructions
+    assert "planned or ongoing installation do not establish present use" in instructions
+    assert "OPPORTUNITY, never CURRENT" in instructions
+    assert "does not erase that present use" in instructions
+    description = build_json_schema_for_analysis()["$defs"]["CommercialProduct"]["properties"][
+        "relationship"
+    ]["description"]
+    assert "Require actual present use" in description
+    assert "whose use has not started supports OPPORTUNITY" in description
+    assert result.products[0].name == "NovaSuite"
+    assert result.products[0].source_quote == transcript
+    assert result.products[0].relationship.value == "OPPORTUNITY"
+    assert intelligence.products[0].relationship.value == "CURRENT"
+    assert (tokens_in, tokens_out) == (13, 5)
+    if fallback:
+        assert client.chat_json.call_args.kwargs["system_prompt"] == instructions
 
 
 @pytest.mark.parametrize("bad_index", [True, False, 1.0, "1", -1, 30, None, [], {}])

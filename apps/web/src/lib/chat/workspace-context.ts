@@ -69,7 +69,11 @@ function evidence(quote?: string): string {
   return quote?.trim() ? ` Evidence: ${clampContextValue(quote, 180)}` : '';
 }
 
-function meetingLines(meeting: MeetingDetail, source: MeetingSource): string[] {
+function meetingLines(
+  meeting: MeetingDetail,
+  source: MeetingSource,
+  includeActionItems: boolean,
+): string[] {
   const date = clampContextValue(meeting.startedAt ?? meeting.createdAt ?? '', 30);
   const lines = [
     `MEETING ${source.reference}: ${clampContextValue(meeting.title, 180)}${date ? ` (${date})` : ''}`,
@@ -106,21 +110,36 @@ function meetingLines(meeting: MeetingDetail, source: MeetingSource): string[] {
       800,
     ),
   );
-  lines.push(
-    ...section(
-      'Meeting action items (respect the reported status):',
-      (analysis.actionItems ?? []).map((t) => {
-        const owner = t.assignee ? ` Assignee: ${clampContextValue(t.assignee, 100)}.` : '';
-        const due = t.dueDate ? ` Due: ${clampContextValue(t.dueDate, 30)}.` : '';
-        return `- [${clampContextValue(t.status ?? 'STATUS NOT REPORTED', 30)}] ${clampContextValue(t.title, 250)}.${owner}${due}${evidence(t.sourceQuote)}`;
-      }),
-      1_000,
-    ),
-  );
+  if (includeActionItems) {
+    lines.push(
+      ...section(
+        'Meeting action items (respect the reported status):',
+        (analysis.actionItems ?? []).map((t) => {
+          const owner = t.assignee ? ` Assignee: ${clampContextValue(t.assignee, 100)}.` : '';
+          const due = t.dueDate ? ` Due: ${clampContextValue(t.dueDate, 30)}.` : '';
+          return `- [${clampContextValue(t.status ?? 'STATUS NOT REPORTED', 30)}] ${clampContextValue(t.title, 250)}.${owner}${due}${evidence(t.sourceQuote)}`;
+        }),
+        1_000,
+      ),
+    );
+  } else {
+    const quotes = [
+      ...new Set(
+        (analysis.actionItems ?? [])
+          .map((item) => clampContextValue(item.sourceQuote?.normalize('NFC') ?? '', 500))
+          .filter(Boolean),
+      ),
+    ];
+    lines.push(...section('Protected transcript evidence:', quotes.map((quote) => `- ${quote}`), 2_000));
+  }
   return lines;
 }
 
-export async function fetchMeetingContext(api: ContextApi, query: string): Promise<MeetingContext> {
+export async function fetchMeetingContext(
+  api: ContextApi,
+  query: string,
+  options: { includeActionItems?: boolean } = {},
+): Promise<MeetingContext> {
   const [search, recent] = await Promise.all([
     query.trim()
       ? readContext<{ items: MeetingCandidate[] }>(
@@ -159,7 +178,7 @@ export async function fetchMeetingContext(api: ContextApi, query: string): Promi
   authorized.forEach((meeting) => {
     const source = { reference: `M${sources.length + 1}`, id: meeting.id, title: meeting.title };
     sources.push(source);
-    blocks.push(meetingLines(meeting, source).join('\n'));
+    blocks.push(meetingLines(meeting, source, options.includeActionItems !== false).join('\n'));
   });
   if (blocks.length === 0) return { text: '', sources: [] };
   const partial = sources.length < ids.length ? ' Some meetings could not be retrieved.' : '';

@@ -48,7 +48,7 @@ def _stub_response(transcript_file: str, tenant: str) -> dict:
         }
     )
     # by_alias=True -> camelCase, same as what the backend receives.
-    return analyze(req).model_dump(by_alias=True, mode="json")
+    return analyze(req).model_dump(by_alias=True, mode="json", exclude={"quality"})
 
 
 def test_canonical_schema_is_valid_json_schema():
@@ -105,6 +105,7 @@ def test_stub_response_validates_against_canonical_schema(transcript: str, tenan
     # additionalProperties=false, so we drop the extra fields from the response.
     body.pop("metadata", None)
     body.pop("meetingId", None)
+    body.pop("quality", None)
     # Sanity: this transcript exercises the customerConfidence block (not null).
     assert body["customerConfidence"] is not None
     errors = sorted(validator.iter_errors(body), key=lambda e: e.path)
@@ -135,6 +136,7 @@ def test_internal_meeting_response_validates_against_canonical_schema():
     body = req and analyze(req).model_dump(by_alias=True, mode="json")
     body.pop("metadata", None)
     body.pop("meetingId", None)
+    body.pop("quality", None)
     assert body["customerConfidence"] is None
     validator = Draft202012Validator(_canonical_schema())
     errors = list(validator.iter_errors(body))
@@ -160,7 +162,7 @@ def test_strict_llm_schema_matches_canonical_enums():
 
 def _provider_payload() -> dict:
     body = _stub_response("01-acme-discovery-lead-novo.txt", "acme-software")
-    for field in ("metadata", "meetingId", "baselineTerms"):
+    for field in ("metadata", "meetingId", "baselineTerms", "quality"):
         body.pop(field, None)
     body["productivity"] = {
         "score": 50,

@@ -11,6 +11,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
+from .quality_models import AnalysisQuality
+
 # ---------- Enums aligned to the v1 schemas ----------
 
 
@@ -540,6 +542,7 @@ class AnalyzeResponse(MeetingAnalysisV1):
 
     meeting_id: str = Field(alias="meetingId")
     metadata: AnalyzeMetadata
+    quality: AnalysisQuality | None = None
 
 
 # ---------- Worker Split (meeting boundary detection in a single file) ----------

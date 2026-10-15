@@ -26,6 +26,14 @@ const meeting: MeetingDetail = {
   attributes: { externalId: 'external-1', clientCode: 'C-18' }, createdAt: '2026-10-15T12:00:00Z', updatedAt: '2026-10-15T12:00:00Z',
   analysis: { summary: 'Meeting summary', decisions: [], actionItems: [], risks: [], opportunities: [], sentimentOverall: 'NEUTRAL', topics: [],
     commercialIntelligence: { products: [{ name: 'Enterprise product', relationship: 'CURRENT', sourceQuote: 'We use this product.' }], personas: [], budgets: [], sentimentByTopic: [] },
+    quality: { version: '1', origin: 'LEGACY_DERIVED', transcript: null, extraction: {
+      actionItems: { total: 0, withSourceQuote: 0, matchedSourceQuote: null }, actionItemsWithAssignee: 0, actionItemsWithDueDate: 0,
+      risks: { total: 0, withSourceQuote: 0, matchedSourceQuote: null }, opportunities: { total: 0, withSourceQuote: 0, matchedSourceQuote: null },
+      commercial: {
+        products: { total: 1, withSourceQuote: 1, matchedSourceQuote: null }, personas: { total: 0, withSourceQuote: 0, matchedSourceQuote: null },
+        budgets: { total: 0, withSourceQuote: 0, matchedSourceQuote: null }, sentimentByTopic: { total: 0, withSourceQuote: 0, matchedSourceQuote: null },
+      },
+    } },
   },
 };
 
@@ -44,6 +52,7 @@ it('removes commercial analysis from Core rendering and from the export input', 
   expect(screen.queryByText('Enterprise product')).toBeNull();
   expect(screen.getByText('ID de origem external-1')).toBeTruthy();
   expect(mocks.export.mock.calls[0][0].detail.analysis.commercialIntelligence).toBeNull();
+  expect(mocks.export.mock.calls[0][0].detail.analysis.quality.extraction.commercial).toBeNull();
   expect(mocks.history).not.toHaveBeenCalled();
 });
 

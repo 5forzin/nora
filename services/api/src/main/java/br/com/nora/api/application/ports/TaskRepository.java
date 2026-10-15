@@ -23,7 +23,8 @@ public interface TaskRepository {
             ActionItemStatus status,
             UUID meetingId,
             String meetingTitle,
-            OffsetDateTime updatedAt) {}
+            OffsetDateTime updatedAt,
+            String sourceQuote) {}
 
     /** One page of the tenant's tasks plus the real total, for the SQL-paginated path. */
     record PagedTasks(List<TaskRow> items, long totalItems, int page, int size) {
@@ -40,10 +41,20 @@ public interface TaskRepository {
      * decision item by item before they can know how many rows are left to paginate — the same
      * shape {@code MeetingService.listAllForAuthFilter} exists for.
      */
-    List<TaskRow> listByTenant(UUID tenantId, ActionItemStatus statusFilter);
+    default List<TaskRow> listByTenant(UUID tenantId, ActionItemStatus statusFilter) {
+        return listByTenant(tenantId, statusFilter, null);
+    }
+
+    List<TaskRow> listByTenant(UUID tenantId, ActionItemStatus statusFilter, UUID meetingId);
 
     /** One page, cut in SQL. Only correct when the IAM decision is uniform over the set. */
-    PagedTasks listByTenant(UUID tenantId, ActionItemStatus statusFilter, int page, int size);
+    default PagedTasks listByTenant(
+            UUID tenantId, ActionItemStatus statusFilter, int page, int size) {
+        return listByTenant(tenantId, statusFilter, null, page, size);
+    }
+
+    PagedTasks listByTenant(
+            UUID tenantId, ActionItemStatus statusFilter, UUID meetingId, int page, int size);
 
     Optional<TaskRow> findByIdAndTenant(UUID id, UUID tenantId);
 
@@ -57,6 +68,8 @@ public interface TaskRepository {
     void updateStatus(UUID id, UUID tenantId, ActionItemStatus newStatus);
 
     void updateTitle(UUID id, UUID tenantId, String newTitle);
+
+    void updateAssignee(UUID id, UUID tenantId, String assignee);
 
     /**
      * Sets the task's due date, or clears it when {@code newDueDate} is null. The column is a

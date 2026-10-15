@@ -46,6 +46,9 @@ public class ActionItemJpaEntity {
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
 
+    @Column(name = "completed_at")
+    private OffsetDateTime completedAt;
+
     public UUID getId() {
         return id;
     }
@@ -140,5 +143,13 @@ public class ActionItemJpaEntity {
 
     public void setUpdatedAt(OffsetDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public OffsetDateTime getCompletedAt() {
+        return completedAt;
+    }
+
+    public void setCompletedAt(OffsetDateTime completedAt) {
+        this.completedAt = completedAt;
     }
 }

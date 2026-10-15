@@ -269,7 +269,9 @@ services:
       USE_LLM_STUB: ${USE_LLM_STUB:-false}
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
       LLM_API_KEY: ${OPENAI_API_KEY:-}
-      LLM_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      LLM_KEY_GOOGLE: ${LLM_KEY_GOOGLE:-${GEMINI_API_KEY:-}}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
+      LLM_MODEL: ${LLM_MODEL:-${OPENAI_MODEL:-gpt-4o-mini}}
       # Wall-clock budget for one request. Must stay under the API's nora.worker.timeout-millis
       # (120000), or the worker keeps spending tokens after the caller has given up.
       LLM_REQUEST_BUDGET_SECONDS: ${LLM_REQUEST_BUDGET_SECONDS:-90}
@@ -533,12 +535,14 @@ services:
       OTEL_SERVICE_NAME: nora-web
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       # Core chat (server-side BFF, ADR 0004/0024). Keys never go to the browser.
-      LLM_API_KEY: ${OPENAI_API_KEY:-}
-      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
-      LLM_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      # Chat fallback is independent of the worker's provider. Use explicit provider keys.
+      LLM_API_KEY: ""
+      LLM_PROVIDER: ${NORA_CHAT_PROVIDER:-openai}
+      LLM_BASE_URL: ${NORA_CHAT_BASE_URL:-https://api.openai.com/v1}
+      LLM_MODEL: ${NORA_CHAT_MODEL:-${OPENAI_MODEL:-gpt-4o-mini}}
       LLM_KEY_OPENAI: ${OPENAI_API_KEY:-}
       LLM_KEY_DEEPSEEK: ${DEEPSEEK_API_KEY:-}
-      LLM_KEY_GOOGLE: ${GEMINI_API_KEY:-}
+      LLM_KEY_GOOGLE: ${LLM_KEY_GOOGLE:-${GEMINI_API_KEY:-}}
       NORA_PLATFORM_INTERNAL_TOKEN: ${NORA_PLATFORM_INTERNAL_TOKEN:-}
     # `edge` does NOT publish a port: there is no `ports:` here and the only entry point
     # is still cloudflared -> caddy. It exists because the `internal` and `data` networks

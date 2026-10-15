@@ -198,10 +198,28 @@ class McpIsolationIntegrationTest {
                                 .path("name")
                                 .asText())
                 .isEqualTo("ERP");
+        assertThat(before.path("analysis").path("quality").path("origin").asText())
+                .isEqualTo("LEGACY_DERIVED");
+        assertThat(
+                        before.path("analysis")
+                                .path("quality")
+                                .path("extraction")
+                                .path("commercial")
+                                .path("products")
+                                .path("total")
+                                .asInt())
+                .isEqualTo(1);
         jdbc.update("UPDATE tenants SET plan = 'FREE' WHERE id = ?", ws.tenantId());
         JsonNode after =
                 structured(call(ws.mcp(), "get_meeting", Map.of("meetingId", ws.meetingId())));
         assertThat(after.path("analysis").path("commercialIntelligence").isNull()).isTrue();
+        assertThat(
+                        after.path("analysis")
+                                .path("quality")
+                                .path("extraction")
+                                .path("commercial")
+                                .isNull())
+                .isTrue();
     }
 
     @Test

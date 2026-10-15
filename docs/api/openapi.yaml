@@ -1574,7 +1574,7 @@ paths:
       tags: [Tasks]
       summary: Lists tasks extracted from the tenant's meetings
       description: |
-        IAM action: `task:read`. Optional filter by `status`.
+        IAM action: `task:read`. Optional filters by `status` and `meetingId`.
 
         **Paginated since 2026-08-23**, and the default is the ceiling rather than a small page:
         this endpoint returned every action item of the tenant on every call, so every existing
@@ -1584,6 +1584,10 @@ paths:
         tenant is past 100 tasks — and past that, a truncated list is what the cap exists to
         produce. `size` above 100 is clamped, not rejected.
       parameters:
+        - in: query
+          name: meetingId
+          description: Restricts tasks to one meeting within the caller's tenant and IAM scope.
+          schema: { type: string, format: uuid }
         - in: query
           name: status
           schema: { $ref: '#/components/schemas/ActionItemStatus' }
@@ -1608,9 +1612,9 @@ paths:
   /tasks/{id}:
     patch:
       tags: [Tasks]
-      summary: Updates a task's status, title and/or due date
+      summary: Updates a task's status, title, due date and/or responsible party
       description: |
-        IAM action: `task:write`. At least one of `status`/`title`/`dueDate` must be provided. A
+        IAM action: `task:write`. At least one of `status`/`title`/`dueDate`/`assignee` must be provided. A
         non-existent task returns `404 TASK_NOT_FOUND`.
 
         `dueDate` is an ISO date (`yyyy-MM-dd`). Omitting the field leaves the stored value alone;
@@ -3763,6 +3767,11 @@ components:
             - { $ref: '#/components/schemas/CommercialIntelligence' }
             - { type: 'null' }
           description: Evidence-backed commercial facts; null for Core, old analyses, or unsupported conversations. Rechecked against the stored tenant plan on every read.
+        quality:
+          oneOf:
+            - { $ref: './analysis-quality-v1.schema.json' }
+            - { type: 'null' }
+          description: Deterministic text and retained-item observations. Never an audio accuracy or extraction recall score. Commercial counts are withheld from Core. Legacy correspondence counts are unknown.
         metadata:
           type: object
           properties:
@@ -3879,6 +3888,10 @@ components:
       type: object
       required: [title]
       properties:
+        id:
+          type: [string, 'null']
+          format: uuid
+          description: Persisted task identity for follow-up; absent before the analysis is saved.
         title: { type: string }
         assignee: { type: [string, 'null'] }
         dueDate: { type: [string, 'null'], format: date }
@@ -4242,6 +4255,7 @@ components:
         meetingId: { type: string, format: uuid }
         meetingTitle: { type: [string, 'null'] }
         updatedAt: { type: string, format: date-time }
+        sourceQuote: { type: string, description: Protected transcript evidence for the extracted task. }
     TaskListResponse:
       type: object
       required: [items, page, size, totalItems, totalPages]
@@ -4256,11 +4270,15 @@ components:
     TaskUpdateRequest:
       type: object
       description: |
-        At least one of `status`/`title`/`dueDate` must be provided. An absent `dueDate` leaves the
-        stored value alone; an empty string clears it.
+        At least one of `status`/`title`/`dueDate`/`assignee` must be provided. An absent or null
+        `dueDate` or `assignee` leaves the stored value alone; an empty string clears it.
       properties:
         status: { $ref: '#/components/schemas/ActionItemStatus' }
         title: { type: string }
+        assignee:
+          type: [string, 'null']
+          maxLength: 255
+          description: Responsible-party label. Empty clears it; no member matching is performed.
         dueDate:
           type: string
           description: ISO date `yyyy-MM-dd`, or an empty string to clear the current value.

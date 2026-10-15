@@ -14,6 +14,7 @@ import br.com.nora.api.application.task.TaskException;
 import br.com.nora.api.application.task.TaskService;
 import br.com.nora.api.domain.analysis.ActionItemStatus;
 import br.com.nora.api.infrastructure.security.JjwtJwtIssuer.AuthenticatedPrincipal;
+import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.List;
@@ -63,6 +64,7 @@ public class TasksController {
     @RequiresPermission(action = "task:read", resource = ResourceType.TASK, anyAllow = true)
     public TaskListResponse list(
             @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "meetingId", required = false) UUID meetingId,
             @RequestParam(name = "page", defaultValue = "0") int page,
             // The default is the ceiling, not GET /meetings' 20, and the difference is deliberate.
             // This endpoint was unpaginated, so every existing client asks for no page at all and
@@ -103,15 +105,15 @@ public class TasksController {
             } else if (offset > Integer.MAX_VALUE) {
                 // A page far beyond the end answers empty with the real total instead of a 500.
                 pageRows = List.of();
-                totalItems = tasks.list(principal.tenantId(), parsed, 0, 1).totalItems();
+                totalItems = tasks.list(principal.tenantId(), parsed, meetingId, 0, 1).totalItems();
             } else {
                 TaskRepository.PagedTasks paged =
-                        tasks.list(principal.tenantId(), parsed, safePage, safeSize);
+                        tasks.list(principal.tenantId(), parsed, meetingId, safePage, safeSize);
                 pageRows = paged.items();
                 totalItems = paged.totalItems();
             }
         } else {
-            List<TaskRow> rows = tasks.list(principal.tenantId(), parsed);
+            List<TaskRow> rows = tasks.list(principal.tenantId(), parsed, meetingId);
             List<TaskRow> visible =
                     authz.filterAllowed(
                             principal.userId(),
@@ -147,15 +149,17 @@ public class TasksController {
      */
     @PatchMapping("/{id}")
     @RequiresPermission(action = "task:write", resource = ResourceType.TASK, idParam = "id")
-    public TaskListItem update(@PathVariable("id") UUID id, @RequestBody TaskUpdateRequest body) {
+    public TaskListItem update(
+            @PathVariable("id") UUID id, @Valid @RequestBody TaskUpdateRequest body) {
         AuthenticatedPrincipal principal = CurrentUser.require();
         boolean hasStatus = body.status() != null && !body.status().isBlank();
         boolean hasTitle = body.title() != null && !body.title().isBlank();
         // Presence, not blankness: "" is the documented way to clear the date.
         boolean hasDueDate = body.dueDate() != null;
-        if (!hasStatus && !hasTitle && !hasDueDate) {
+        boolean hasAssignee = body.assignee() != null;
+        if (!hasStatus && !hasTitle && !hasDueDate && !hasAssignee) {
             throw new IllegalArgumentException(
-                    "at least one of 'status', 'title' or 'dueDate' is required");
+                    "at least one of 'status', 'title', 'dueDate' or 'assignee' is required");
         }
         ActionItemStatus newStatus = null;
         if (hasStatus) {
@@ -166,16 +170,17 @@ public class TasksController {
         }
         LocalDate newDueDate = hasDueDate ? parseDueDate(body.dueDate()) : null;
 
-        TaskRow row = null;
-        if (hasStatus) {
-            row = tasks.updateStatus(id, principal.tenantId(), newStatus);
-        }
-        if (hasTitle) {
-            row = tasks.updateTitle(id, principal.tenantId(), body.title());
-        }
-        if (hasDueDate) {
-            row = tasks.updateDueDate(id, principal.tenantId(), newDueDate);
-        }
+        TaskRow row =
+                tasks.update(
+                        id,
+                        principal.tenantId(),
+                        new TaskService.Changes(
+                                newStatus,
+                                hasTitle ? body.title() : null,
+                                hasDueDate,
+                                newDueDate,
+                                hasAssignee,
+                                body.assignee()));
         return toDto(row);
     }
 
@@ -212,6 +217,7 @@ public class TasksController {
                 r.status().name(),
                 r.meetingId(),
                 r.meetingTitle(),
-                r.updatedAt());
+                r.updatedAt(),
+                r.sourceQuote());
     }
 }

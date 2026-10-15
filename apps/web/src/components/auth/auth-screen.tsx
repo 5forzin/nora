@@ -3,9 +3,10 @@
 import type { Route } from "next";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { NoraLogo } from "@/components/brand/nora-logo";
+import { TotvsSymbol } from "@/components/brand/totvs-symbol";
 import { ApiRequestError, login, resendVerificationEmail, signup } from "@/lib/api/client";
 import { clearLocalSession, getCurrentUser, setSession, sharedRefresh } from "@/lib/auth";
 import { workspaceDestination } from "@/lib/enterprise/navigation";
@@ -23,110 +24,10 @@ function safeNextPath(raw: string | null): Route {
   return raw as Route;
 }
 
-// ── Live transcription (left panel · ambient variant) ──
-type TLine = {
-  t: number;
-  speaker: string;
-  time: string;
-  text: string;
-  tag: { kind: "decision" | "action" | "pii"; label: string };
-};
-
-const TRANSCRIPT_LINES: TLine[] = [
-  {
-    t: 0,
-    speaker: "Camila",
-    time: "14:30",
-    text: "A equipe definiu os critérios para aprovar o piloto.",
-    tag: { kind: "decision", label: "Decisão" },
-  },
-  {
-    t: 3.5,
-    speaker: "Rafael",
-    time: "14:31",
-    text: "Mando a proposta do piloto na segunda.",
-    tag: { kind: "action", label: "Action item" },
-  },
-  {
-    t: 7,
-    speaker: "Bruno",
-    time: "14:33",
-    text: "A primeira etapa do projeto será somente de leitura.",
-    tag: { kind: "decision", label: "Decisão" },
-  },
-  {
-    t: 10.5,
-    speaker: "Camila",
-    time: "14:34",
-    text: "Camila Rodrigues vai revisar os requisitos com a equipe.",
-    tag: { kind: "pii", label: "PII · nome" },
-  },
-  {
-    t: 14,
-    speaker: "Bruno",
-    time: "14:36",
-    text: "Levo a data de go-live pro board.",
-    tag: { kind: "action", label: "Action item" },
-  },
-  {
-    t: 17.5,
-    speaker: "Lucas",
-    time: "14:37",
-    text: "Combinado. Documentar tudo no ADR 0012.",
-    tag: { kind: "decision", label: "Decisão" },
-  },
-];
-const TRANSCRIPT_DURATION = 23;
-
-function TranscriptionAnimation() {
-  return (
-    <div className="transcript-anim" aria-hidden="true">
-      <div className="transcript-bg" />
-      <div className="transcript-fade-top" />
-      <div className="transcript-fade-bottom" />
-      <div className="transcript-stream">
-        <div className="transcript-stream-inner">
-          {TRANSCRIPT_LINES.map((l, i) => (
-            <div
-              key={i}
-              className="t-line"
-              style={
-                {
-                  "--line-delay": `${l.t}s`,
-                  "--total-duration": `${TRANSCRIPT_DURATION}s`,
-                } as CSSProperties
-              }
-            >
-              <div className="t-meta">
-                <span className="t-speaker">{l.speaker}</span>
-                <span className="t-time">{l.time}</span>
-              </div>
-              <div className="t-text">
-                <span>{l.text}</span>
-                <span
-                  className={`t-tag t-tag-${l.tag.kind}`}
-                  style={{ "--tag-delay": `${l.t + 2.2}s` } as CSSProperties}
-                >
-                  <span className="t-tag-dot" />
-                  {l.tag.label}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="transcript-badge">
-        <span className="transcript-dot" />
-        <span>Exemplo ilustrativo</span>
-      </div>
-    </div>
-  );
-}
-
 function LeftPanel() {
   return (
     <div className="left">
-      <TranscriptionAnimation />
+      <div className="auth-brand-art" aria-hidden="true"><TotvsSymbol size={232} /></div>
       <div className="left-head">
         <NoraLogo size={22} />
         <Link href="/" className="back-link">
@@ -142,7 +43,7 @@ function LeftPanel() {
           >
             <polyline points="15 18 9 12 15 6" />
           </svg>
-          Voltar pro site
+          Voltar ao site
         </Link>
       </div>
       <div className="left-foot">
@@ -308,8 +209,7 @@ function LoginForm({ onSwitchToSignup, next }: { onSwitchToSignup: () => void; n
   return (
     <div className="right-inner">
       <div className="head">
-        <h2>Bem-vindo de volta.</h2>
-        <p>Entre na sua conta Nora pra continuar.</p>
+        <h2>Entrar na Nora</h2>
       </div>
 
       {err && (
@@ -406,7 +306,7 @@ function LoginForm({ onSwitchToSignup, next }: { onSwitchToSignup: () => void; n
           <span>
             Não tem conta?{" "}
             <button type="button" onClick={onSwitchToSignup}>
-              Criar agora
+              Criar conta
             </button>
           </span>
         </div>
@@ -520,14 +420,13 @@ function SignupForm({
               <polyline points="20 6 9 17 4 12" />
             </svg>
           </div>
-          <h3>Confirme seu e-mail.</h3>
+          <h3>Confirme seu e-mail</h3>
           <p>
-            Mandamos um e-mail pra{" "}
-            <strong style={{ color: "var(--ink)", fontWeight: 500 }}>{data.email}</strong>. Confirma
-            pra ativar a conta e entrar.
+            Enviamos um link para{" "}
+            <strong style={{ color: "var(--ink)", fontWeight: 500 }}>{data.email}</strong>. Abra o link para ativar sua conta.
           </p>
           <button className="btn btn-primary btn-full" onClick={onSwitchToLogin}>
-            Ir pro login
+            Entrar
             <ArrowRightIcon />
           </button>
         </div>
@@ -557,20 +456,19 @@ function SignupForm({
       <div className="head" style={{ marginTop: 20 }}>
         {step.id === "email" && (
           <>
-            <h2>Crie sua conta Nora.</h2>
+            <h2>Criar conta</h2>
             <p>Comece com um workspace Core.</p>
           </>
         )}
         {step.id === "password" && (
           <>
-            <h2>Escolha uma senha forte.</h2>
+            <h2>Definir senha</h2>
             <p>Mínimo {PASSWORD_MIN} caracteres, com letras e números.</p>
           </>
         )}
         {step.id === "workspace" && (
           <>
-            <h2>Conte sobre o workspace.</h2>
-            <p>Você pode trocar essas informações depois nas configurações.</p>
+            <h2>Seu workspace</h2>
           </>
         )}
       </div>
@@ -595,7 +493,7 @@ function SignupForm({
           </div>
           <p style={{ margin: "6px 0 0", fontSize: 13.5, lineHeight: 1.5 }}>“{question}”</p>
           <p style={{ margin: "6px 0 0", fontSize: 11.5, opacity: 0.85 }}>
-            Guardamos ela pra você: assim que entrar, ela já vai estar escrita no chat.
+            A pergunta estará no chat após o login.
           </p>
         </div>
       )}
@@ -718,7 +616,6 @@ function SignupForm({
                 onChange={(e) => update({ workspaceName: e.target.value })}
                 required
               />
-              <div className="field-helper">Você pode renomear depois nas configurações.</div>
             </div>
             <div className="field">
               <label className="field-label">Como você vai usar?</label>

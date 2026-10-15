@@ -1,6 +1,5 @@
 import Link from "next/link";
 import type { Route } from "next";
-import { cookies } from "next/headers";
 
 import { listMeetings, type ListMeetingsParams } from "@/lib/api/client";
 import type { MeetingListItem, ProcessingStatus } from "@/lib/api/types";
@@ -22,25 +21,6 @@ const GROUP_ORDER = ["Hoje", "Ontem", "Esta semana", "Mais antigas"] as const;
 
 function isStatus(s: string | undefined): s is ListMeetingsParams["status"] {
   return !!s && (STATUS_VALUES as readonly string[]).includes(s);
-}
-
-async function firstName(): Promise<string> {
-  try {
-    const raw = (await cookies()).get("nora_user")?.value;
-    if (!raw) return "";
-    const u = JSON.parse(decodeURIComponent(raw)) as { displayName?: string };
-    return (u.displayName ?? "").trim().split(/\s+/)[0] ?? "";
-  } catch {
-    return "";
-  }
-}
-
-function greeting(): string {
-  const h = new Date().getHours();
-  if (h < 6) return "Boa madrugada";
-  if (h < 12) return "Bom dia";
-  if (h < 18) return "Boa tarde";
-  return "Boa noite";
 }
 
 function groupOf(startedAt: string | undefined): (typeof GROUP_ORDER)[number] {
@@ -196,7 +176,7 @@ function MeetingRow({ m }: { m: MeetingListItem }) {
           ) : (
             <>
               {duration && <span>{duration}</span>}
-              {m.actionItemCount > 0 && <span>{m.actionItemCount} action items</span>}
+              {m.actionItemCount > 0 && <span>{m.actionItemCount} tarefas</span>}
               {m.riskCount > 0 && <span>{m.riskCount} riscos</span>}
               {m.opportunityCount > 0 && <span>{m.opportunityCount} oportunidades</span>}
             </>
@@ -250,7 +230,6 @@ export default async function DashboardPage({
     data = { items: [] as MeetingListItem[], page: 0, size: 20, totalItems: 0, totalPages: 0 };
   }
 
-  const name = await firstName();
   const hasFilters = Boolean(filters.search || filters.status || filters.from || filters.to);
 
   const grouped: Record<string, MeetingListItem[]> = {};
@@ -258,7 +237,6 @@ export default async function DashboardPage({
     const g = groupOf(m.startedAt ?? m.createdAt);
     (grouped[g] ||= []).push(m);
   }
-  const todayCount = grouped["Hoje"]?.length ?? 0;
 
   const hasProcessing = data.items.some((m) => m.processingStatus === "PROCESSING" || m.processingStatus === "PENDING");
 
@@ -274,17 +252,10 @@ export default async function DashboardPage({
     <div className="page">
       <ProcessingPoller active={hasProcessing} />
 
-      <header style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24, marginBottom: 28 }}>
+      <header style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24, flexWrap: "wrap", marginBottom: 28 }}>
         <div>
-          <div className="eyebrow">
-            {greeting()}
-            {name ? `, ${name}.` : "."}
-          </div>
-          <h1 className="h1">
-            {todayCount > 0
-              ? `${todayCount} ${todayCount === 1 ? "reunião" : "reuniões"} hoje.`
-              : `${data.totalItems} ${data.totalItems === 1 ? "reunião" : "reuniões"} no total.`}
-          </h1>
+          <h1 className="h1">Reuniões</h1>
+          <p style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--muted)' }}>{data.totalItems} {data.totalItems === 1 ? 'reunião' : 'reuniões'}{hasFilters ? ' encontradas' : ''}</p>
         </div>
         {canCreate && <Link href={"/meetings/upload" as Route} className="btn btn-primary" style={{ flexShrink: 0 }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
@@ -298,7 +269,7 @@ export default async function DashboardPage({
 
       {errorMessage && (
         <div className="notice" style={{ marginTop: 16 }}>
-          Não consegui carregar as reuniões agora ({errorMessage}). Verifique a conexão com a API.
+          Não foi possível carregar as reuniões. {errorMessage}
         </div>
       )}
 
@@ -311,12 +282,12 @@ export default async function DashboardPage({
             <p style={{ fontSize: 13.5, color: "var(--muted)", margin: 0, lineHeight: 1.55 }}>
               {hasFilters
                 ? "Ajuste a busca ou limpe os filtros."
-                : canCreate ? "Importe uma transcrição para consultar resumo, decisões e tarefas." : "As reuniões disponíveis no workspace aparecerão aqui."}
+                : canCreate ? "Importe uma transcrição para consultar resumo, decisões e tarefas." : ""}
             </p>
           </div>
           {!hasFilters && canCreate && (
             <Link href={"/meetings/upload" as Route} className="btn btn-primary">
-              Fazer upload
+              Importar transcrição
             </Link>
           )}
         </div>

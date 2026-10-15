@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { MeetingDetail } from '@/lib/api/types';
+import type { ActionItem, MeetingDetail } from '@/lib/api/types';
 import {
   fetchMeetingContext,
   fetchPendingTaskContext,
@@ -166,6 +166,66 @@ describe('meeting context', () => {
     expect(result.text).not.toContain('Restricted');
     expect(result.text).toContain('could not be retrieved');
     expect(formatMeetingSources(result.sources)).not.toContain(OTHER_ID);
+  });
+
+  it('keeps source evidence without generated task fields when the application supplies tasks', async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/search?') || url.includes('/meetings?'))
+        return json({ items: [{ id: ID }] });
+      return json(meeting());
+    });
+
+    const result = await fetchMeetingContext(API, 'Executive blockers', { includeActionItems: false });
+    expect(result.text).not.toContain('Meeting action items');
+    expect(result.text).not.toContain('Confirm delivery date');
+    expect(result.text).not.toContain('Sales owner');
+    expect(result.text).toContain('Protected transcript evidence:\n- Send the revised plan.');
+    expect(result.text).not.toContain('[OPEN]');
+    expect(result.text).toContain('The client may leave unless delivery recovers.');
+    expect(result.text).toContain('Escalate the supplier delay');
+    expect(result.text).toContain('Renewal is at risk');
+    expect(result.text).toContain('Delivery is six weeks late.');
+    expect(result.text).toContain('Expand after recovery');
+    expect(result.sources).toEqual([{ reference: 'M1', id: ID, title: 'Renewal review' }]);
+    expect(formatMeetingSources(result.sources)).toContain(`(/meetings/${ID})`);
+  });
+
+  it('deduplicates and bounds transcript evidence independently of generated task data', async () => {
+    const detail = meeting();
+    detail.analysis!.actionItems = [
+      ...Array.from({ length: 2 }, (_, index): ActionItem => ({
+        title: `Generated title ${index}`,
+        assignee: 'Generated owner',
+        dueDate: '2026-10-16',
+        priority: 'HIGH',
+        status: 'OPEN',
+        sourceQuote: index === 0 ? 'Operations must deliver the plan by October 21.' : ' Operations must\n deliver the plan by October 21. ',
+      })),
+      ...Array.from({ length: 8 }, (_, index): ActionItem => ({
+        title: `Generated title ${index + 2}`,
+        priority: 'HIGH',
+        sourceQuote: `Quoted passage ${index}: ${'x'.repeat(1_000)}`,
+      })),
+    ];
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/search?') || url.includes('/meetings?'))
+        return json({ items: [{ id: ID }] });
+      return json(detail);
+    });
+
+    const result = await fetchMeetingContext(API, 'Current blockers', { includeActionItems: false });
+    const evidence = result.text.split('Protected transcript evidence:\n')[1];
+    expect(evidence.match(/Operations must deliver the plan by October 21\./g)).toHaveLength(1);
+    expect(evidence).not.toContain('Generated title');
+    expect(evidence).not.toContain('Generated owner');
+    expect(evidence).not.toContain('[OPEN]');
+    const quotes = evidence.split('\n').filter((line) => line.startsWith('- Quoted passage'));
+    expect(quotes.length).toBeGreaterThan(0);
+    expect(quotes.every((line) => line.slice(2).length <= 500)).toBe(true);
+    expect(evidence.length).toBeLessThan(2_100);
+    expect(evidence).toContain('More items exist; open the meeting.');
   });
 
   it('falls back to recent meetings when semantic search fails and bounds detail fan-out', async () => {

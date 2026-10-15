@@ -59,6 +59,9 @@ def test_analyze_returns_valid_response(transcript: str, tenant: str):
     assert body["sentimentOverall"] in {"POSITIVE", "NEUTRAL", "NEGATIVE", "MIXED"}
     assert isinstance(body["topics"], list)
     assert body["metadata"]["modelVersion"].startswith("stub")
+    assert body["quality"]["origin"] == "WORKER"
+    assert body["quality"]["transcript"]["characterCount"] == len(payload["transcript"])
+    assert body["quality"]["extraction"]["actionItems"]["total"] == len(body["actionItems"])
 
 
 def test_analyze_acme_detects_competition_risk():

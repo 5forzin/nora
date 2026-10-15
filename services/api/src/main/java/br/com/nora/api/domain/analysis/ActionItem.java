@@ -1,6 +1,7 @@
 package br.com.nora.api.domain.analysis;
 
 import java.time.LocalDate;
+import java.util.UUID;
 
 /** Task derived from the meeting. Initial status is always OPEN. */
 public record ActionItem(
@@ -9,7 +10,18 @@ public record ActionItem(
         LocalDate dueDate,
         Priority priority,
         String sourceQuote,
-        ActionItemStatus status) {
+        ActionItemStatus status,
+        UUID id) {
+
+    public ActionItem(
+            String title,
+            String assignee,
+            LocalDate dueDate,
+            Priority priority,
+            String sourceQuote,
+            ActionItemStatus status) {
+        this(title, assignee, dueDate, priority, sourceQuote, status, null);
+    }
 
     public ActionItem {
         if (title == null || title.isBlank()) {

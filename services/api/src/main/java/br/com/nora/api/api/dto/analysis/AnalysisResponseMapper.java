@@ -26,7 +26,8 @@ public final class AnalysisResponseMapper {
                                                 ai.dueDate(),
                                                 ai.priority().name(),
                                                 ai.sourceQuote(),
-                                                ai.status().name()))
+                                                ai.status().name(),
+                                                ai.id()))
                         .toList(),
                 a.risks().stream()
                         .map(
@@ -54,6 +55,7 @@ public final class AnalysisResponseMapper {
                         a.processingMillis(),
                         a.piiRedactionsApplied()),
                 a.generatedAt(),
-                a.commercialIntelligence());
+                a.commercialIntelligence(),
+                a.quality());
     }
 }

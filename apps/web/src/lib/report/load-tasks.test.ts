@@ -30,3 +30,12 @@ it('rejects duplicates caused by changes between page requests', async () => {
   listTasks.mockResolvedValue({ items: [{ id: 'one' }], totalItems: 2, totalPages: 2 });
   await expect(loadTasksForExport()).rejects.toThrow(strings.tasks.exportChanged);
 });
+
+it('keeps the selected meeting on every export page', async () => {
+  listTasks.mockImplementation(async ({ page }) => ({
+    items: [{ id: `task-${page}` }], totalItems: 2, totalPages: 2,
+  }));
+  await loadTasksForExport('OPEN', 'meeting-1');
+  expect(listTasks).toHaveBeenNthCalledWith(1, { page: 0, size: 100, status: 'OPEN', meetingId: 'meeting-1' });
+  expect(listTasks).toHaveBeenNthCalledWith(2, { page: 1, size: 100, status: 'OPEN', meetingId: 'meeting-1' });
+});

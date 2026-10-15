@@ -43,6 +43,7 @@ def test_disabled_confidence_is_null_even_if_the_provider_returns_it(fallback):
     response = stub_analyzer.analyze(_request()).model_dump(by_alias=True)
     response.pop("meetingId")
     response.pop("metadata")
+    response.pop("quality", None)
     # Invalid commercial data must not survive or break the Core analysis.
     response["customerConfidence"] = {"score": 99, "unexpected": "restricted commercial result"}
     response["commercialIntelligence"] = {"products": "restricted commercial result"}

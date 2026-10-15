@@ -32,12 +32,14 @@ function ChevronDownIcon() {
 
 export default function TasksExportMenu({
   status,
+  meetingId,
   totalItems,
   filterLabel,
   disabled,
   onError,
 }: {
   status?: TaskStatus;
+  meetingId?: string;
   totalItems: number;
   filterLabel: string;
   disabled: boolean;
@@ -81,7 +83,7 @@ export default function TasksExportMenu({
     setExporting(true);
     onError(null);
     try {
-      const items = await loadTasksForExport(status);
+      const items = await loadTasksForExport(status, meetingId);
       download(
         format === "csv" ? tasksToCsv(items) : tasksToMarkdown(items, filterLabel),
         taskExportFileName(format, filterLabel),

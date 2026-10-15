@@ -688,10 +688,10 @@ function UploadMeetingForm({ canReadMeetings, canReprocessMeetings, canReadFlows
 
       <header style={{ marginBottom: 26 }}>
         <h1 className="h1" style={{ fontSize: 26 }}>
-          Nova reunião.
+          Nova reunião
         </h1>
         <p className="lede" style={{ marginTop: 8 }}>
-          Suba uma ou mais transcrições (.txt, .vtt ou .srt) — a análise começa em segundo plano.
+          Transcrições em TXT, VTT ou SRT.
         </p>
       </header>
 
@@ -801,7 +801,7 @@ function UploadMeetingForm({ canReadMeetings, canReprocessMeetings, canReadFlows
         <ChipField
           id="p-input"
           label="Participantes"
-          help="Aparecem no detalhe da reunião e ajudam a Nora a atribuir action items."
+          help="Opcional"
           placeholder="Digite um nome e aperte Enter"
           values={participants}
           onChange={setParticipants}

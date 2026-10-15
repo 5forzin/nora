@@ -1,5 +1,6 @@
 package br.com.nora.api.infrastructure.nlp;
 
+import br.com.nora.api.domain.analysis.AnalysisQuality;
 import br.com.nora.api.domain.analysis.CommercialIntelligence;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -71,8 +72,8 @@ public final class WorkerDtos {
             @JsonProperty("productivity") ProductivityDto productivity,
             @JsonProperty("customerConfidence") CustomerConfidenceDto customerConfidence,
             @JsonProperty("metadata") Metadata metadata,
-            @JsonProperty("commercialIntelligence")
-                    CommercialIntelligence commercialIntelligence) {}
+            @JsonProperty("commercialIntelligence") CommercialIntelligence commercialIntelligence,
+            @JsonProperty("quality") AnalysisQuality quality) {}
 
     /**
      * {@code customerConfidence} block (ADR 0006/0015). Emitted by the worker only for external

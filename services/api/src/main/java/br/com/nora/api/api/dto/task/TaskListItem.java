@@ -17,4 +17,5 @@ public record TaskListItem(
         String status,
         UUID meetingId,
         String meetingTitle,
-        OffsetDateTime updatedAt) {}
+        OffsetDateTime updatedAt,
+        String sourceQuote) {}

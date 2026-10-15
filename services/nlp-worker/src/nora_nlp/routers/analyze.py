@@ -32,6 +32,7 @@ from ..models import (
     SplitResponse,
 )
 from ..services import (
+    analysis_quality,
     baseline,
     live_analyzer,
     llm_analyzer,
@@ -126,13 +127,33 @@ def analyze(req: AnalyzeRequest, settings: Settings = Depends(get_settings)) -> 
 
     if settings.use_llm_stub:
         response = stub_analyzer.analyze(safe_req, pii_redactions_applied=len(redaction.redactions))
-        return response.model_copy(update={"baseline_terms": baseline_terms})
+        return response.model_copy(
+            update={
+                "baseline_terms": baseline_terms,
+                "quality": analysis_quality.measure(
+                    req.transcript,
+                    redaction.redacted_text,
+                    response,
+                    include_commercial=req.options.include_customer_confidence,
+                ),
+            }
+        )
 
     try:
         response = llm_analyzer.analyze(
             safe_req, settings, pii_redactions_applied=len(redaction.redactions), budget=budget
         )
-        return response.model_copy(update={"baseline_terms": baseline_terms})
+        return response.model_copy(
+            update={
+                "baseline_terms": baseline_terms,
+                "quality": analysis_quality.measure(
+                    req.transcript,
+                    redaction.redacted_text,
+                    response,
+                    include_commercial=req.options.include_customer_confidence,
+                ),
+            }
+        )
     except LlmBudgetExceededError as exc:
         raise _budget_exceeded(
             exc, message="The analysis did not finish within the worker's time budget."

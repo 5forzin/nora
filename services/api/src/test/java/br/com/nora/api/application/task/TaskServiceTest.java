@@ -126,19 +126,24 @@ class TaskServiceTest {
                             status,
                             meetingId,
                             "Meeting " + meetingId.toString().substring(0, 4),
-                            OffsetDateTime.now()));
+                            OffsetDateTime.now(),
+                            "The original meeting evidence"));
             tenantOf.put(id, tenantId);
             return id;
         }
 
         @Override
-        public List<TaskRow> listByTenant(UUID tenantId, ActionItemStatus statusFilter) {
+        public List<TaskRow> listByTenant(
+                UUID tenantId, ActionItemStatus statusFilter, UUID meetingId) {
             List<TaskRow> rows = new ArrayList<>();
             for (TaskRow r : store.values()) {
                 if (!belongsToTenant(r, tenantId)) {
                     continue;
                 }
                 if (statusFilter != null && r.status() != statusFilter) {
+                    continue;
+                }
+                if (meetingId != null && !r.meetingId().equals(meetingId)) {
                     continue;
                 }
                 rows.add(r);
@@ -148,8 +153,8 @@ class TaskServiceTest {
 
         @Override
         public PagedTasks listByTenant(
-                UUID tenantId, ActionItemStatus statusFilter, int page, int size) {
-            List<TaskRow> all = listByTenant(tenantId, statusFilter);
+                UUID tenantId, ActionItemStatus statusFilter, UUID meetingId, int page, int size) {
+            List<TaskRow> all = listByTenant(tenantId, statusFilter, meetingId);
             int from = Math.min(page * size, all.size());
             int to = Math.min(from + size, all.size());
             return new PagedTasks(all.subList(from, to), all.size(), page, size);
@@ -176,7 +181,8 @@ class TaskServiceTest {
                                 newStatus,
                                 r.meetingId(),
                                 r.meetingTitle(),
-                                OffsetDateTime.now()));
+                                OffsetDateTime.now(),
+                                r.sourceQuote()));
             }
         }
 
@@ -195,7 +201,8 @@ class TaskServiceTest {
                                 r.status(),
                                 r.meetingId(),
                                 r.meetingTitle(),
-                                OffsetDateTime.now()));
+                                OffsetDateTime.now(),
+                                r.sourceQuote()));
             }
         }
 
@@ -214,12 +221,33 @@ class TaskServiceTest {
                                 r.status(),
                                 r.meetingId(),
                                 r.meetingTitle(),
-                                OffsetDateTime.now()));
+                                OffsetDateTime.now(),
+                                r.sourceQuote()));
             }
         }
 
         private boolean belongsToTenant(TaskRow r, UUID tenantId) {
             return tenantId.equals(tenantOf.get(r.id()));
+        }
+
+        @Override
+        public void updateAssignee(UUID id, UUID tenantId, String assignee) {
+            TaskRow r = store.get(id);
+            if (r != null && belongsToTenant(r, tenantId)) {
+                store.put(
+                        id,
+                        new TaskRow(
+                                r.id(),
+                                r.title(),
+                                assignee,
+                                r.dueDate(),
+                                r.priority(),
+                                r.status(),
+                                r.meetingId(),
+                                r.meetingTitle(),
+                                OffsetDateTime.now(),
+                                r.sourceQuote()));
+            }
         }
     }
 }

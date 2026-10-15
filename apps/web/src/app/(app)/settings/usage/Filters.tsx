@@ -48,7 +48,7 @@ export default function UsageFilters({ granularity, from, to, timezone }: Props)
     }
     setError(null);
     const q = qs.toString();
-    router.push((q ? `/usage?${q}` : "/usage") as Route);
+    router.push((q ? `/settings/usage?${q}` : "/settings/usage") as Route);
   }
 
   function clear() {
@@ -56,7 +56,7 @@ export default function UsageFilters({ granularity, from, to, timezone }: Props)
     setStart("");
     setEnd("");
     setError(null);
-    router.push("/usage" as Route);
+    router.push("/settings/usage" as Route);
   }
 
   const hasAny = Boolean(unit === "WEEK" || start || end);

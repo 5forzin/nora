@@ -1,5 +1,6 @@
 package br.com.nora.api.infrastructure.persistence.analysis;
 
+import br.com.nora.api.domain.analysis.AnalysisQuality;
 import br.com.nora.api.domain.analysis.CommercialIntelligence;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -20,6 +21,18 @@ import org.hibernate.type.SqlTypes;
 @Entity
 @Table(name = "meeting_analyses")
 public class MeetingAnalysisJpaEntity {
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "quality_observations", columnDefinition = "jsonb")
+    private AnalysisQuality quality;
+
+    public AnalysisQuality getQuality() {
+        return quality;
+    }
+
+    public void setQuality(AnalysisQuality value) {
+        quality = value;
+    }
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "commercial_intelligence", columnDefinition = "jsonb")

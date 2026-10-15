@@ -6,7 +6,9 @@ import { getWorkspaceAccess } from "@/lib/enterprise/access";
 import { ApiRequestError, getMeeting } from "@/lib/api/client";
 import type { MeetingDetail, Severity } from "@/lib/api/types";
 import { formatDateTime, meetingInstant } from "@/lib/utils";
+import { OPPORTUNITY_CATEGORY_LABEL, RISK_CATEGORY_LABEL } from "@/lib/analysis-labels";
 import { MarkdownContent } from "@/components/markdown-content";
+import AnalysisQualityPanel from "@/components/analysis-quality";
 import CommercialIntelligenceCard from "@/components/commercial-intelligence-card";
 import PrintButton from "./print-button";
 
@@ -81,12 +83,21 @@ function ReportSection({ label, children }: { label: string; children: React.Rea
 export default async function MeetingReportPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   let meeting: MeetingDetail | undefined;
+  let isEnterprise = false;
   try {
     const [detail, access] = await Promise.all([getMeeting(id), getWorkspaceAccess()]);
-    meeting = access.plan === "ENTERPRISE" ? detail : {
+    isEnterprise = access.plan === "ENTERPRISE";
+    meeting = isEnterprise ? detail : {
       ...detail,
       customerConfidence: null,
-      analysis: detail.analysis ? { ...detail.analysis, commercialIntelligence: null } : undefined,
+      analysis: detail.analysis ? {
+        ...detail.analysis,
+        commercialIntelligence: null,
+        quality: detail.analysis.quality ? {
+          ...detail.analysis.quality,
+          extraction: { ...detail.analysis.quality.extraction, commercial: null },
+        } : detail.analysis.quality,
+      } : undefined,
     };
   } catch (err) {
     if (err instanceof ApiRequestError && err.status === 404) {
@@ -180,8 +191,7 @@ export default async function MeetingReportPage({ params }: { params: Promise<{ 
 
           {!a && (
             <p style={{ marginTop: 28, fontSize: 13.5, color: "var(--muted)", lineHeight: 1.6 }}>
-              Esta reunião ainda não foi analisada pela Nora — o relatório completo fica disponível assim que a
-              análise terminar.
+              O relatório estará disponível após a análise.
             </p>
           )}
 
@@ -218,7 +228,7 @@ export default async function MeetingReportPage({ params }: { params: Promise<{ 
               )}
 
               {a.actionItems.length > 0 && (
-                <ReportSection label={`Action items (${a.actionItems.length})`}>
+                <ReportSection label={`Tarefas (${a.actionItems.length})`}>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {a.actionItems.map((t, i) => (
                       <div key={t.id ?? i}>
@@ -229,6 +239,7 @@ export default async function MeetingReportPage({ params }: { params: Promise<{ 
                           {t.assignee ?? "Sem responsável"} · prioridade {SEVERITY_LABEL[t.priority] ?? t.priority}
                           {t.dueDate ? ` · vence ${t.dueDate}` : ""}
                         </div>
+                        {t.sourceQuote && <blockquote className="quote" style={{ margin: '8px 0 0', whiteSpace: 'pre-line' }}>{t.sourceQuote}</blockquote>}
                       </div>
                     ))}
                   </div>
@@ -242,7 +253,7 @@ export default async function MeetingReportPage({ params }: { params: Promise<{ 
                       <div key={r.id ?? i}>
                         <div style={{ fontSize: 13.5, color: "var(--ink)", lineHeight: 1.5 }}>
                           <strong style={{ fontWeight: 500 }}>
-                            {SEVERITY_LABEL[r.severity] ?? r.severity} · {r.category}
+                            {SEVERITY_LABEL[r.severity] ?? r.severity} · {RISK_CATEGORY_LABEL[r.category] ?? r.category}
                           </strong>{" "}
                           — {r.text}
                         </div>
@@ -264,7 +275,7 @@ export default async function MeetingReportPage({ params }: { params: Promise<{ 
                       <div key={o.id ?? i}>
                         <div style={{ fontSize: 13.5, color: "var(--ink)", lineHeight: 1.5 }}>
                           <strong style={{ fontWeight: 500 }}>
-                            {SEVERITY_LABEL[o.estimatedValue] ?? o.estimatedValue} · {o.category}
+                            {SEVERITY_LABEL[o.estimatedValue] ?? o.estimatedValue} · {OPPORTUNITY_CATEGORY_LABEL[o.category] ?? o.category}
                           </strong>{" "}
                           — {o.text}
                         </div>
@@ -337,8 +348,10 @@ export default async function MeetingReportPage({ params }: { params: Promise<{ 
             </ReportSection>
           )}
 
+          {a?.quality && <ReportSection label="Qualidade dos dados"><AnalysisQualityPanel quality={a.quality} showCommercial={isEnterprise} expanded /></ReportSection>}
+
           <div style={{ marginTop: 36, paddingTop: 12, borderTop: "1px solid var(--border)", fontSize: 10.5, color: "var(--muted)" }}>
-            Gerado pelo Nora em {generatedAt} · PII Shield aplicado a esta análise.
+            Gerado pela Nora em {generatedAt}.
           </div>
         </article>
       </div>

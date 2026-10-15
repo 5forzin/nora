@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any
+from urllib.parse import urlsplit
 
 from openai import OpenAI
 from pydantic import BaseModel
@@ -41,16 +42,30 @@ class LlmClient:
     _MAX_RETRIES = 2
 
     def __init__(self, settings: Settings, *, budget: TimeBudget | None = None) -> None:
-        if not settings.llm_api_key:
-            raise ValueError("LLM_API_KEY is required when USE_LLM_STUB=false.")
+        self._provider = settings.llm_provider.strip().lower()
+        if not settings.provider_api_key:
+            variable = "LLM_KEY_GOOGLE" if self._provider == "google" else "LLM_API_KEY"
+            raise ValueError(f"{variable} is required when USE_LLM_STUB=false.")
+        endpoint = urlsplit(settings.llm_base_url)
+        if (
+            self._provider != "google"
+            and (endpoint.hostname or "").rstrip(".") == "generativelanguage.googleapis.com"
+        ):
+            raise ValueError("The Google endpoint requires its own provider and credential.")
+        if self._provider == "google" and (
+            (endpoint.scheme, endpoint.netloc, endpoint.path.rstrip("/"))
+            != ("https", "generativelanguage.googleapis.com", "/v1beta/openai")
+            or endpoint.query
+            or endpoint.fragment
+        ):
+            raise ValueError("Google requires its documented HTTPS OpenAI-compatible endpoint.")
         self._client = OpenAI(
             base_url=settings.llm_base_url,
-            api_key=settings.llm_api_key,
+            api_key=settings.provider_api_key,
             timeout=self._LLM_TIMEOUT_SECONDS,
             max_retries=self._MAX_RETRIES,
         )
         self._model = settings.llm_model
-        self._provider = settings.llm_provider
         self._default_temperature = settings.llm_temperature
         # What the request still has to spend, re-read before every call. Optional so a caller
         # with no deadline of its own (a script, a notebook) keeps the previous behaviour; the
@@ -64,6 +79,11 @@ class LlmClient:
     @property
     def provider(self) -> str:
         return self._provider
+
+    def _provider_options(self) -> dict[str, str]:
+        if self._provider != "google":
+            return {}
+        return {"reasoning_effort": "none" if self._model.startswith("gemini-2.5-") else "low"}
 
     def _client_for(self, step: str) -> OpenAI:
         """The SDK client for ``step``, sized so its own retries fit the request's budget.
@@ -97,7 +117,16 @@ class LlmClient:
         temperature: float | None = None,
         max_tokens: int = 4096,
     ) -> tuple[str, int, int]:
-        """Calls the model with a strict JSON Schema. Returns (json, in, out)."""
+        """Requests structured JSON; analyzers validate its schema. Returns (json, in, out)."""
+        if self._provider == "google":
+            # The full nested extraction schema is rejected by Google's schema endpoint.
+            # The prompt carries that schema; the analyzers still validate the complete result.
+            return self.chat_json(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
         response = self._client_for("the structured call").chat.completions.create(
             model=self._model,
             messages=[
@@ -106,6 +135,7 @@ class LlmClient:
             ],
             temperature=self._default_temperature if temperature is None else temperature,
             max_tokens=max_tokens,
+            **self._provider_options(),
             response_format={
                 "type": "json_schema",
                 "json_schema": {
@@ -134,6 +164,7 @@ class LlmClient:
             ],
             temperature=self._default_temperature if temperature is None else temperature,
             max_tokens=max_tokens,
+            **self._provider_options(),
             response_format={"type": "json_object"},
         )
         return self._extract(response, mode="json_object")
@@ -267,6 +298,10 @@ def build_json_schema_for_analysis() -> dict[str, Any]:
         "Only the CUSTOMER'S relationship to this product, with these mutually exclusive rules "
         "in priority order: (1) CURRENT if the customer uses it NOW, including when replacing "
         "it is discussed; CURRENT always wins even if it competes with the seller. "
+        "Require actual present use: an approved budget, signed order or contract, payment, "
+        "purchased licences, future delivery or planned installation does not establish it. "
+        "Current buyer intent to acquire or implement a product whose use has not started "
+        "supports OPPORTUNITY, unless explicitly compared as a competing alternative. "
         "Past purchase, an abandoned implementation, returned licences or ended use do not "
         "prove current use; classify a solely historical reference as MENTIONED. "
         "(2) COMPETITOR only if NOT currently used and explicitly evaluated as an alternative "

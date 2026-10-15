@@ -168,6 +168,14 @@ describe('chat evidence sent to the provider', () => {
     expect(appendixStream).toContain('Confirm recovery');
     expect(appendixStream).toContain(`(/meetings/${ID})`);
     expect(appendixStream).toContain('parcial');
+    const overviewCall = fetchMock.mock.calls.filter(([input]) =>
+      String(input).startsWith('https://llm.test.invalid'),
+    ).at(-1)!;
+    const overviewSystem = JSON.parse(String(overviewCall[1]?.body)).messages[0].content;
+    expect(overviewSystem).toContain('Renewal could be lost');
+    expect(overviewSystem).toContain('Escalate to operations');
+    expect(overviewSystem).not.toContain('Prepare proposal');
+    expect(overviewSystem).not.toContain('Confirm recovery');
   });
 
   it('does not retrieve evidence or contact the model without a validated session', async () => {

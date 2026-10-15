@@ -286,10 +286,20 @@ public class AnalysisService {
         return analyses.findByMeetingId(meetingId, tenantId)
                 .map(
                         analysis ->
-                                analysis.withCommercialIntelligence(
-                                        entitlements.isEnterprise(tenantId)
-                                                ? analysis.commercialIntelligence()
-                                                : null));
+                                analysis.withQuality(
+                                                analysis.quality() != null
+                                                        ? analysis.quality()
+                                                        : AnalysisQualityCalculator.legacy(
+                                                                transcripts
+                                                                        .findByMeetingAndTenant(
+                                                                                meetingId, tenantId)
+                                                                        .map(Transcript::rawText)
+                                                                        .orElse(null),
+                                                                analysis))
+                                        .withCommercialIntelligence(
+                                                entitlements.isEnterprise(tenantId)
+                                                        ? analysis.commercialIntelligence()
+                                                        : null));
     }
 
     /** Retrieves the persisted productivity (opt-in). Empty when there is none. */
