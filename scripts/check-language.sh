@@ -69,6 +69,11 @@ ALLOWED=(
   "apps/web/src/lib/overview/load.ts"           # pt-BR error/warning copy rendered by executive overview
   "apps/web/src/middleware.ts"                  # pt-BR copy on the auth redirect path
   "apps/admin/src/"                             # operator console UI is pt-BR
+  "tools/presentation-control/public/"          # pt-BR mobile controls and operator speaking guide
+  "tools/presentation-control/script.json"      # pt-BR presentation titles and speaking notes
+  "tools/presentation-control/windows-agent.cjs" # pt-BR UI selectors, fixture text and operator-visible results
+  "tools/presentation-control/launch.pyw"       # pt-BR launcher error dialog shown to the operator
+  "tools/presentation-control/prepare-local.py" # reads and writes the operator's pt-BR credential note
   "apps/desktop/src/"                           # desktop product UI is pt-BR
   "apps/desktop/dock.html"                      # desktop product UI is pt-BR
   "apps/desktop/overlay.html"                   # desktop product UI is pt-BR

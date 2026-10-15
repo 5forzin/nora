@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#fdfdfc">
+  <title>Nora · Roteiro manual</title>
+  <style>
+    :root{color-scheme:light;font-family:Arial,sans-serif;color:#15171a;background:#fdfdfc;font-synthesis:none;--muted:#696d75;--line:#e7e7e3;--blue:#007ac5}
+    *{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;-webkit-text-size-adjust:100%}.wrap{max-width:680px;margin:auto;padding:0 22px}header{padding:28px 0 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px}.brand{font-size:27px;letter-spacing:-1px}.offline{font-size:12px;color:var(--muted)}h1,h2,h3,p{margin:0}h1{font-size:29px;font-weight:600;letter-spacing:-1px;margin-top:28px}h2{font-size:28px;line-height:1.2;font-weight:600;letter-spacing:-.8px;scroll-margin-top:24px}h3{font-size:12px;font-weight:600;color:var(--muted);margin:24px 0 10px}p,li{font-size:16px;line-height:1.65}p+p{margin-top:12px}.intro{margin:10px 0 26px;color:var(--muted);font-size:14px}.small{font-size:13px;color:var(--muted)}a{color:#006eae;text-underline-offset:3px;overflow-wrap:anywhere}details{border-top:1px solid var(--line);padding:0 0 18px}summary{cursor:pointer;min-height:54px;padding:18px 0;font-size:15px;font-weight:600}.preflight{padding-bottom:8px}.preflight label{display:flex;align-items:flex-start;gap:10px;font-size:14px;line-height:1.6;padding:7px 0}.preflight input{width:18px;height:18px;margin:3px 0 0;flex:0 0 18px;accent-color:#15171a}.preparation{background:#f7f7f5;padding:0 16px 16px;border-radius:10px;margin-top:12px;border:0}.preparation p,.preparation li{font-size:14px}.file{font-family:Arial,sans-serif;font-size:14px;overflow-wrap:anywhere;background:#f7f7f5;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:10px 0}.route{margin:12px 0}.route a{font-size:13px}.step-picker{margin:10px 0 28px}.step-picker label{display:block;font-size:12px;color:var(--muted);margin-bottom:9px}select{appearance:auto;width:100%;font:inherit;font-size:16px;min-height:52px;color:#15171a;background:white;border:1px solid var(--line);border-radius:10px;padding:12px;overflow:hidden;text-overflow:ellipsis}.step{padding-top:4px}.meta{display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:12px;margin-bottom:13px;font-variant-numeric:tabular-nums}.optional{color:#006eae}.actions{padding-left:21px;margin:18px 0 0}.actions li{padding-left:3px;margin-bottom:10px}.speech{background:#edf7fd;border-left:2px solid #69b3dd;padding:16px 18px;margin:12px 0 18px;border-radius:0 9px 9px 0}.speech p{font-size:17px;line-height:1.65}.check{border-top:1px solid var(--line);margin-top:24px;padding-top:18px}.check strong{font-size:12px;display:block;color:var(--muted);margin-bottom:6px}.note{font-size:14px;color:var(--muted);margin-top:14px}.question{white-space:pre-wrap;user-select:text;background:#f7f7f5;border-radius:10px;padding:16px;margin:12px 0;font-size:16px;line-height:1.65}.copy{font:inherit;font-size:14px;background:white;border:1px solid var(--line);border-radius:9px;padding:11px 15px;min-height:44px;color:#15171a}.copy-result{font-size:12px;color:var(--muted);margin-top:8px;min-height:16px}.fallback{margin-top:30px}.fallback p,.fallback li{font-size:14px}.fallback ul{padding-left:20px}.navigation{position:sticky;bottom:0;background:#fdfdfc;border-top:1px solid var(--line);margin-top:18px;padding:14px 0 max(20px,env(safe-area-inset-bottom));display:grid;grid-template-columns:1fr 1fr;gap:12px}.navigation button{min-height:56px;border-radius:11px;padding:14px 16px;border:1px solid var(--line);background:white;color:#15171a;font:inherit;font-size:16px;font-weight:600;cursor:pointer;touch-action:manipulation}.navigation button:last-child{background:#15171a;color:white;border-color:#15171a}button:disabled{opacity:.35;cursor:default}button:focus-visible,select:focus-visible,summary:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(--blue);outline-offset:3px}h2:focus{outline:none}.noscript{padding:15px 0;color:var(--muted);font-size:13px}
+    @media(min-width:700px){.wrap{padding:0 32px}h1{margin-top:38px}h2{font-size:32px}.speech p{font-size:18px}}
+    @media print{header,.intro,.step-picker,.navigation,.copy,.copy-result{display:none!important}.wrap{max-width:none;padding:0}.step[hidden]{display:block!important}.step{break-inside:avoid;margin:24px 0}.speech{background:none}details:not([open])>*:not(summary){display:block}a{color:inherit}.fallback{break-inside:avoid}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header><span class="brand">Nora</span><span class="offline">Consulta offline</span></header>
+  <main>
+    <h1>Roteiro manual</h1>
+    <p class="intro">10 minutos · 12 etapas · cenário fictício Aster<br>Este arquivo não controla o computador.</p>
+
+    <details id="preflight">
+      <summary>Antes de projetar</summary>
+      <div class="preflight">
+        <label><input type="checkbox">Conta certa. Ensaio em conta isolada; conta do diretor reservada para a apresentação.</label>
+        <label><input type="checkbox">Site conectado, contexto TOTVS salvo e arquivo do cenário disponível.</label>
+        <label><input type="checkbox">Senha e arquivo de acesso fechados antes de compartilhar a tela.</label>
+        <label><input type="checkbox">NORA-Sprint4.pptx aberto como apoio de um ensaio anterior.</label>
+        <label><input type="checkbox">Se houver automação, parada confirmada antes de assumir o mouse.</label>
+      </div>
+      <details class="preparation">
+        <summary>Preparar a empresa e os arquivos</summary>
+        <p>Faça login em <a href="https://nora.systems/auth/login">nora.systems/auth/login</a> sem projetar a senha. Consulte o arquivo de acesso privado no computador e feche-o depois.</p>
+        <p>Em <a href="https://nora.systems/enterprise/company">Empresa</a>, confira os mesmos dados do cenário testado:</p>
+        <ul>
+          <li><strong>Nome:</strong> TOTVS</li>
+          <li><strong>Indústria:</strong> Software de gestão empresarial</li>
+          <li><strong>ICP:</strong> Empresas B2B que precisam integrar operação e finanças</li>
+          <li><strong>Proposta de valor:</strong> Sistemas de gestão integrados para operações empresariais</li>
+          <li><strong>Protheus:</strong> ERP para gestão empresarial</li>
+          <li><strong>RM:</strong> Gestão empresarial e financeira</li>
+        </ul>
+        <p>Não duplique produtos existentes. Deixe Diferenciais, Concorrentes e Objection handling vazios. Clique <strong>Salvar contexto</strong>, aguarde e confira após recarregar.</p>
+        <p>Arquivos na pasta <strong>E:\Workstation\projects\presentation</strong> do computador:</p>
+        <div class="file">NORA-cenario-ao-vivo.json<br>NORA-Sprint4.pptx</div>
+        <p>O JSON contém três reuniões fictícias de 12, 13 e 14 de outubro de 2026. Preserve IDs e datas. O contexto TOTVS não significa que a Aster seja um cliente real.</p>
+      </details>
+    </details>
+
+    <div class="step-picker" hidden>
+      <label for="step-select">Etapa</label>
+      <select id="step-select" aria-label="Escolher etapa do roteiro"></select>
+    </div>
+    <noscript><p class="noscript">As 12 etapas estão abaixo, em sequência.</p></noscript>
+
+    <section class="step" id="opening" data-title="Abertura">
+      <div class="meta"><span>01 / 12</span><span>0:00–0:35</span></div>
+      <h2 tabindex="-1">Abertura</h2>
+      <p class="route"><a href="https://nora.systems/meetings/upload">Abrir importação no site</a></p>
+      <h3>Sua fala</h3>
+      <div class="speech"><p>O diretor não consegue acompanhar todas as reuniões. O Nora reúne decisões, riscos e tarefas com acesso à informação de origem. Vou mostrar um cenário fictício em que a proposta e a data de entrega mudaram.</p></div>
+      <p class="check"><strong>Avance quando</strong>O problema estiver claro. Não percorra o menu.</p>
+    </section>
+
+    <section class="step" id="import-preview" data-title="Revisar a importação">
+      <div class="meta"><span>02 / 12</span><span>0:35–1:05</span></div>
+      <h2 tabindex="-1">Revisar a importação</h2>
+      <ol class="actions">
+        <li>Em Importar reunião, clique <strong>JSON ou CSV</strong> → <strong>Escolher arquivo</strong>.</li>
+        <li>Abra <strong>NORA-cenario-ao-vivo.json</strong>.</li>
+        <li>Confira três registros, datas e o mesmo código de cliente. Abra <strong>Ver transcrição</strong> em um deles.</li>
+        <li>Marque <strong>Selecionar todas (3)</strong>.</li>
+      </ol>
+      <h3>Sua fala</h3>
+      <div class="speech"><p>Posso revisar e escolher as reuniões antes do envio.</p></div>
+      <p class="check"><strong>Avance quando</strong>O botão indicar <strong>Importar 3 reuniões</strong>.</p>
+    </section>
+
+    <section class="step" id="import-send" data-title="Enviar o lote">
+      <div class="meta"><span>03 / 12</span><span>1:05–1:20</span></div>
+      <h2 tabindex="-1">Enviar o lote</h2>
+      <ol class="actions"><li>Clique <strong>Importar 3 reuniões</strong> uma vez.</li><li>Mantenha a aba aberta enquanto houver itens na fila.</li><li>Acompanhe o estado de cada reunião. Não prometa um tempo fixo.</li></ol>
+      <h3>Sua fala</h3><div class="speech"><p>Agora acompanho o processamento de cada uma.</p></div>
+      <p class="note">Se o lote já existir: “Estou recuperando registros já enviados; isto não prova uma nova análise.” Não altere IDs para forçar novo envio.</p>
+      <p class="check"><strong>Próximo passo</strong>Aguarde uma análise concluída e o link Abrir reunião. Confira depois 3 de 3 análises concluídas. Durante a espera, explique a prévia e a escolha dos registros.</p>
+    </section>
+
+    <section class="step" id="quality" data-title="Qualidade dos dados">
+      <div class="meta"><span>04 / 12</span><span>1:20–2:45</span></div>
+      <h2 tabindex="-1">Qualidade dos dados</h2>
+      <ol class="actions"><li>Abra <strong>Aster — proposta e limite financeiro</strong>.</li><li>Expanda <strong>Qualidade dos dados</strong>.</li><li>Aponte caracteres, rótulos de locutor, turnos e itens com fonte. Escolha um exemplo.</li></ol>
+      <h3>Sua fala</h3><div class="speech"><p>Vemos o texto recebido e quais itens têm uma fala de apoio encontrada no texto protegido. Essas contagens não são uma porcentagem de acerto.</p></div>
+      <p class="note">Rótulo de locutor não identifica uma pessoa. Dado indisponível não significa zero.</p>
+    </section>
+
+    <section class="step" id="evidence" data-title="Abrir a fala de origem">
+      <div class="meta"><span>05 / 12</span><span>2:45–3:20</span></div>
+      <h2 tabindex="-1">Abrir a fala de origem</h2>
+      <ol class="actions"><li>Na primeira reunião, localize produtos e valores.</li><li>Abra <strong>Fala de origem</strong> em Protheus ou RM e em um valor.</li></ol>
+      <h3>Sua fala</h3><div class="speech"><p>Protheus já era usado. RM ainda estava em avaliação. A proposta de 58 mil foi recusada porque o teto era 50 mil; havia 8 mil de excedente.</p></div>
+      <p class="check"><strong>Avance quando</strong>Mostrar a fala que sustenta um item. Valor mencionado não é automaticamente verba aprovada.</p>
+    </section>
+
+    <section class="step" id="history" data-title="Conferir a evolução da conta">
+      <div class="meta"><span>06 / 12</span><span>3:20–4:00</span></div>
+      <h2 tabindex="-1">Evolução da conta</h2>
+      <ol class="actions"><li>No <strong>Histórico do cliente</strong>, abra <strong>Aster — revisão e entrega confirmada</strong>, de 13/10.</li><li>Depois abra <strong>Aster — orçamento aprovado e condições do piloto</strong>, de 14/10.</li></ol>
+      <h3>Sua fala</h3><div class="speech"><p>No dia 13, a revisão caiu para 50 mil, mas a compra ainda não estava aprovada. A entrega foi confirmada para 30 de outubro, substituindo 23.</p><p>No dia 14, há aprovação financeira explícita. O piloto continua bloqueado pelo relatório e pelo aceite.</p></div>
+      <p class="note">Entrega confirmada é futura, não entrega realizada. Instalação ainda sem data; o <strong>plano</strong> de instalação de Operações tem prazo 21/10.</p>
+    </section>
+
+    <section class="step" id="task-edit" data-title="Definir responsável e prazo">
+      <div class="meta"><span>07 / 12</span><span>4:00–4:45</span></div>
+      <h2 tabindex="-1">Responsável e prazo</h2>
+      <ol class="actions"><li>Volte à primeira reunião. Na tarefa de <strong>revisar a proposta comercial</strong>, clique <strong>Acompanhar</strong>. Não escolha negociar o excedente.</li><li>Abra <strong>Fala de origem</strong>: prazo extraído <strong>16/10/2026</strong>.</li><li>Clique <strong>Editar</strong>. Mantenha o título e preencha Responsável com <strong>Diretoria financeira</strong>. Clique <strong>Salvar</strong> e aguarde.</li><li>Altere a data para <strong>17/10/2026</strong>. O campo salva ao mudar; aguarde.</li></ol>
+      <h3>Sua fala</h3><div class="speech"><p>A fala original tinha prazo 16. A equipe revisou para 17 e definiu o responsável.</p></div>
+    </section>
+
+    <section class="step" id="task-done" data-title="Concluir e conferir persistência">
+      <div class="meta"><span>08 / 12</span><span>4:45–5:20</span></div>
+      <h2 tabindex="-1">Concluir a tarefa</h2>
+      <ol class="actions"><li>Marque a caixa da tarefa <strong>ou</strong> escolha <strong>Concluída</strong> em Alterar status. Use apenas uma dessas ações.</li><li>Recarregue a página. Se necessário, escolha o filtro <strong>Concluídas</strong> ou <strong>Todas</strong>.</li><li>Confira Diretoria financeira, prazo 17/10 e estado concluído.</li></ol>
+      <h3>Sua fala</h3><div class="speech"><p>A equipe marcou a conclusão. O estado salvo continua aqui depois de recarregar.</p></div>
+      <p class="note">Não diga que a IA executou ou confirmou a tarefa. Não reanalise durante a apresentação.</p>
+    </section>
+
+    <section class="step" id="chat-ask" data-title="Perguntar ao chat uma vez">
+      <div class="meta"><span>09 / 12</span><span>5:20–6:45</span></div>
+      <h2 tabindex="-1">Perguntar uma vez</h2>
+      <p class="route"><a href="https://nora.systems/chat">Abrir chat no site</a></p>
+      <ol class="actions"><li>Use uma conversa vazia. Se houver <strong>?s=</strong> no endereço, crie uma nova conversa antes de enviar.</li><li>Cole a pergunta e clique <strong>Enviar</strong> ou pressione Enter uma vez.</li><li>Espere terminar. Não envie sugestões nem use tentar novamente enquanto aguarda.</li></ol>
+      <h3>Pergunta</h3>
+      <p class="question" id="question">Faça uma consolidação para o diretor das três reuniões da Aster: qual é a situação atual do orçamento, da entrega e da liberação do piloto? Diferencie os fatos antigos dos atuais, cite as três reuniões e liste as pendências com responsável e prazo, excluindo a revisão financeira já concluída.</p>
+      <button type="button" class="copy" id="copy-question" hidden>Copiar pergunta</button><p class="copy-result" id="copy-result" role="status"></p>
+      <p class="note">Se a pergunta já foi enviada, abra a conversa existente. Se usar uma resposta salva, identifique-a como anterior.</p>
+    </section>
+
+    <section class="step" id="chat-sources" data-title="Conferir resposta e fontes">
+      <div class="meta"><span>10 / 12</span><span>6:45–7:20</span></div>
+      <h2 tabindex="-1">Conferir resposta e fontes</h2>
+      <ul class="actions"><li><strong>50 mil aprovados</strong>; proposta antiga de 58 mil recusada.</li><li><strong>Entrega 30/10</strong>, substituindo 23/10. Instalação ainda sem data; plano de Operações em <strong>21/10</strong>.</li><li>Piloto <strong>03/11 condicionado</strong> ao relatório de Engenharia até <strong>22/10</strong> e ao aceite escrito obtido pelo Comercial até <strong>23/10</strong>.</li><li>Revisão financeira concluída fora de <strong>Pendências consultadas</strong>.</li></ul>
+      <p>Abra uma referência às reuniões, confira o título e volte pelo navegador.</p>
+      <h3>Sua fala</h3><div class="speech"><p>A consulta reúne registros datados, mostra as fontes e usa o estado salvo das tarefas para listar as pendências.</p></div>
+      <p class="note">Tarefas antigas não são encerradas automaticamente. Não trate confirmar 23/10 ou negociar 8 mil como bloqueios atuais do piloto.</p>
+    </section>
+
+    <section class="step" id="executive" data-title="Mostrar a visão do diretor">
+      <div class="meta"><span>11 / 12</span><span>7:20–8:40</span></div>
+      <h2 tabindex="-1">Visão do diretor</h2>
+      <p class="route"><a href="https://nora.systems/enterprise">Abrir visão executiva no site</a></p>
+      <ol class="actions"><li>Mostre as reuniões e uma tarefa pendente com responsável e prazo.</li><li>Use <strong>Acompanhar tarefa</strong> para ligar a visão geral ao acompanhamento.</li></ol>
+      <h3>Sua fala</h3><div class="speech"><p>O diretor parte da visão geral, consulta a reunião e acompanha a tarefa. Core reúne reuniões, chat e tarefas. Enterprise acrescenta contexto comercial, histórico por cliente e administração da empresa.</p></div>
+      <p class="note">Riscos podem ser históricos. Não some os cards como problemas atuais distintos nem abra todos os menus de administração.</p>
+    </section>
+
+    <section class="step" id="closing" data-title="Arquitetura e encerramento">
+      <div class="meta"><span>12 / 12</span><span>8:40–10:00</span></div>
+      <h2 tabindex="-1">Arquitetura e encerramento</h2>
+      <h3>Sua fala · até 40 segundos</h3><div class="speech"><p>A entrada é processada, a análise fica salva e a equipe consulta as fontes e acompanha as ações. A revisão humana continua necessária.</p><p>Na captura Desktop, o áudio bruto vai ao fornecedor de transcrição. A proteção atua depois no texto da análise. Isso não é garantia automática de LGPD.</p></div>
+      <h3>Fechamento</h3><p>O diretor termina com a informação de origem e uma ação que a equipe consegue acompanhar.</p>
+      <details class="fallback"><summary>Se perguntarem</summary><ul><li><strong>Precisão:</strong> pode haver erro. As fontes ajudam a conferir; os casos testados não provam acerto ou recall de 100%.</li><li><strong>Enterprise:</strong> há isolamento, usuários, grupos e permissões. SSO corporativo, cobrança automática e SLA empresarial não estão disponíveis.</li><li><strong>Concorrentes:</strong> não medimos superioridade de precisão ou custo. Demonstramos histórico, fontes, permissões e acompanhamento no mesmo fluxo.</li></ul></details>
+      <p class="check"><strong>Encerre</strong>Responda uma pergunta sem iniciar nova análise.</p>
+    </section>
+
+    <details class="fallback" id="manual-desktop">
+      <summary>Desktop · demonstração manual separada</summary>
+      <p>O controle da apresentação opera somente o site. A captura Desktop fica fora deste roteiro de 10 minutos e não é automatizada.</p>
+      <p>Se quiser demonstrá-la depois, confira antes o aplicativo aberto, a mesma conta e o microfone. Use o título <strong>Teste de captura</strong>, mantenha Stealth desligado e clique <strong>Iniciar gravação</strong>.</p>
+      <p>Frase: “Decidimos revisar a proposta. O Comercial deve enviar a revisão até 20 de outubro de 2026.”</p>
+      <p>Mostre o texto no overlay somente se aparecer. Clique <strong>Parar e salvar</strong> uma vez. Só diga que chegou ao site se abrir a reunião salva. Essa captura é separada da Aster e este arquivo não atesta uma nova captura na versão atual.</p>
+    </details>
+
+    <details class="fallback" id="fallback">
+      <summary>Se algo falhar</summary>
+      <ul><li>Se houver agente, acione <strong>Parar</strong> no painel e aguarde a confirmação antes de assumir mouse e teclado.</li><li>Continue da tela atual. Se já enviou o lote ou a pergunta, confira o registro existente; não repita para esconder uma falha.</li><li>Parar o controle não cancela análises já aceitas. Não use <strong>Tentar falhas novamente</strong> durante a apresentação.</li></ul>
+      <p>Sem internet ou serviço, abra <strong>NORA-Sprint4.pptx</strong> e diga: “A execução ao vivo ficou indisponível. Estas telas registram um ensaio anterior do mesmo cenário.”</p>
+      <p>Continue pelo slide correspondente: problema → qualidade → evolução comercial → tarefa → chat → arquitetura. Não apresente telas antigas como resultado novo.</p>
+    </details>
+  </main>
+  <nav class="navigation" aria-label="Navegação do roteiro" hidden><button type="button" id="previous">← Anterior</button><button type="button" id="next">Próxima →</button></nav>
+</div>
+<script>
+  (()=>{
+    const steps=Array.from(document.querySelectorAll('.step'));
+    const select=document.getElementById('step-select');
+    const previous=document.getElementById('previous');
+    const next=document.getElementById('next');
+    let current=0;
+    steps.forEach((step,index)=>{const option=document.createElement('option');option.value=step.id;option.textContent=String(index+1).padStart(2,'0')+' · '+step.dataset.title;select.append(option);});
+    function show(focus){const found=steps.findIndex(step=>step.id===location.hash.slice(1));current=found<0?0:found;steps.forEach((step,index)=>step.hidden=index!==current);select.value=steps[current].id;previous.disabled=current===0;next.disabled=current===steps.length-1;if(focus){const heading=steps[current].querySelector('h2');heading.focus({preventScroll:true});heading.scrollIntoView({block:'start'});}}
+    select.addEventListener('change',()=>{location.hash=select.value;});
+    previous.addEventListener('click',()=>{if(current>0)location.hash=steps[current-1].id;});
+    next.addEventListener('click',()=>{if(current<steps.length-1)location.hash=steps[current+1].id;});
+    window.addEventListener('hashchange',()=>show(true));
+    document.querySelector('.step-picker').hidden=false;document.querySelector('.navigation').hidden=false;
+    const copy=document.getElementById('copy-question');copy.hidden=false;
+    copy.addEventListener('click',async()=>{const question=document.getElementById('question');const result=document.getElementById('copy-result');try{if(!navigator.clipboard)throw new Error('Clipboard unavailable');await navigator.clipboard.writeText(question.textContent);result.textContent='Pergunta copiada.';}catch{const range=document.createRange();range.selectNodeContents(question);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);result.textContent='Pergunta selecionada. Use Copiar.';}});
+    show(false);
+  })();
+</script>
+</body>
+</html>
