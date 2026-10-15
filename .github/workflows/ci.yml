@@ -30,6 +30,7 @@ jobs:
       infra: ${{ steps.filter.outputs.infra }}
       desktop: ${{ steps.filter.outputs.desktop }}
       desktop_code: ${{ steps.filter.outputs.desktop_code }}
+      presentation_control: ${{ steps.filter.outputs.presentation_control }}
       unrouted: ${{ steps.route.outputs.unrouted }}
     steps:
       - uses: actions/checkout@v6
@@ -100,6 +101,9 @@ jobs:
             docs:
               - 'docs/**'
               - '**/*.md'
+            presentation_control:
+              - 'tools/presentation-control/**'
+              - '.github/workflows/ci.yml'
             # TWO desktop filters, on purpose.
             #
             # `desktop` gates the PR-time checks and watches this workflow as well, for the
@@ -204,13 +208,14 @@ jobs:
           F_DOCS: ${{ steps.filter.outputs.docs_files }}
           F_DESKTOP: ${{ steps.filter.outputs.desktop_files }}
           F_INFRA: ${{ steps.filter.outputs.infra_files }}
+          F_PRESENTATION_CONTROL: ${{ steps.filter.outputs.presentation_control_files }}
           F_UNVERIFIED: ${{ steps.filter.outputs.unverified_files }}
           F_ROOT: ${{ steps.filter.outputs.root_files }}
           F_ALL: ${{ steps.filter.outputs.all_files }}
         run: |
           set -euo pipefail
           routed=$(mktemp); everything=$(mktemp)
-          for v in "$F_API" "$F_WORKER" "$F_WEB" "$F_ADMIN" "$F_DOCS" "$F_DESKTOP" "$F_INFRA" "$F_UNVERIFIED" "$F_ROOT"; do
+          for v in "$F_API" "$F_WORKER" "$F_WEB" "$F_ADMIN" "$F_DOCS" "$F_DESKTOP" "$F_INFRA" "$F_PRESENTATION_CONTROL" "$F_UNVERIFIED" "$F_ROOT"; do
             printf '%s' "${v:-[]}" | jq -r '.[]' >> "$routed"
           done
           printf '%s' "${F_ALL:-[]}" | jq -r '.[]' > "$everything"
@@ -228,6 +233,29 @@ jobs:
             echo "$unrouted"
             echo "ROUTE_EOF"
           } >> "$GITHUB_OUTPUT"
+
+  presentation-control:
+    needs: changes
+    if: needs.changes.outputs.presentation_control == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Controller HTTP and queue tests
+        run: python -m unittest discover -s tools/presentation-control -p test_server.py -v
+      - name: Agent cancellation and routing tests
+        run: node --test tools/presentation-control/test_agent.cjs
+      - name: Python and JavaScript syntax
+        run: |
+          python -m py_compile tools/presentation-control/*.py tools/presentation-control/launch.pyw
+          node --check tools/presentation-control/windows-agent.cjs
+          node --check tools/presentation-control/public/control.js
 
   api:
     needs: changes
@@ -1303,7 +1331,7 @@ jobs:
   ci-gate:
     name: ci-gate
     if: always()
-    needs: [changes, api, worker, web, admin, desktop-rust, supply-chain, docs-link-check, language, openapi-coverage, pr-title, migrations, infra, repo-hygiene]
+    needs: [changes, api, worker, web, admin, desktop-rust, supply-chain, docs-link-check, language, openapi-coverage, pr-title, migrations, infra, repo-hygiene, presentation-control]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

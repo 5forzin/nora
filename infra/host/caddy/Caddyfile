@@ -156,6 +156,14 @@ http://:2021 {
 http://{$NORA_PUBLIC_DOMAIN:nora.systems}, http://www.{$NORA_PUBLIC_DOMAIN:nora.systems} {
 	log
 
+	@presentation_control path /presentation-control /presentation-control/*
+	handle @presentation_control {
+		reverse_proxy nora-presentation-control:17841 {
+			header_up X-Forwarded-Proto https
+		}
+	}
+
+	handle {
 	reverse_proxy web:3000 {
 		# --- rolling-update buffer ---
 		lb_try_duration 60s
@@ -177,6 +185,7 @@ http://{$NORA_PUBLIC_DOMAIN:nora.systems}, http://www.{$NORA_PUBLIC_DOMAIN:nora.
 			# stream's duration once it starts.
 			response_header_timeout 120s
 		}
+	}
 	}
 }
 

@@ -1,0 +1,76 @@
+{
+  "steps": [
+    {
+      "id": "opening",
+      "title": "0:00–0:35 | Problema do diretor",
+      "notes": "O diretor não consegue acompanhar todas as reuniões. Vou mostrar um cenário fictício em que a proposta e a entrega mudaram, com fontes e ações acompanháveis.",
+      "action": "Mostrar o slide inicial ou a página de importação."
+    },
+    {
+      "id": "import-preview",
+      "title": "0:35–1:10 | Revisar o arquivo",
+      "notes": "O arquivo reúne três reuniões. Posso conferir o texto, as datas e o mesmo código de cliente antes de escolher o que enviar.",
+      "action": "Selecionar JSON ou CSV, escolher NORA-cenario-ao-vivo.json e abrir Ver transcrição em um registro."
+    },
+    {
+      "id": "import-send",
+      "title": "1:10–2:00 | Enviar uma vez",
+      "notes": "Agora envio as três reuniões e acompanho cada análise. O tempo varia; não vou repetir o envio enquanto processa.",
+      "action": "Marcar Selecionar todas (3), clicar Importar 3 reuniões uma vez e manter a aba aberta."
+    },
+    {
+      "id": "quality",
+      "title": "2:00–2:45 | Qualidade dos dados",
+      "notes": "Estas contagens mostram o texto recebido e os itens com fala de apoio encontrada no texto protegido. Não representam uma porcentagem de acerto.",
+      "action": "Abrir a primeira reunião concluída e expandir Qualidade dos dados."
+    },
+    {
+      "id": "evidence",
+      "title": "2:45–3:20 | Conferir a origem",
+      "notes": "Protheus já era usado e RM estava em avaliação. A proposta de 58 mil foi recusada porque o teto era 50 mil; havia 8 mil de excedente.",
+      "action": "Abrir Fala de origem em um produto e em um valor da primeira reunião."
+    },
+    {
+      "id": "history",
+      "title": "3:20–4:00 | Comparar os três dias",
+      "notes": "No dia 13, a revisão chegou a 50 mil sem aprovação da compra. No comitê 14, a aprovação ficou explícita. A entrega 30/10 substitui 23/10; o piloto ainda depende do relatório e do aceite.",
+      "action": "Usar Histórico do cliente para abrir a revisão do dia 13 e o comitê do dia 14."
+    },
+    {
+      "id": "task-edit",
+      "title": "4:00–4:45 | Revisar responsável e prazo",
+      "notes": "A fala original registra prazo 16. A equipe define Diretoria financeira e revisa o prazo para 17. Essa mudança é humana.",
+      "action": "Na revisão financeira, clicar Acompanhar e Editar; salvar Responsável Diretoria financeira e alterar a data para 17/10/2026."
+    },
+    {
+      "id": "task-done",
+      "title": "4:45–5:20 | Concluir e conferir",
+      "notes": "A equipe marcou a conclusão. Depois de recarregar, o responsável, o prazo revisado e o estado continuam salvos.",
+      "action": "Marcar a tarefa como Concluída e recarregar; usar Todas ou Concluídas se o filtro ocultar a linha."
+    },
+    {
+      "id": "chat-ask",
+      "title": "5:20–6:40 | Consultar uma vez",
+      "notes": "Vou pedir a consolidação das três reuniões e das pendências, distinguindo fatos antigos dos atuais e excluindo a revisão já concluída.",
+      "action": "Em uma conversa vazia, colar a pergunta integral do roteiro e clicar Enviar uma vez; aguardar sem retake."
+    },
+    {
+      "id": "chat-sources",
+      "title": "6:40–7:20 | Conferir fontes e pendências",
+      "notes": "50 mil estão aprovados. A entrega futura é 30/10 e a instalação não tem data; o plano vence 21/10. O piloto 03/11 exige relatório 22/10 e aceite 23/10. A tarefa concluída fica fora das pendências.",
+      "action": "Mostrar os fatos, as três fontes e Pendências consultadas; abrir uma referência e voltar."
+    },
+    {
+      "id": "executive",
+      "title": "7:20–8:40 | Acompanhar o negócio",
+      "notes": "A visão geral leva à reunião e à tarefa. Enterprise acrescenta contexto, histórico por cliente e administração. Riscos podem ser históricos; tarefas antigas exigem revisão humana.",
+      "action": "Abrir /enterprise e mostrar uma tarefa pendente com responsável, prazo e Acompanhar tarefa."
+    },
+    {
+      "id": "closing",
+      "title": "8:40–10:00 | Limites e fechamento",
+      "notes": "A revisão humana continua necessária. Na captura, o áudio bruto vai ao fornecedor externo; isso não garante LGPD. O diretor termina com informação de origem e ação acompanhável. Não temos SSO, cobrança automática ou SLA empresarial.",
+      "action": "Mostrar a arquitetura, explicar os limites e encerrar; responder uma pergunta sem iniciar outra análise."
+    }
+  ]
+}

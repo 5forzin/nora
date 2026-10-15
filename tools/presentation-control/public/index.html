@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#fdfdfc">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Nora · Controle da apresentação</title>
+    <link rel="stylesheet" href="./control.css">
+    <script src="./control.js" defer></script>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="header">
+        <a class="brand" href="./" aria-label="Nora, controle da apresentação">
+          <svg viewBox="0 0 252 300" aria-hidden="true" focusable="false"><path d="M245.331 62.79C243.742 56.97 239.944 51.72 234.576 47.69C206.479 26.57 173.055 10.76 136.692 1.36C133.163 0.45 129.515 0 125.857 0C122.198 0 118.55 0.45 115.022 1.36C78.6486 10.76 45.2241 26.57 17.1271 47.69C11.7596 51.72 7.95133 56.98 6.37206 62.79C2.184 78.13 0.0949707 93.76 0.0949707 109.38V190.62C0.0949707 206.25 2.184 221.88 6.37206 237.21C7.95133 243.03 11.7596 248.28 17.1271 252.32C45.2241 273.43 78.6486 289.25 115.022 298.64C118.55 299.55 122.198 300 125.857 300C129.515 300 133.173 299.55 136.692 298.64C173.055 289.25 206.489 273.43 234.586 252.32C239.954 248.28 243.762 243.03 245.341 237.21C249.529 221.88 251.619 206.25 251.619 190.62V109.38C251.619 93.76 249.529 78.13 245.341 62.79M241.853 155.33C240.434 160.52 237.085 165.22 232.168 168.92C218.374 179.28 203.161 188.44 186.948 196.1C170.746 203.78 153.474 210 135.622 214.6C132.444 215.41 129.175 215.83 125.857 215.83C122.538 215.83 119.26 215.42 116.091 214.6C98.2395 210 80.9675 203.77 64.765 196.1C48.5525 188.43 33.3496 179.28 19.546 168.92C14.6182 165.23 11.2698 160.52 9.86045 155.33C8.92089 151.84 8.92089 148.17 9.86045 144.68C11.2698 139.49 14.6182 134.79 19.546 131.09C33.3396 120.73 48.5525 111.57 64.765 103.91C80.9675 96.23 98.2395 90.01 116.091 85.4C119.26 84.59 122.538 84.18 125.857 84.18C129.175 84.18 132.454 84.59 135.622 85.4C153.474 90.01 170.746 96.24 186.948 103.91C203.161 111.58 218.374 120.73 232.168 131.09C237.085 134.78 240.434 139.48 241.853 144.68C242.803 148.17 242.803 151.84 241.853 155.33Z"/></svg>
+          <span>Nora</span>
+        </a>
+        <button id="logout" class="text-button" type="button" hidden>Sair</button>
+      </header>
+
+      <main>
+        <p id="boot" class="muted" role="status">Conectando…</p>
+        <section id="login" class="login" aria-labelledby="login-title" hidden>
+          <p class="eyebrow">Apresentação</p>
+          <h1 id="login-title">Controle remoto</h1>
+          <form id="login-form">
+            <label for="username">Usuário</label>
+            <input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+            <label for="password">Senha</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required>
+            <p id="login-error" class="error" role="alert" hidden></p>
+            <button id="login-submit" class="button primary" type="submit">Entrar</button>
+          </form>
+        </section>
+
+        <section id="remote" aria-label="Apresentação" hidden>
+          <div class="remote-toolbar">
+            <div class="connection" role="status" aria-live="polite">
+              <span id="connection-dot" class="dot" aria-hidden="true"></span>
+              <span id="connection-label">Conectando ao notebook…</span>
+              <span id="last-seen" class="last-seen"></span>
+            </div>
+            <a class="text-button guide-download" href="./guide.html" download="NORA-roteiro-manual.html">Baixar roteiro</a>
+          </div>
+          <div class="mode-toolbar">
+            <fieldset class="mode-switch">
+              <legend class="sr-only">Modo de uso</legend>
+              <label><input type="radio" name="mode" value="control" checked><span>Controle</span></label>
+              <label><input type="radio" name="mode" value="guide"><span>Roteiro</span></label>
+            </fieldset>
+            <label class="speed-label" for="speed">Velocidade
+              <select id="speed" name="speed">
+                <option value="0.5">0,5×</option>
+                <option value="1" selected>1×</option>
+                <option value="1.5">1,5×</option>
+                <option value="2">2×</option>
+              </select>
+            </label>
+          </div>
+
+          <div id="error-banner" class="error banner" role="alert" hidden></div>
+          <article class="current-step" aria-labelledby="step-title">
+            <div class="step-topline"><span id="step-counter" class="eyebrow"></span><span id="execution-label" class="status-label"></span></div>
+            <h1 id="step-title">Carregando roteiro…</h1>
+            <p id="step-action" class="step-action" hidden></p>
+            <p id="execution-message" class="execution-message" role="status" aria-live="polite" hidden></p>
+            <section id="notes-section" class="notes" aria-labelledby="notes-label" hidden>
+              <h2 id="notes-label">Sua fala</h2>
+              <div id="step-notes"></div>
+            </section>
+          </article>
+
+          <details class="outline">
+            <summary>Etapas <span id="step-total" class="muted"></span></summary>
+            <ol id="steps" class="step-list"></ol>
+            <section id="selection" class="selection" aria-labelledby="selection-title" hidden>
+              <p class="eyebrow">Etapa selecionada</p>
+              <h2 id="selection-title"></h2>
+              <div id="selection-notes" class="selection-notes"></div>
+              <button id="run" class="button secondary" type="button">Executar etapa</button>
+            </section>
+          </details>
+
+          <footer class="controls">
+            <div id="automatic-controls">
+              <button id="previous" class="text-button previous" type="button"><span aria-hidden="true">←</span> Anterior</button>
+              <div class="primary-controls">
+                <button id="next" class="button primary" type="button">Avançar <span aria-hidden="true">→</span></button>
+                <button id="stop" class="button stop" type="button"><span class="stop-icon" aria-hidden="true"></span><span id="stop-label">Parar</span></button>
+              </div>
+            </div>
+            <div id="guide-controls" class="guide-controls" hidden>
+              <button id="guide-previous" class="button secondary" type="button">← Anterior</button>
+              <button id="guide-next" class="button primary" type="button">Próxima →</button>
+            </div>
+          </footer>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

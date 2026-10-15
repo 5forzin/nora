@@ -1,0 +1,46 @@
+name: nora-presentation-control
+
+services:
+  control:
+    image: ${CONTROL_IMAGE:-ghcr.io/5forzin/nora-worker:sha-b7cfc92}
+    container_name: nora-presentation-control
+    entrypoint: [python, -u, /app/controller/server.py]
+    restart: unless-stopped
+    user: "65534:65534"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.3
+    env_file:
+      - ${CONTROL_PRIVATE_DIR:?Set the private configuration directory}/server.private.env
+    environment:
+      CONTROL_CONFIG: /private/server-config.private.json
+      CONTROL_SCRIPT: /private/script.json
+      CONTROL_DATA_DIR: /private/data
+      CONTROL_STATIC_DIR: /app/controller/public
+      CONTROL_HOST: 0.0.0.0
+      CONTROL_PORT: "17841"
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ./:/app/controller:ro
+      - ${CONTROL_PRIVATE_DIR:?Set the private configuration directory}:/private
+    tmpfs:
+      - /tmp:size=16m
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:17841/presentation-control/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [internal]
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+
+networks:
+  internal:
+    external: true
+    name: nora_internal
