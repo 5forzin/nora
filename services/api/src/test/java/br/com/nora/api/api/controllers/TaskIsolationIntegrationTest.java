@@ -129,6 +129,28 @@ class TaskIsolationIntegrationTest {
         assertThat(taskIds(member)).containsExactlyInAnyOrderElementsOf(ofBeta);
     }
 
+    @Test
+    void meetingFilteredListingStillAppliesTaskSpecificDenials() throws Exception {
+        Workspace workspace = workspaceWithTasks("task-filter-deny@nora.dev", "Filtered tasks");
+        JsonNode all = read(authGet("/tasks", workspace.token()), HttpStatus.OK);
+        String meeting = all.get("items").get(0).get("meetingId").asText();
+        String hidden = all.get("items").get(0).get("id").asText();
+        String visible = all.get("items").get(1).get("id").asText();
+        String member = memberWithFullTaskRights(workspace, "task-filter-member@nora.dev");
+        UUID memberId = readClaim(member, "sub");
+        String deny =
+                document(
+                        statement(
+                                "Deny", "task:read", arn(workspace.tenantId(), ":task/" + hidden)));
+        attach(workspace.token(), memberId, createPolicy(workspace.token(), "HideOneTask", deny));
+
+        JsonNode listing =
+                read(authGet("/tasks?meetingId=" + meeting + "&size=1", member), HttpStatus.OK);
+        assertThat(listing.get("totalItems").asInt()).isEqualTo(1);
+        assertThat(listing.get("items").get(0).get("id").asText()).isEqualTo(visible);
+        assertThat(listing.get("items").get(0).get("sourceQuote").asText()).isNotBlank();
+    }
+
     /* ========================= PATCH /tasks/{id} ====================== */
 
     @Test
@@ -139,7 +161,7 @@ class TaskIsolationIntegrationTest {
         String taskOfBeta = taskIds(beta.token()).get(0);
         String pathAlfa = "/tasks/" + taskOfAlfa;
         String pathBeta = "/tasks/" + taskOfBeta;
-        String done = json(Map.of("status", "DONE"));
+        String done = json(Map.of("status", "DONE", "assignee", "Finance"));
 
         // Root of B: the IAM bypass makes the gate a no-op, so the refusal is the tenant filter.
         assertThat(patch(pathAlfa, done, beta.token())).isEqualTo(HttpStatus.NOT_FOUND);

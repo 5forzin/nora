@@ -2,9 +2,13 @@ package br.com.nora.api.api.dto.task;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
+import jakarta.validation.constraints.Size;
 
 /**
  * Body of PATCH /tasks/{id}. At least one of the fields must be filled in.
+ *
+ * <p>An absent or null {@code assignee} preserves the responsible party; an empty string clears it.
+ * It is a user-provided label, not an automatic match to a workspace member.
  *
  * <p>{@code dueDate} is an ISO date ({@code yyyy-MM-dd}). Absent leaves the stored value alone; an
  * empty string clears it. Both cases have to be expressible: the date is written by the extraction,
@@ -15,4 +19,5 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include;
  * instead of by the deserializer with a bare 400.
  */
 @JsonInclude(Include.NON_NULL)
-public record TaskUpdateRequest(String status, String title, String dueDate) {}
+public record TaskUpdateRequest(
+        String status, String title, String dueDate, @Size(max = 255) String assignee) {}

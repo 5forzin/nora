@@ -87,4 +87,21 @@ class WorkerDtosContractTest {
         it.forEachRemaining(names::add);
         return names;
     }
+
+    @Test
+    void qualityIsOptionalAndPreservesUnknownCorrespondence() throws Exception {
+        assertThat(MAPPER.readValue("{}", WorkerDtos.AnalyzeResponse.class).quality()).isNull();
+        String body =
+                """
+                {"quality":{"version":"1","origin":"WORKER","transcript":null,
+                  "extraction":{"actionItems":{"total":0,"withSourceQuote":0,"matchedSourceQuote":0},
+                    "actionItemsWithAssignee":0,"actionItemsWithDueDate":0,
+                    "risks":{"total":0,"withSourceQuote":0,"matchedSourceQuote":0},
+                    "opportunities":{"total":0,"withSourceQuote":0,"matchedSourceQuote":null},
+                    "commercial":null}}}
+                """;
+        var quality = MAPPER.readValue(body, WorkerDtos.AnalyzeResponse.class).quality();
+        assertThat(quality.extraction().opportunities().matchedSourceQuote()).isNull();
+        assertThat(quality.extraction().actionItems().matchedSourceQuote()).isZero();
+    }
 }

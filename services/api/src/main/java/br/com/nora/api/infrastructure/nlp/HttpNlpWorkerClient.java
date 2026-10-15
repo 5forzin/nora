@@ -175,6 +175,7 @@ public class HttpNlpWorkerClient implements NlpWorkerClient {
         try {
             MeetingAnalysis analysis =
                     toDomain(meetingId, tenantId, response)
+                            .withQuality(response.quality())
                             .withCommercialIntelligence(
                                     enterprise ? response.commercialIntelligence() : null);
             ProductivityAssessment productivity =

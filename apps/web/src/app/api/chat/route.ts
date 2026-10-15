@@ -35,6 +35,7 @@ import {
   type PendingTaskContext,
 } from "@/lib/chat/workspace-context";
 import { resolveProviderKey } from "@/lib/llm/provider-key";
+import { providerEndpointAllowed, providerOptions } from "@/lib/llm/provider-options";
 import { redactPii } from "@/lib/pii/redact";
 
 export const runtime = "nodejs";
@@ -623,6 +624,12 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
+  if (!providerEndpointAllowed(cfg.provider, cfg.baseUrl)) {
+    return new Response(JSON.stringify({ error: "Configuração do provedor de IA inválida." }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   const apiKey = resolveKey(cfg.provider);
   if (!apiKey) {
     return new Response(
@@ -718,6 +725,7 @@ export async function POST(req: Request): Promise<Response> {
         stream_options: { include_usage: true },
         temperature: 0,
         max_tokens: 1800,
+        ...providerOptions(cfg.provider, cfg.model),
       }),
     });
   } catch {

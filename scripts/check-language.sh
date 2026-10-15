@@ -60,6 +60,7 @@ ALLOWED=(
   "apps/web/src/lib/api/client.ts"              # pt-BR error copy surfaced directly in the UI
   "apps/web/src/lib/password-policy.ts"         # pt-BR password-rule copy shown in the UI
   "apps/web/src/lib/transcript-import.ts"       # pt-BR import validation messages shown in the preview
+  "apps/web/src/lib/analysis-labels.ts"         # pt-BR analysis categories rendered in the UI and reports
   "apps/web/src/lib/commercial-intelligence.ts" # pt-BR commercial evidence labels used in the UI and reports
   "apps/web/src/lib/report/markdown.ts"         # pt-BR headings of the exported meeting report
   "apps/web/src/lib/report/tasks-export.ts"     # pt-BR column headers and labels of the exported task list

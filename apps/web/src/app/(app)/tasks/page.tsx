@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { Route } from "next";
 import {
@@ -54,15 +55,21 @@ function isLate(t: TaskListItemDto): boolean {
 }
 
 export default function TasksPage() {
+  return <Suspense fallback={<div className="page" role="status">Carregando tarefas…</div>}><TasksAccess /></Suspense>;
+}
+
+function TasksAccess() {
+  const searchParams = useSearchParams();
+  const meetingId = searchParams.get('meetingId') || undefined;
   const { access, loading } = useWorkspaceAccess();
   const canWrite = access?.permissions?.writeTasks === true;
   const canCreateMeetings = access?.permissions?.createMeetings === true;
   if (loading) return <div className="page" role="status">Carregando acesso…</div>;
-  if (!access?.permissions?.readTasks) return <div className="page"><h1 className="h1">Action items</h1><p className="lede">Você não tem permissão para consultar tarefas neste workspace.</p></div>;
-  return <TasksContent canWrite={canWrite} canCreateMeetings={canCreateMeetings} />;
+  if (!access?.permissions?.readTasks) return <div className="page"><h1 className="h1">Tarefas</h1><p className="lede">Você não tem permissão para consultar tarefas neste workspace.</p></div>;
+  return <TasksContent key={meetingId ?? 'all'} meetingId={meetingId} canWrite={canWrite} canCreateMeetings={canCreateMeetings} />;
 }
 
-function TasksContent({ canWrite, canCreateMeetings }: { canWrite: boolean; canCreateMeetings: boolean }) {
+function TasksContent({ meetingId, canWrite, canCreateMeetings }: { meetingId?: string; canWrite: boolean; canCreateMeetings: boolean }) {
   const [items, setItems] = useState<TaskListItemDto[]>([]);
   const [filter, setFilter] = useState<TaskStatus | "ALL">("ALL");
   const [page, setPage] = useState(0);
@@ -74,12 +81,13 @@ function TasksContent({ canWrite, canCreateMeetings }: { canWrite: boolean; canC
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
+  const [editAssignee, setEditAssignee] = useState("");
 
   useEffect(() => {
     let active = true;
     setLoading(true);
     setError(null);
-    listTasks({ status: filter === "ALL" ? undefined : filter, page, size: 100 })
+    listTasks({ status: filter === "ALL" ? undefined : filter, page, size: 100, ...(meetingId ? { meetingId } : {}) })
       .then((r) => {
         if (!active) return;
         const lastPage = Math.max(0, r.totalPages - 1);
@@ -96,7 +104,7 @@ function TasksContent({ canWrite, canCreateMeetings }: { canWrite: boolean; canC
         setItems([]);
         setTotalItems(0);
         setTotalPages(0);
-        setError(e instanceof ApiRequestError ? e.message : "Falha ao carregar action items.");
+        setError(e instanceof ApiRequestError ? e.message : "Falha ao carregar tarefas.");
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -104,7 +112,13 @@ function TasksContent({ canWrite, canCreateMeetings }: { canWrite: boolean; canC
     return () => {
       active = false;
     };
-  }, [filter, page, revision]);
+  }, [filter, page, revision, meetingId]);
+
+  useEffect(() => {
+    if (loading) return;
+    const target = window.location.hash.slice(1);
+    if (target.startsWith('task-')) document.getElementById(target)?.scrollIntoView?.({ block: 'center' });
+  }, [loading]);
 
   // §3.11 — consistent filter: on a status change with an active filter, the
   // item leaves the list if it stops matching the selected filter.
@@ -156,28 +170,33 @@ function TasksContent({ canWrite, canCreateMeetings }: { canWrite: boolean; canC
   function beginEdit(t: TaskListItemDto) {
     setEditingId(t.id);
     setEditTitle(t.title);
+    setEditAssignee(t.assignee ?? "");
   }
   function cancelEdit() {
     setEditingId(null);
     setEditTitle("");
+    setEditAssignee("");
   }
   async function saveEdit(t: TaskListItemDto) {
     const trimmed = editTitle.trim();
-    if (!trimmed || trimmed === t.title) {
+    const assignee = editAssignee.trim();
+    if (!trimmed) return;
+    if (trimmed === t.title && assignee === (t.assignee ?? '')) {
       cancelEdit();
       return;
     }
     const previous = items;
     setSaving(true);
-    setItems((curr) => curr.map((x) => (x.id === t.id ? { ...x, title: trimmed } : x)));
+    const patch = { ...(trimmed !== t.title ? { title: trimmed } : {}), ...(assignee !== (t.assignee ?? '') ? { assignee } : {}) };
+    setItems((curr) => curr.map((x) => (x.id === t.id ? { ...x, ...patch } : x)));
     cancelEdit();
     try {
-      const updated = await updateTask(t.id, { title: trimmed });
+      const updated = await updateTask(t.id, patch);
       setItems((curr) => curr.map((x) => (x.id === t.id ? updated : x)));
       setRevision((value) => value + 1);
     } catch (e) {
       setItems(previous);
-      setError(e instanceof ApiRequestError ? e.message : "Falha ao atualizar título.");
+      setError(e instanceof ApiRequestError ? e.message : "Falha ao atualizar a tarefa.");
     } finally {
       setSaving(false);
     }
@@ -198,13 +217,15 @@ function TasksContent({ canWrite, canCreateMeetings }: { canWrite: boolean; canC
         }}
       >
         <div style={{ minWidth: 0 }}>
-          <h1 className="h1">Action items</h1>
-          <p className="lede" style={{ marginTop: 8 }}>
-            {canWrite ? "Tarefas extraídas das suas reuniões. Atualize o status conforme avança." : "Tarefas extraídas das reuniões do workspace."}
-          </p>
+          <h1 className="h1">Tarefas</h1>
+          {meetingId && <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12.5px]" style={{ color: 'var(--muted)' }}>
+            <Link href={`/meetings/${meetingId}` as Route}>{items[0]?.meetingTitle ?? 'Reunião de origem'}</Link>
+            <Link href="/tasks" style={{ color: 'var(--accent-ink)' }}>Ver todas as tarefas</Link>
+          </div>}
         </div>
         <TasksExportMenu
           status={filter === "ALL" ? undefined : filter}
+          meetingId={meetingId}
           totalItems={totalItems}
           filterLabel={activeFilterLabel}
           disabled={loading || saving}
@@ -264,9 +285,9 @@ function TasksContent({ canWrite, canCreateMeetings }: { canWrite: boolean; canC
         <div style={{ border: "1px dashed var(--border-strong)", borderRadius: 14, padding: "48px 24px", textAlign: "center" }}>
           {filter === "ALL" ? (
             <>
-              <p style={{ fontSize: 14, color: "var(--ink)", margin: "0 0 4px" }}>Nenhum action item por aqui.</p>
+              <p style={{ fontSize: 14, color: "var(--ink)", margin: "0 0 4px" }}>Nenhuma tarefa.</p>
               {canCreateMeetings && <p style={{ fontSize: 12.5, color: "var(--muted)", margin: 0 }}>
-                Envie uma reunião pra Nora extrair os próximos passos automaticamente.
+                Importe uma transcrição para extrair tarefas.
               </p>}
               {canCreateMeetings && <div style={{ marginTop: 16 }}>
                 <Link className="btn btn-primary btn-sm" href={"/meetings/upload" as Route}>
@@ -291,6 +312,8 @@ function TasksContent({ canWrite, canCreateMeetings }: { canWrite: boolean; canC
             return (
               <div
                 key={t.id}
+                id={`task-${t.id}`}
+                className="task-row flex-wrap"
                 style={{
                   display: "flex",
                   alignItems: "flex-start",
@@ -308,10 +331,12 @@ function TasksContent({ canWrite, canCreateMeetings }: { canWrite: boolean; canC
                   aria-label={`Marcar "${t.title}" como ${done ? "aberta" : "concluída"}`}
                 />}
 
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ flex: '1 1 230px', minWidth: 0 }}>
                   {editingId === t.id ? (
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <div className="grid gap-2">
+                      <label className="field-label" htmlFor={`task-title-${t.id}`}>Título</label>
                       <input
+                        id={`task-title-${t.id}`}
                         autoFocus
                         className="input"
                         value={editTitle}
@@ -323,12 +348,16 @@ function TasksContent({ canWrite, canCreateMeetings }: { canWrite: boolean; canC
                         }}
                         style={{ flex: 1, minWidth: 200, fontSize: 14, padding: "5px 9px" }}
                       />
+                      <label className="field-label" htmlFor={`task-assignee-${t.id}`}>Responsável</label>
+                      <input id={`task-assignee-${t.id}`} className="input" value={editAssignee} disabled={saving} maxLength={255} placeholder="Sem responsável" onChange={(event) => setEditAssignee(event.target.value)} />
+                      <div className="flex gap-2">
                       <button type="button" className="btn btn-primary btn-sm" disabled={saving} onClick={() => void saveEdit(t)}>
                         Salvar
                       </button>
                       <button type="button" className="btn btn-ghost btn-sm" onClick={cancelEdit}>
                         Cancelar
                       </button>
+                      </div>
                     </div>
                   ) : (
                     <>
@@ -363,16 +392,20 @@ function TasksContent({ canWrite, canCreateMeetings }: { canWrite: boolean; canC
                         <span style={{ color: PRIORITY_COLOR[t.priority] ?? "var(--muted)" }}>
                           {PRIORITY_LABEL[t.priority] ?? t.priority}
                         </span>
-                        {t.assignee && <span>{t.assignee}</span>}
+                        <span>{t.assignee || 'Sem responsável'}</span>
                         {t.dueDate && (
                           <span style={{ color: late ? "var(--danger)" : "var(--muted)" }}>{relativeDue(t.dueDate)}</span>
                         )}
                       </div>
                     </>
                   )}
+                  {t.sourceQuote && <details className="mt-2">
+                    <summary className="cursor-pointer text-[12px]" style={{ color: 'var(--accent-ink)' }}>Fala de origem</summary>
+                    <blockquote className="quote mt-2 whitespace-pre-line break-words">{t.sourceQuote}</blockquote>
+                  </details>}
                 </div>
 
-                {canWrite ? <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                {canWrite ? <div className="flex w-full flex-wrap items-center gap-1.5 pl-7 sm:w-auto sm:justify-end sm:pl-0" style={{ flexShrink: 0 }}>
                   <input
                     type="date"
                     className="input"

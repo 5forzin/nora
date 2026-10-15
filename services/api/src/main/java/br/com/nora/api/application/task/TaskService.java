@@ -33,6 +33,11 @@ public class TaskService {
         return tasks.listByTenant(tenantId, statusFilter);
     }
 
+    @Transactional(readOnly = true)
+    public List<TaskRow> list(UUID tenantId, ActionItemStatus statusFilter, UUID meetingId) {
+        return tasks.listByTenant(tenantId, statusFilter, meetingId);
+    }
+
     /**
      * One page, cut in SQL. The caller is responsible for having established that the IAM decision
      * is the same for every task of the tenant — otherwise the page is a slice of rows the caller
@@ -44,6 +49,49 @@ public class TaskService {
         int safePage = Math.max(0, page);
         int safeSize = Math.min(MAX_PAGE_SIZE, Math.max(1, size));
         return tasks.listByTenant(tenantId, statusFilter, safePage, safeSize);
+    }
+
+    @Transactional(readOnly = true)
+    public TaskRepository.PagedTasks list(
+            UUID tenantId, ActionItemStatus statusFilter, UUID meetingId, int page, int size) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(MAX_PAGE_SIZE, Math.max(1, size));
+        return tasks.listByTenant(tenantId, statusFilter, meetingId, safePage, safeSize);
+    }
+
+    public record Changes(
+            ActionItemStatus status,
+            String title,
+            boolean dueDateChanged,
+            LocalDate dueDate,
+            boolean assigneeChanged,
+            String assignee) {}
+
+    /** A single transaction keeps a combined edit from being partially committed. */
+    @Transactional
+    public TaskRow update(UUID id, UUID tenantId, Changes changes) {
+        tasks.findByIdAndTenant(id, tenantId).orElseThrow(TaskException.NotFound::new);
+        if (changes.status() != null) {
+            tasks.updateStatus(id, tenantId, changes.status());
+        }
+        if (changes.title() != null) {
+            if (changes.title().isBlank()) {
+                throw new TaskException.InvalidTitle();
+            }
+            tasks.updateTitle(id, tenantId, changes.title().trim());
+        }
+        if (changes.dueDateChanged()) {
+            tasks.updateDueDate(id, tenantId, changes.dueDate());
+        }
+        if (changes.assigneeChanged()) {
+            String assignee = changes.assignee() == null ? null : changes.assignee().trim();
+            if (assignee != null && assignee.length() > 255) {
+                throw new IllegalArgumentException("assignee must not exceed 255 characters");
+            }
+            tasks.updateAssignee(
+                    id, tenantId, assignee == null || assignee.isEmpty() ? null : assignee);
+        }
+        return tasks.findByIdAndTenant(id, tenantId).orElseThrow(TaskException.NotFound::new);
     }
 
     @Transactional

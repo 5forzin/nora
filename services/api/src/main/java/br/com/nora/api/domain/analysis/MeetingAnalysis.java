@@ -18,6 +18,7 @@ public final class MeetingAnalysis {
     private static final int SUMMARY_MAX = 4000;
 
     private final CommercialIntelligence commercialIntelligence;
+    private final AnalysisQuality quality;
     private final UUID id;
     private final UUID meetingId;
     private final UUID tenantId;
@@ -98,6 +99,50 @@ public final class MeetingAnalysis {
             OffsetDateTime generatedAt,
             OffsetDateTime createdAt,
             CommercialIntelligence commercialIntelligence) {
+        this(
+                id,
+                meetingId,
+                tenantId,
+                summary,
+                sentimentOverall,
+                topics,
+                decisions,
+                actionItems,
+                risks,
+                opportunities,
+                modelVersion,
+                promptVersion,
+                tokensInput,
+                tokensOutput,
+                processingMillis,
+                piiRedactionsApplied,
+                generatedAt,
+                createdAt,
+                commercialIntelligence,
+                null);
+    }
+
+    public MeetingAnalysis(
+            UUID id,
+            UUID meetingId,
+            UUID tenantId,
+            String summary,
+            Sentiment sentimentOverall,
+            List<String> topics,
+            List<Decision> decisions,
+            List<ActionItem> actionItems,
+            List<Risk> risks,
+            List<Opportunity> opportunities,
+            String modelVersion,
+            String promptVersion,
+            int tokensInput,
+            int tokensOutput,
+            int processingMillis,
+            int piiRedactionsApplied,
+            OffsetDateTime generatedAt,
+            OffsetDateTime createdAt,
+            CommercialIntelligence commercialIntelligence,
+            AnalysisQuality quality) {
         if (id == null) {
             throw new IllegalArgumentException("id is required");
         }
@@ -127,6 +172,7 @@ public final class MeetingAnalysis {
             throw new IllegalArgumentException("piiRedactionsApplied must be non-negative");
         }
         this.commercialIntelligence = commercialIntelligence;
+        this.quality = quality;
         this.id = id;
         this.meetingId = meetingId;
         this.tenantId = tenantId;
@@ -191,7 +237,9 @@ public final class MeetingAnalysis {
     }
 
     public MeetingAnalysis withCommercialIntelligence(CommercialIntelligence value) {
-        if (commercialIntelligence == value) {
+        AnalysisQuality visibleQuality =
+                value == null && quality != null ? quality.withoutCommercial() : quality;
+        if (commercialIntelligence == value && quality == visibleQuality) {
             return this;
         }
         return new MeetingAnalysis(
@@ -213,6 +261,38 @@ public final class MeetingAnalysis {
                 piiRedactionsApplied,
                 generatedAt,
                 createdAt,
+                value,
+                visibleQuality);
+    }
+
+    public AnalysisQuality quality() {
+        return quality;
+    }
+
+    public MeetingAnalysis withQuality(AnalysisQuality value) {
+        if (quality == value) {
+            return this;
+        }
+        return new MeetingAnalysis(
+                id,
+                meetingId,
+                tenantId,
+                summary,
+                sentimentOverall,
+                topics,
+                decisions,
+                actionItems,
+                risks,
+                opportunities,
+                modelVersion,
+                promptVersion,
+                tokensInput,
+                tokensOutput,
+                processingMillis,
+                piiRedactionsApplied,
+                generatedAt,
+                createdAt,
+                commercialIntelligence,
                 value);
     }
 

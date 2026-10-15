@@ -1,0 +1,156 @@
+[
+  {
+    "name": "empty source has observed zero volume and no observed speaker format",
+    "text": "",
+    "expected": {
+      "characterCount": 0,
+      "nonEmptyLineCount": 0,
+      "speakerLabelCount": null,
+      "labeledTurnCount": null,
+      "emptyLabeledTurnCount": null,
+      "replacementCharacterCount": 0,
+      "controlCharacterCount": 0,
+      "duplicateLineCount": 0
+    }
+  },
+  {
+    "name": "duplicate normalized nonempty lines are observations, not errors",
+    "text": "No labels.\nRepeat.\nRepeat.\n",
+    "expected": {
+      "characterCount": 27,
+      "nonEmptyLineCount": 3,
+      "speakerLabelCount": null,
+      "labeledTurnCount": null,
+      "emptyLabeledTurnCount": null,
+      "replacementCharacterCount": 0,
+      "controlCharacterCount": 0,
+      "duplicateLineCount": 1
+    }
+  },
+  {
+    "name": "only numbered anonymous labels define observed turns",
+    "text": "[LOCUTOR 1]:\n\n[SPEAKER_2]: Yes.\n[LOCUTOR 1]:\n",
+    "expected": {
+      "characterCount": 45,
+      "nonEmptyLineCount": 3,
+      "speakerLabelCount": 2,
+      "labeledTurnCount": 3,
+      "emptyLabeledTurnCount": 2,
+      "replacementCharacterCount": 0,
+      "controlCharacterCount": 0,
+      "duplicateLineCount": 1
+    }
+  },
+  {
+    "name": "continuation content belongs to the preceding numbered turn",
+    "text": "[LOCUTOR 1]:\nContinued.\n[SPEAKER_2]:\n",
+    "expected": {
+      "characterCount": 37,
+      "nonEmptyLineCount": 3,
+      "speakerLabelCount": 2,
+      "labeledTurnCount": 2,
+      "emptyLabeledTurnCount": 1,
+      "replacementCharacterCount": 0,
+      "controlCharacterCount": 0,
+      "duplicateLineCount": 0
+    }
+  },
+  {
+    "name": "Unicode characters are code points, CRLF and tabs are accepted controls",
+    "text": "A\ufffd\u0000\tB\r\nText \ud83d\ude00\r\n",
+    "expected": {
+      "characterCount": 15,
+      "nonEmptyLineCount": 2,
+      "speakerLabelCount": null,
+      "labeledTurnCount": null,
+      "emptyLabeledTurnCount": null,
+      "replacementCharacterCount": 1,
+      "controlCharacterCount": 1,
+      "duplicateLineCount": 0
+    }
+  },
+  {
+    "name": "NFC and whitespace normalization only affect duplicate comparison",
+    "text": "e\u0301\n\u00e9",
+    "expected": {
+      "characterCount": 4,
+      "nonEmptyLineCount": 2,
+      "speakerLabelCount": null,
+      "labeledTurnCount": null,
+      "emptyLabeledTurnCount": null,
+      "replacementCharacterCount": 0,
+      "controlCharacterCount": 0,
+      "duplicateLineCount": 1
+    }
+  },
+  {
+    "name": "Unicode spaces do not create spurious content",
+    "text": " \u00a0 \nA\u00a0B\nA B",
+    "expected": {
+      "characterCount": 11,
+      "nonEmptyLineCount": 2,
+      "speakerLabelCount": null,
+      "labeledTurnCount": null,
+      "emptyLabeledTurnCount": null,
+      "replacementCharacterCount": 0,
+      "controlCharacterCount": 0,
+      "duplicateLineCount": 1
+    }
+  },
+  {
+    "name": "inline numbered labels retain all observed turns and Unicode code points",
+    "text": "LOCUTOR_0: Ol\u00e1 \ud83d\ude00. LOCUTOR_1: Sim. LOCUTOR_0: Fechado.",
+    "expected": {
+      "characterCount": 53,
+      "nonEmptyLineCount": 1,
+      "speakerLabelCount": 2,
+      "labeledTurnCount": 3,
+      "emptyLabeledTurnCount": 0,
+      "replacementCharacterCount": 0,
+      "controlCharacterCount": 0,
+      "duplicateLineCount": 0
+    }
+  },
+  {
+    "name": "inline empty turns and adjacent bracketed labels remain observable",
+    "text": "[LOCUTOR 0]: [SPEAKER_1]: Yes.[LOCUTOR 0]:",
+    "expected": {
+      "characterCount": 42,
+      "nonEmptyLineCount": 1,
+      "speakerLabelCount": 2,
+      "labeledTurnCount": 3,
+      "emptyLabeledTurnCount": 2,
+      "replacementCharacterCount": 0,
+      "controlCharacterCount": 0,
+      "duplicateLineCount": 0
+    }
+  },
+  {
+    "name": "a label embedded in a word is not a numbered speaker header",
+    "text": "prefixLOCUTOR_0: ordinary text.",
+    "expected": {
+      "characterCount": 31,
+      "nonEmptyLineCount": 1,
+      "speakerLabelCount": null,
+      "labeledTurnCount": null,
+      "emptyLabeledTurnCount": null,
+      "replacementCharacterCount": 0,
+      "controlCharacterCount": 0,
+      "duplicateLineCount": 0
+    }
+  },
+  {
+    "name": "malformed bracket markers are not treated as plain numbered labels",
+    "text": "[LOCUTOR 0: ordinary text.",
+    "expected": {
+      "characterCount": 26,
+      "nonEmptyLineCount": 1,
+      "speakerLabelCount": null,
+      "labeledTurnCount": null,
+      "emptyLabeledTurnCount": null,
+      "replacementCharacterCount": 0,
+      "controlCharacterCount": 0,
+      "duplicateLineCount": 0
+    }
+  }
+]

@@ -36,6 +36,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -64,6 +65,9 @@ class TaskDueDateFlowIntegrationTest {
 
     private static final String PASSWORD = "SenhaForte123";
     private static final String TRANSCRIPT = "Ana: vamos fechar.\nBruno: mando na sexta.";
+    private static final ActionItem ORIGINAL_TASK =
+            ActionItem.fresh("Enviar proposta", null, null, Priority.HIGH, "mando na sexta");
+    private static volatile List<ActionItem> extractedTasks = List.of(ORIGINAL_TASK);
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES =
@@ -82,10 +86,12 @@ class TaskDueDateFlowIntegrationTest {
     @Autowired TestRestTemplate rest;
     @Autowired ObjectMapper mapper;
     @Autowired AnalysisService analysisService;
+    @Autowired JdbcTemplate jdbc;
 
     @BeforeEach
     void useJdkHttpClient() {
         rest.getRestTemplate().setRequestFactory(new JdkClientHttpRequestFactory());
+        extractedTasks = List.of(ORIGINAL_TASK);
     }
 
     @Test
@@ -149,11 +155,245 @@ class TaskDueDateFlowIntegrationTest {
         body.put("status", "IN_PROGRESS");
         body.put("title", "Enviar proposta revisada");
         body.put("dueDate", "2026-09-15");
+        body.put("assignee", "  Operations  ");
         JsonNode updated = patchOk(taskId, token, body);
 
         assertThat(updated.get("status").asText()).isEqualTo("IN_PROGRESS");
         assertThat(updated.get("title").asText()).isEqualTo("Enviar proposta revisada");
         assertThat(updated.get("dueDate").asText()).isEqualTo("2026-09-15");
+        assertThat(updated.get("assignee").asText()).isEqualTo("Operations");
+        assertThat(updated.get("sourceQuote").asText()).isEqualTo("mando na sexta");
+        JsonNode detail =
+                read(
+                        authGet("/meetings/" + updated.get("meetingId").asText(), token),
+                        HttpStatus.OK);
+        assertThat(detail.get("analysis").get("actionItems").get(0).get("id").asText())
+                .isEqualTo(taskId);
+        assertThat(detail.get("analysis").get("actionItems").get(0).get("assignee").asText())
+                .isEqualTo("Operations");
+    }
+
+    @Test
+    void responsiblePartyCanBeCorrectedAndClearedWithoutLosingEvidence() throws Exception {
+        String token = workspaceWithOneTask("assignee-correct@nora.dev", "Responsible party");
+        String taskId = firstTaskId(token);
+        JsonNode assigned = patchOk(taskId, token, Map.of("assignee", "  Finance  "));
+        assertThat(assigned.get("assignee").asText()).isEqualTo("Finance");
+        assertThat(assigned.get("sourceQuote").asText()).isEqualTo("mando na sexta");
+
+        JsonNode untouched = patchOk(taskId, token, Map.of("status", "IN_PROGRESS"));
+        assertThat(untouched.get("assignee").asText()).isEqualTo("Finance");
+        JsonNode cleared = patchOk(taskId, token, Map.of("assignee", " "));
+        assertThat(cleared.hasNonNull("assignee")).isFalse();
+        JsonNode listing = read(authGet("/tasks", token), HttpStatus.OK);
+        assertThat(listing.get("items").get(0).hasNonNull("assignee")).isFalse();
+        assertThat(listing.get("items").get(0).get("sourceQuote").asText())
+                .isEqualTo("mando na sexta");
+    }
+
+    @Test
+    void invalidResponsiblePartyRejectsTheWholeCombinedEdit() throws Exception {
+        String token = workspaceWithOneTask("assignee-too-long@nora.dev", "Combined edit");
+        String taskId = firstTaskId(token);
+        ResponseEntity<String> rejected =
+                patch(taskId, token, Map.of("status", "DONE", "assignee", "x".repeat(256)));
+        assertThat(rejected.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        JsonNode listed = read(authGet("/tasks", token), HttpStatus.OK).get("items").get(0);
+        assertThat(listed.get("status").asText()).isEqualTo("OPEN");
+        assertThat(listed.hasNonNull("assignee")).isFalse();
+    }
+
+    @Test
+    void meetingFilterKeepsPaginationAndForeignTenantCountsScoped() throws Exception {
+        String token = workspaceWithOneTask("meeting-task-filter@nora.dev", "Meeting filter");
+        JsonNode original = read(authGet("/tasks", token), HttpStatus.OK).get("items").get(0);
+        String meeting = original.get("meetingId").asText();
+        String otherMeeting = uploadMeeting(token, "Another meeting");
+        analysisService.run(UUID.fromString(otherMeeting), readClaim(token, "tenantId"));
+
+        JsonNode first =
+                read(authGet("/tasks?meetingId=" + meeting + "&size=1", token), HttpStatus.OK);
+        assertThat(first.get("totalItems").asInt()).isEqualTo(1);
+        assertThat(first.get("items").get(0).get("id").asText())
+                .isEqualTo(original.get("id").asText());
+        JsonNode beyond =
+                read(
+                        authGet("/tasks?meetingId=" + meeting + "&page=1&size=1", token),
+                        HttpStatus.OK);
+        assertThat(beyond.get("items").isEmpty()).isTrue();
+        assertThat(beyond.get("totalItems").asInt()).isEqualTo(1);
+
+        String outsider = workspaceWithOneTask("meeting-task-outsider@nora.dev", "Another company");
+        JsonNode hidden = read(authGet("/tasks?meetingId=" + meeting, outsider), HttpStatus.OK);
+        assertThat(hidden.get("items").isEmpty()).isTrue();
+        assertThat(hidden.get("totalItems").asInt()).isZero();
+    }
+
+    @Test
+    void reanalysisPreservesAnExactlyIdentifiedReviewedTaskAndCompletionDate() throws Exception {
+        String token = workspaceWithOneTask("task-reanalysis-preserve@nora.dev", "Reviewed task");
+        String id = firstTaskId(token);
+        JsonNode reviewed =
+                patchOk(
+                        id,
+                        token,
+                        Map.of("status", "DONE", "assignee", "Finance", "dueDate", "2026-10-23"));
+        Map<String, Object> dates =
+                jdbc.queryForMap(
+                        "SELECT created_at, completed_at FROM meeting_action_items WHERE id = ?::uuid",
+                        id);
+        analysisService.run(
+                UUID.fromString(reviewed.get("meetingId").asText()), readClaim(token, "tenantId"));
+
+        JsonNode current = read(authGet("/tasks", token), HttpStatus.OK).get("items").get(0);
+        assertThat(current.get("id").asText()).isEqualTo(id);
+        assertThat(current.get("status").asText()).isEqualTo("DONE");
+        assertThat(current.get("assignee").asText()).isEqualTo("Finance");
+        assertThat(current.get("dueDate").asText()).isEqualTo("2026-10-23");
+        assertThat(
+                        jdbc.queryForMap(
+                                "SELECT created_at, completed_at FROM meeting_action_items WHERE id = ?::uuid",
+                                id))
+                .isEqualTo(dates);
+    }
+
+    @Test
+    void aParaphrasedTitleRetainsStateWhenItsExactQuoteIsUnique() throws Exception {
+        String token =
+                workspaceWithOneTask("task-reanalysis-paraphrase@nora.dev", "Paraphrased task");
+        String id = firstTaskId(token);
+        JsonNode reviewed =
+                patchOk(
+                        id,
+                        token,
+                        Map.of("status", "DONE", "assignee", "Finance", "dueDate", "2026-10-23"));
+        Map<String, Object> dates =
+                jdbc.queryForMap(
+                        "SELECT created_at, completed_at FROM meeting_action_items WHERE id = ?::uuid",
+                        id);
+        extractedTasks =
+                List.of(
+                        ActionItem.fresh(
+                                "Enviar a proposta.",
+                                "Sales",
+                                null,
+                                Priority.HIGH,
+                                ORIGINAL_TASK.sourceQuote()));
+        analysisService.run(
+                UUID.fromString(reviewed.get("meetingId").asText()), readClaim(token, "tenantId"));
+
+        JsonNode current = read(authGet("/tasks", token), HttpStatus.OK).get("items").get(0);
+        assertThat(current.get("id").asText()).isEqualTo(id);
+        assertThat(current.get("title").asText()).isEqualTo("Enviar a proposta.");
+        assertThat(current.get("status").asText()).isEqualTo("DONE");
+        assertThat(current.get("assignee").asText()).isEqualTo("Finance");
+        assertThat(current.get("dueDate").asText()).isEqualTo("2026-10-23");
+        assertThat(
+                        jdbc.queryForMap(
+                                "SELECT created_at, completed_at FROM meeting_action_items WHERE id = ?::uuid",
+                                id))
+                .isEqualTo(dates);
+    }
+
+    @Test
+    void repeatedEvidenceCannotTransferStateToParaphrasedTasks() throws Exception {
+        String token =
+                workspaceWithOneTask("task-reanalysis-shared-quote@nora.dev", "Shared quote");
+        String id = firstTaskId(token);
+        JsonNode reviewed = patchOk(id, token, Map.of("status", "DONE", "assignee", "Finance"));
+        UUID meeting = UUID.fromString(reviewed.get("meetingId").asText());
+        UUID tenant = readClaim(token, "tenantId");
+        extractedTasks =
+                List.of(
+                        ActionItem.fresh(
+                                "Enviar a proposta.",
+                                null,
+                                null,
+                                Priority.HIGH,
+                                ORIGINAL_TASK.sourceQuote()),
+                        ActionItem.fresh(
+                                "Confirmar o envio.",
+                                null,
+                                null,
+                                Priority.HIGH,
+                                ORIGINAL_TASK.sourceQuote()));
+        analysisService.run(meeting, tenant);
+        JsonNode shared = read(authGet("/tasks", token), HttpStatus.OK).get("items");
+        assertThat(shared.size()).isEqualTo(2);
+        for (JsonNode item : shared) {
+            assertThat(item.get("id").asText()).isNotEqualTo(id);
+            assertThat(item.get("status").asText()).isEqualTo("OPEN");
+        }
+
+        String completed = shared.get(0).get("id").asText();
+        patchOk(completed, token, Map.of("status", "DONE", "assignee", "Finance"));
+        extractedTasks =
+                List.of(
+                        ActionItem.fresh(
+                                "Enviar proposta comercial",
+                                null,
+                                null,
+                                Priority.HIGH,
+                                ORIGINAL_TASK.sourceQuote()));
+        analysisService.run(meeting, tenant);
+        JsonNode unique = read(authGet("/tasks", token), HttpStatus.OK).get("items").get(0);
+        assertThat(unique.get("id").asText()).isNotEqualTo(completed);
+        assertThat(unique.get("status").asText()).isEqualTo("OPEN");
+    }
+
+    @Test
+    void sameTitleWithDifferentEvidenceDoesNotInheritACompletedCommitment() throws Exception {
+        String token =
+                workspaceWithOneTask("task-reanalysis-different@nora.dev", "Changed commitment");
+        String id = firstTaskId(token);
+        JsonNode old = patchOk(id, token, Map.of("status", "DONE", "assignee", "Finance"));
+        extractedTasks =
+                List.of(
+                        ActionItem.fresh(
+                                ORIGINAL_TASK.title(),
+                                "Operations",
+                                null,
+                                Priority.HIGH,
+                                "mando na segunda"));
+        analysisService.run(
+                UUID.fromString(old.get("meetingId").asText()), readClaim(token, "tenantId"));
+
+        JsonNode replacement = read(authGet("/tasks", token), HttpStatus.OK).get("items").get(0);
+        assertThat(replacement.get("id").asText()).isNotEqualTo(id);
+        assertThat(replacement.get("status").asText()).isEqualTo("OPEN");
+        assertThat(replacement.get("assignee").asText()).isEqualTo("Operations");
+    }
+
+    @Test
+    void removedTasksAndAmbiguousDuplicatesAreNotResurrected() throws Exception {
+        String token =
+                workspaceWithOneTask("task-reanalysis-removed@nora.dev", "Removed commitment");
+        String id = firstTaskId(token);
+        JsonNode old = patchOk(id, token, Map.of("status", "DONE"));
+        UUID meeting = UUID.fromString(old.get("meetingId").asText());
+        UUID tenant = readClaim(token, "tenantId");
+        extractedTasks = List.of();
+        analysisService.run(meeting, tenant);
+        assertThat(read(authGet("/tasks", token), HttpStatus.OK).get("items").isEmpty()).isTrue();
+
+        extractedTasks = List.of(ORIGINAL_TASK, ORIGINAL_TASK);
+        analysisService.run(meeting, tenant);
+        JsonNode duplicates = read(authGet("/tasks", token), HttpStatus.OK).get("items");
+        assertThat(duplicates.size()).isEqualTo(2);
+        assertThat(duplicates.get(0).get("id").asText()).isNotEqualTo(id);
+        assertThat(duplicates.get(1).get("id").asText()).isNotEqualTo(id);
+        assertThat(duplicates.get(0).get("id").asText())
+                .isNotEqualTo(duplicates.get(1).get("id").asText());
+        assertThat(duplicates.get(0).get("status").asText()).isEqualTo("OPEN");
+        assertThat(duplicates.get(1).get("status").asText()).isEqualTo("OPEN");
+
+        String duplicateId = duplicates.get(0).get("id").asText();
+        patchOk(duplicateId, token, Map.of("status", "DONE"));
+        extractedTasks = List.of(ORIGINAL_TASK);
+        analysisService.run(meeting, tenant);
+        JsonNode unique = read(authGet("/tasks", token), HttpStatus.OK).get("items").get(0);
+        assertThat(unique.get("id").asText()).isNotEqualTo(duplicateId);
+        assertThat(unique.get("status").asText()).isEqualTo("OPEN");
     }
 
     /* ============================= fixtures =========================== */
@@ -288,13 +528,7 @@ class TaskDueDateFlowIntegrationTest {
                                     Sentiment.NEUTRAL,
                                     List.of("prazo"),
                                     List.of(),
-                                    List.of(
-                                            ActionItem.fresh(
-                                                    "Enviar proposta",
-                                                    null,
-                                                    null,
-                                                    Priority.HIGH,
-                                                    "mando na sexta")),
+                                    extractedTasks,
                                     List.of(),
                                     List.of(),
                                     "stub-task-due-1",

@@ -1,5 +1,6 @@
 package br.com.nora.api.api.dto.analysis;
 
+import br.com.nora.api.domain.analysis.AnalysisQuality;
 import br.com.nora.api.domain.analysis.CommercialIntelligence;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -19,7 +20,8 @@ public record AnalysisResponse(
         List<OpportunityDto> opportunities,
         Metadata metadata,
         OffsetDateTime generatedAt,
-        CommercialIntelligence commercialIntelligence) {
+        CommercialIntelligence commercialIntelligence,
+        AnalysisQuality quality) {
 
     public record DecisionDto(String text, double confidence) {}
 
@@ -29,7 +31,8 @@ public record AnalysisResponse(
             LocalDate dueDate,
             String priority,
             String sourceQuote,
-            String status) {}
+            String status,
+            UUID id) {}
 
     public record RiskDto(String text, String severity, String category, String sourceQuote) {}
 

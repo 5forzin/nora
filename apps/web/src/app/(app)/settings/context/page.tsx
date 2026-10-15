@@ -22,18 +22,13 @@ import {
   updateSessionUser,
   type SessionUser,
 } from "@/lib/auth";
+import { SettingsNavigation } from "@/components/settings-navigation";
 import { Avatar } from "@/components/core/avatar";
 import { useWorkspaceAccess } from "@/components/enterprise/workspace-provider";
 
 // Personal settings remain separate from the Enterprise workspace.
 const SECTIONS = ["conta", "seguranca", "workspace"] as const;
 type Section = (typeof SECTIONS)[number];
-
-const SECTION_LABELS: Record<Section, string> = {
-  conta: "Conta",
-  seguranca: "Segurança",
-  workspace: "Workspace",
-};
 
 function CheckIcon() {
   return (
@@ -95,22 +90,7 @@ export default function SettingsPage() {
     <div className="set-layout">
       <style>{SET_STYLES}</style>
 
-      <nav className="set-nav" aria-label="Seções de configurações">
-        {SECTIONS.filter((s) => s !== 'workspace' || canReadWorkspace).map((s) => (
-          <a
-            key={s}
-            href={`#${s}`}
-            className={s === activeSection ? "is-active" : undefined}
-            aria-current={s === activeSection ? "page" : undefined}
-            onClick={(e) => {
-              e.preventDefault();
-              goTo(s);
-            }}
-          >
-            {SECTION_LABELS[s]}
-          </a>
-        ))}
-      </nav>
+      <SettingsNavigation section={activeSection} onSectionChange={goTo} />
 
       <div className="set-pane">
         {activeSection === "conta" && <AccountSection />}
@@ -872,24 +852,6 @@ function WorkspaceSection({ canRename }: { canRename: boolean }) {
    ───────────────────────────────────────────────────────────── */
 /* ── hub-only styles (there is no class in components.css) ── */
 const SET_STYLES = `
-.set-layout { display: flex; gap: 40px; align-items: flex-start; }
-.set-nav {
-  width: 180px; flex-shrink: 0; display: flex; flex-direction: column; gap: 1px;
-  position: sticky; top: 24px;
-}
-.set-nav a {
-  padding: 7px 10px; border-radius: 7px; font-size: 13px; color: var(--muted);
-  transition: background 120ms ease, color 120ms ease; cursor: pointer;
-}
-.set-nav a:hover { background: var(--sidebar); color: var(--ink); }
-.set-nav a.is-active { background: var(--accent-soft); color: var(--accent-ink); font-weight: 500; }
-.set-pane { flex: 1; min-width: 0; max-width: 560px; }
-@media (max-width: 860px) {
-  .set-layout { flex-direction: column; gap: 20px; }
-  .set-nav { width: 100%; flex-direction: row; flex-wrap: wrap; gap: 4px; position: static; }
-  .set-nav a { border: 1px solid var(--border); border-radius: 999px; padding: 6px 13px; font-size: 12.5px; }
-  .set-nav a.is-active { border-color: transparent; }
-}
 .pw-bars { display: flex; gap: 4px; margin-top: 8px; }
 .pw-bars span { height: 3px; flex: 1; border-radius: 2px; background: var(--chip); transition: background 160ms ease; }
 .pw-meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 5px; }

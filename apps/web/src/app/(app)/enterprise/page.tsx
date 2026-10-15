@@ -165,7 +165,7 @@ export default async function OverviewPage() {
         </div>
         {overview.risks.length === 0 && (
           <p style={{ color: 'var(--muted)', fontSize: 13 }}>
-            Nenhum risco registrado nas análises consultadas.
+            Nenhum risco registrado.
           </p>
         )}
       </section>
@@ -200,6 +200,7 @@ export default async function OverviewPage() {
                   : 'Sem prazo'}
               </div>
               <Source source={task.source} />
+              {access.permissions.readTasks && <Link href={`/tasks?meetingId=${task.source.id}#task-${task.id}` as Route} style={{ display: 'inline-block', color: 'var(--accent-ink)', fontSize: 12, marginTop: 10 }}>Acompanhar tarefa</Link>}
             </article>
           ))}
         </div>
@@ -232,7 +233,7 @@ export default async function OverviewPage() {
         </div>
         {overview.decisions.length === 0 && (
           <p style={{ color: 'var(--muted)', fontSize: 13 }}>
-            Nenhuma decisão registrada nas análises consultadas.
+            Nenhuma decisão registrada.
           </p>
         )}
       </section>
@@ -249,8 +250,7 @@ export default async function OverviewPage() {
         </ul>
       </details>
       <p style={{ color: 'var(--muted)', fontSize: 12, marginTop: 24 }}>
-        As informações vêm das reuniões registradas e respeitam seu acesso. Riscos são os sinais
-        extraídos na análise; sua resolução precisa ser confirmada.
+        Riscos refletem a análise original. A resolução precisa ser confirmada.
       </p>
     </div>
   );

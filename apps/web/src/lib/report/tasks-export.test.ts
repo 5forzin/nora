@@ -201,7 +201,7 @@ describe('tasksToCsv', () => {
 describe('tasksToMarkdown', () => {
   it('states the active filter and the count, because the export is the filtered set', () => {
     const md = tasksToMarkdown([task(), task({ id: 't-2' })], 'Abertas');
-    expect(md).toContain('# Action items');
+    expect(md).toContain('# Tarefas');
     expect(md).toContain('**Filtro:** Abertas');
     expect(md).toContain('**Total:** 2');
   });
@@ -246,7 +246,7 @@ describe('tasksToMarkdown', () => {
   it('says the filter is empty instead of emitting a list with no items', () => {
     const md = tasksToMarkdown([], 'Concluídas');
     expect(md).toContain('**Total:** 0');
-    expect(md).toContain('> Nenhum action item neste filtro.');
+    expect(md).toContain('> Nenhuma tarefa neste filtro.');
     expect(md).not.toContain('- [');
   });
 

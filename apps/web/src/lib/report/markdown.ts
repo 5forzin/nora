@@ -9,6 +9,7 @@
  */
 
 import type { MeetingDetail, Severity } from "@/lib/api/types";
+import { OPPORTUNITY_CATEGORY_LABEL, RISK_CATEGORY_LABEL } from '@/lib/analysis-labels';
 import { meetingInstant } from "@/lib/utils";
 import { BUDGET_APPROVAL_LABEL, BUDGET_KIND_LABEL, DECISION_ROLE_LABEL, PRODUCT_RELATIONSHIP_LABEL, TOPIC_SENTIMENT_LABEL, formatCommercialAmount } from '@/lib/commercial-intelligence';
 
@@ -108,7 +109,7 @@ export function meetingToMarkdown(detail: MeetingDetail): string {
     }
 
     if (a.actionItems.length > 0) {
-      lines.push("## Action items", "");
+      lines.push("## Tarefas", "");
       for (const t of a.actionItems) {
         const done = t.status === "DONE";
         const parts = [
@@ -117,6 +118,7 @@ export function meetingToMarkdown(detail: MeetingDetail): string {
         ];
         if (t.dueDate) parts.push(`vence: ${t.dueDate}`);
         lines.push(`- [${done ? "x" : " "}] **${t.title}** — ${parts.join(" · ")}`);
+        if (t.sourceQuote) lines.push(`  > ${t.sourceQuote.replace(/\n/g, '\n  > ')}`);
       }
       lines.push("");
     }
@@ -124,7 +126,7 @@ export function meetingToMarkdown(detail: MeetingDetail): string {
     if (a.risks.length > 0) {
       lines.push("## Riscos", "");
       for (const r of a.risks) {
-        lines.push(`- **${SEVERITY_LABEL[r.severity] ?? r.severity} · ${r.category}** — ${r.text}`);
+        lines.push(`- **${SEVERITY_LABEL[r.severity] ?? r.severity} · ${RISK_CATEGORY_LABEL[r.category] ?? r.category}** — ${r.text}`);
         if (r.sourceQuote) lines.push(`  > ${r.sourceQuote}`);
       }
       lines.push("");
@@ -134,7 +136,7 @@ export function meetingToMarkdown(detail: MeetingDetail): string {
       lines.push("## Oportunidades", "");
       for (const o of a.opportunities) {
         lines.push(
-          `- **${SEVERITY_LABEL[o.estimatedValue] ?? o.estimatedValue} · ${o.category}** — ${o.text}`,
+          `- **${SEVERITY_LABEL[o.estimatedValue] ?? o.estimatedValue} · ${OPPORTUNITY_CATEGORY_LABEL[o.category] ?? o.category}** — ${o.text}`,
         );
         if (o.sourceQuote) lines.push(`  > ${o.sourceQuote}`);
       }

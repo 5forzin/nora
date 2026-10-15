@@ -383,6 +383,7 @@ public class McpToolInvoker {
                 a.commercialIntelligence() == null
                         ? F.nullNode()
                         : F.pojoNode(a.commercialIntelligence()));
+        node.set("quality", a.quality() == null ? F.nullNode() : F.pojoNode(a.quality()));
 
         ArrayNode decisions = F.arrayNode();
         for (Decision d : a.decisions()) {

@@ -322,16 +322,56 @@ class CustomerConfidenceFlowIntegrationTest {
                 .isTrue();
         assertThat(detail.path("attributes").path("externalId").asText()).isEqualTo("source-42");
         assertThat(detail.path("customerConfidence").path("clientCode").asText()).isEqualTo("C-42");
+        assertThat(detail.path("analysis").path("quality").path("origin").asText())
+                .isEqualTo("WORKER");
+        assertThat(
+                        detail.path("analysis")
+                                .path("quality")
+                                .path("extraction")
+                                .path("commercial")
+                                .isObject())
+                .isTrue();
         assertThat(
                         jdbc.queryForObject(
                                 "SELECT commercial_intelligence IS NOT NULL FROM meeting_analyses WHERE meeting_id = ?",
                                 Boolean.class,
                                 id))
                 .isTrue();
+        String storedQuality =
+                jdbc.queryForObject(
+                        "SELECT quality_observations::text FROM meeting_analyses WHERE meeting_id = ?",
+                        String.class,
+                        id);
+        assertThat(storedQuality).isNotBlank();
+        jdbc.update(
+                "UPDATE meeting_analyses SET quality_observations = NULL WHERE meeting_id = ?", id);
+        JsonNode legacy = authGet("/meetings/" + id, token).read(HttpStatus.OK);
+        assertThat(legacy.path("analysis").path("quality").path("origin").asText())
+                .isEqualTo("LEGACY_DERIVED");
+        assertThat(
+                        legacy.path("analysis")
+                                .path("quality")
+                                .path("extraction")
+                                .path("actionItems")
+                                .path("matchedSourceQuote")
+                                .isNull())
+                .isTrue();
+        jdbc.update(
+                "UPDATE meeting_analyses SET quality_observations = CAST(? AS jsonb) WHERE meeting_id = ?",
+                storedQuality,
+                id);
         jdbc.update("UPDATE tenants SET plan = 'FREE' WHERE id = ?", tenant);
         JsonNode downgraded = authGet("/meetings/" + id, token).read(HttpStatus.OK);
         assertThat(downgraded.path("analysis").path("commercialIntelligence").isNull()).isTrue();
         assertThat(downgraded.path("customerConfidence").isNull()).isTrue();
+        assertThat(
+                        downgraded
+                                .path("analysis")
+                                .path("quality")
+                                .path("extraction")
+                                .path("commercial")
+                                .isNull())
+                .isTrue();
         assertThat(
                         authGet("/meetings/customer-history?clientCode=C-42", token)
                                 .read(HttpStatus.FORBIDDEN)
@@ -622,7 +662,8 @@ class CustomerConfidenceFlowIntegrationTest {
                                     10,
                                     0);
                     return AnalysisResult.of(
-                            analysis.withCommercialIntelligence(commercialFacts()),
+                            analysis.withCommercialIntelligence(commercialFacts())
+                                    .withQuality(qualityFacts(transcript)),
                             null,
                             scriptBean.current());
                 }
@@ -641,5 +682,23 @@ class CustomerConfidenceFlowIntegrationTest {
                 }
             };
         }
+    }
+
+    private static br.com.nora.api.domain.analysis.AnalysisQuality qualityFacts(String transcript) {
+        var zero = new br.com.nora.api.domain.analysis.AnalysisQuality.EvidenceCounts(0, 0, 0);
+        var one = new br.com.nora.api.domain.analysis.AnalysisQuality.EvidenceCounts(1, 1, 1);
+        return new br.com.nora.api.domain.analysis.AnalysisQuality(
+                "1",
+                br.com.nora.api.domain.analysis.AnalysisQuality.Origin.WORKER,
+                br.com.nora.api.application.analysis.AnalysisQualityCalculator.transcript(
+                        transcript),
+                new br.com.nora.api.domain.analysis.AnalysisQuality.ExtractionMetrics(
+                        zero,
+                        0,
+                        0,
+                        zero,
+                        zero,
+                        new br.com.nora.api.domain.analysis.AnalysisQuality.CommercialMetrics(
+                                one, one, one, one)));
     }
 }

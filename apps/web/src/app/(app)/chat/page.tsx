@@ -63,7 +63,7 @@ class ChatRateLimitedError extends Error {}
 const SUGGESTIONS = [
   "Resuma minha última reunião",
   "O que ficou pendente esta semana?",
-  "Quais action items eu tenho pra hoje?",
+  "Quais tarefas estão pendentes?",
   "Quais riscos apareceram nas reuniões?",
 ];
 
@@ -452,11 +452,8 @@ function ChatRoom() {
                   margin: "0 0 8px",
                 }}
               >
-                Como posso ajudar?
+                Pergunte sobre suas reuniões
               </h1>
-              <p style={{ fontSize: 14, color: "var(--muted)", margin: 0, lineHeight: 1.55 }}>
-                Pergunte sobre suas reuniões, action items ou projetos. A Nora usa o contexto do seu workspace.
-              </p>
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", maxWidth: 580 }}>
               {SUGGESTIONS.map((s) => (

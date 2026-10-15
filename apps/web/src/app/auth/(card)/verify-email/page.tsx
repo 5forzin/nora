@@ -38,8 +38,8 @@ function VerifyEmailContent() {
     return (
       <div>
         <StateIcon kind="ok" />
-        <h2 style={cardTitle}>E-mail verificado.</h2>
-        <p style={cardSub}>Sua conta está ativa. Bem-vindo à Nora.</p>
+        <h2 style={cardTitle}>E-mail verificado</h2>
+        <p style={cardSub}>Sua conta está ativa.</p>
         <Link
           href="/auth/login"
           className="btn btn-primary"
@@ -55,7 +55,7 @@ function VerifyEmailContent() {
     return (
       <div>
         <StateIcon kind="warn" />
-        <h2 style={cardTitle}>Não foi possível verificar.</h2>
+        <h2 style={cardTitle}>Não foi possível verificar</h2>
         <p style={cardSub}>{error}</p>
         <p style={footLink}>
           <Link href="/auth/login" style={{ textDecoration: "underline", textUnderlineOffset: 2 }}>
@@ -70,8 +70,7 @@ function VerifyEmailContent() {
   return (
     <div>
       <StateIcon kind="mail" />
-      <h2 style={cardTitle}>Verificando seu e-mail.</h2>
-      <p style={cardSub}>Só um instante enquanto confirmamos o link.</p>
+      <h2 style={cardTitle}>Verificando e-mail…</h2>
     </div>
   );
 }

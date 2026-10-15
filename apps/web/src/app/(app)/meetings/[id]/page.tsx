@@ -6,9 +6,12 @@ import { getWorkspaceAccess } from "@/lib/enterprise/access";
 import { ApiRequestError, getMeeting } from "@/lib/api/client";
 import type { ActionItem, Decision, MeetingDetail, Opportunity, Risk } from "@/lib/api/types";
 import { formatDateTime, meetingInstant } from "@/lib/utils";
+import { STATUS_LABEL } from "@/lib/report/tasks-export";
+import { OPPORTUNITY_CATEGORY_LABEL, RISK_CATEGORY_LABEL } from "@/lib/analysis-labels";
 import { MarkdownContent } from "@/components/markdown-content";
 import MeetingProductivitySection from "@/components/meeting-productivity-section";
 import CustomerConfidenceCard from "@/components/customer-confidence-card";
+import AnalysisQualityPanel from "@/components/analysis-quality";
 import CommercialIntelligenceCard from "@/components/commercial-intelligence-card";
 import { CustomerMeetingHistory } from "@/components/customer-meeting-history";
 import { MeetingDangerZone, ReprocessButton } from "@/components/meeting-actions";
@@ -48,7 +51,14 @@ export default async function MeetingDetailPage({ params }: { params: Promise<{ 
     meeting = isEnterprise ? detail : {
       ...detail,
       customerConfidence: null,
-      analysis: detail.analysis ? { ...detail.analysis, commercialIntelligence: null } : undefined,
+      analysis: detail.analysis ? {
+        ...detail.analysis,
+        commercialIntelligence: null,
+        quality: detail.analysis.quality ? {
+          ...detail.analysis.quality,
+          extraction: { ...detail.analysis.quality.extraction, commercial: null },
+        } : detail.analysis.quality,
+      } : undefined,
     };
     permissions = access.permissions;
   } catch (err) {
@@ -89,7 +99,7 @@ export default async function MeetingDetailPage({ params }: { params: Promise<{ 
         <span style={{ color: statusMeta.color }}>{statusMeta.label}</span>
       </div>
 
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 32, marginBottom: 28 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 20, flexWrap: "wrap", marginBottom: 28 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <h1
             style={{
@@ -148,9 +158,6 @@ export default async function MeetingDetailPage({ params }: { params: Promise<{ 
               <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--ink)" }}>
                 <span className="status-dot status-dot--processing" />A Nora está analisando esta reunião.
               </div>
-              <p style={{ fontSize: 13, color: "var(--muted)", margin: 0, lineHeight: 1.55 }}>
-                Resumo, decisões e action items aparecem aqui assim que a análise terminar.
-              </p>
               <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 6 }}>
                 <div className="skel" style={{ height: 14, width: "88%" }} />
                 <div className="skel" style={{ height: 14, width: "72%" }} />
@@ -170,9 +177,6 @@ export default async function MeetingDetailPage({ params }: { params: Promise<{ 
           ) : (
             <>
               <div style={{ fontSize: 14, color: "var(--ink)" }}>Esta reunião ainda não foi analisada.</div>
-              <p style={{ fontSize: 13, color: "var(--muted)", margin: 0, lineHeight: 1.55 }}>
-                Resumo, decisões e action items estarão disponíveis após o processamento.
-              </p>
               {permissions?.reprocessMeetings && <div>
                 <ReprocessButton meetingId={meeting.id} label="Analisar agora" />
               </div>}
@@ -224,7 +228,7 @@ export default async function MeetingDetailPage({ params }: { params: Promise<{ 
           )}
 
           {a.actionItems.length > 0 && (
-            <Section label="Action items" right={`${a.actionItems.length} detectados`}>
+            <Section label="Tarefas" right={`${a.actionItems.length}`}>
               <div style={{ display: "flex", flexDirection: "column" }}>
                 {a.actionItems.map((t: ActionItem, i) => {
                   const done = t.status === "DONE";
@@ -242,29 +246,32 @@ export default async function MeetingDetailPage({ params }: { params: Promise<{ 
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4, fontSize: 11.5, color: "var(--muted)", flexWrap: "wrap" }}>
                         <span>{t.assignee ?? "Sem responsável"}</span>
-                        {t.dueDate && <span>vence {t.dueDate}</span>}
+                        <span>{STATUS_LABEL[t.status ?? 'OPEN']}</span>
+                        {t.dueDate && <span>Prazo {t.dueDate.split('-').reverse().join('/')}</span>}
                         <span style={{ color: PRIORITY_COLOR[t.priority] ?? "var(--muted)", letterSpacing: "0.04em" }}>{LEVEL_LABEL[t.priority]}</span>
+                        {t.id && permissions?.readTasks && <Link href={`/tasks?meetingId=${meeting.id}#task-${t.id}` as Route} style={{ color: 'var(--accent-ink)' }}>Acompanhar</Link>}
                       </div>
                       {t.sourceQuote && (
-                        <div className="quote" style={{ marginTop: 8 }}>
-                          {t.sourceQuote}
-                        </div>
+                        <details style={{ marginTop: 8 }}>
+                          <summary style={{ cursor: 'pointer', color: 'var(--accent-ink)', fontSize: 12 }}>Fala de origem</summary>
+                          <blockquote className="quote" style={{ margin: '8px 0 0', whiteSpace: 'pre-line' }}>{t.sourceQuote}</blockquote>
+                        </details>
                       )}
                     </div>
                   );
                 })}
-                <div style={{ paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+                {permissions?.readTasks && <div style={{ paddingTop: 12, borderTop: "1px solid var(--border)" }}>
                   <Link
-                    href={"/tasks" as Route}
+                    href={`/tasks?meetingId=${meeting.id}` as Route}
                     style={{ fontSize: 12.5, color: "var(--accent-ink)", display: "inline-flex", alignItems: "center", gap: 5 }}
                   >
-                    Ver em Action items
+                    Ver tarefas desta reunião
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="5" y1="12" x2="19" y2="12" />
                       <polyline points="12 5 19 12 12 19" />
                     </svg>
                   </Link>
-                </div>
+                </div>}
               </div>
             </Section>
           )}
@@ -273,7 +280,7 @@ export default async function MeetingDetailPage({ params }: { params: Promise<{ 
             <Section label="Riscos" right={`${a.risks.length}`}>
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 {a.risks.map((r: Risk, i) => (
-                  <SignalRow key={r.id ?? i} text={r.text} tag={`${LEVEL_LABEL[r.severity]} · ${r.category}`} color="var(--danger)" quote={r.sourceQuote} />
+                  <SignalRow key={r.id ?? i} text={r.text} tag={`${LEVEL_LABEL[r.severity]} · ${RISK_CATEGORY_LABEL[r.category] ?? r.category}`} color="var(--danger)" quote={r.sourceQuote} />
                 ))}
               </div>
             </Section>
@@ -283,7 +290,7 @@ export default async function MeetingDetailPage({ params }: { params: Promise<{ 
             <Section label="Oportunidades" right={`${a.opportunities.length}`}>
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 {a.opportunities.map((o: Opportunity, i) => (
-                  <SignalRow key={o.id ?? i} text={o.text} tag={`${LEVEL_LABEL[o.estimatedValue]} · ${o.category}`} color="var(--success)" quote={o.sourceQuote} />
+                  <SignalRow key={o.id ?? i} text={o.text} tag={`${LEVEL_LABEL[o.estimatedValue]} · ${OPPORTUNITY_CATEGORY_LABEL[o.category] ?? o.category}`} color="var(--success)" quote={o.sourceQuote} />
                 ))}
               </div>
             </Section>
@@ -321,6 +328,8 @@ export default async function MeetingDetailPage({ params }: { params: Promise<{ 
         </Section>
       )}
 
+      {a?.quality && <div style={{ marginBottom: 24 }}><AnalysisQualityPanel quality={a.quality} showCommercial={isEnterprise} /></div>}
+
       <div style={{ marginTop: 8 }}>
         <MeetingProductivitySection meetingId={meeting.id} goal={meeting.goal ?? null} productivity={meeting.productivity ?? null} canEdit={permissions?.updateMeetings === true} />
       </div>
@@ -332,16 +341,12 @@ export default async function MeetingDetailPage({ params }: { params: Promise<{ 
         <MeetingDangerZone meetingId={meeting.id} title={meeting.title} canReprocess={Boolean(a) && permissions?.reprocessMeetings === true} canRemove={permissions?.deleteMeetings} canErase={permissions?.eraseMeetings} />
       </div>}
 
-      <div style={{ marginTop: 40, paddingTop: 18, borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 14, fontSize: 11, color: "var(--muted)" }}>
+      {a && piiCount !== null && <div style={{ marginTop: 40, paddingTop: 18, borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 14, fontSize: 11, color: "var(--muted)" }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           <span className="status-dot" style={{ background: "var(--success)", width: 6, height: 6 }} />
-          {piiCount === null
-            ? "PII Shield aplicado"
-            : piiCount === 0
-              ? "PII Shield · nenhum dado sensível detectado"
-              : `PII Shield · ${piiCount} ${piiCount === 1 ? "dado sensível redigido" : "dados sensíveis redigidos"}`}
+          {`PII Shield · ${piiCount} ${piiCount === 1 ? "substituição no texto enviado à análise" : "substituições no texto enviado à análise"}`}
         </span>
-      </div>
+      </div>}
     </div>
   );
 }
@@ -361,7 +366,7 @@ function Section({ label, right, children }: { label: string; right?: string; ch
 function SignalRow({ text, tag, color, quote }: { text: string; tag: string; color: string; quote?: string }) {
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
         <span style={{ fontSize: 14, color: "var(--ink)", lineHeight: 1.5 }}>{text}</span>
         <span
           style={{

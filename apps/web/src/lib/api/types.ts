@@ -119,6 +119,40 @@ export interface Opportunity {
   sourceQuote: string;
 }
 
+export interface EvidenceCounts {
+  total: number;
+  withSourceQuote: number;
+  matchedSourceQuote: number | null;
+}
+
+export interface AnalysisQuality {
+  version: '1';
+  origin: 'WORKER' | 'LEGACY_DERIVED';
+  transcript: {
+    characterCount: number;
+    nonEmptyLineCount: number;
+    speakerLabelCount: number | null;
+    labeledTurnCount: number | null;
+    emptyLabeledTurnCount: number | null;
+    replacementCharacterCount: number;
+    controlCharacterCount: number;
+    duplicateLineCount: number;
+  } | null;
+  extraction: {
+    actionItems: EvidenceCounts;
+    actionItemsWithAssignee: number;
+    actionItemsWithDueDate: number;
+    risks: EvidenceCounts;
+    opportunities: EvidenceCounts;
+    commercial: {
+      products: EvidenceCounts;
+      personas: EvidenceCounts;
+      budgets: EvidenceCounts;
+      sentimentByTopic: EvidenceCounts;
+    } | null;
+  };
+}
+
 export interface MeetingAnalysis {
   id?: string;
   summary: string;
@@ -138,6 +172,7 @@ export interface MeetingAnalysis {
    */
   metadata?: { piiRedactionsApplied?: number; [k: string]: unknown };
   commercialIntelligence?: CommercialIntelligence | null;
+  quality?: AnalysisQuality | null;
 }
 
 export interface UserRef {

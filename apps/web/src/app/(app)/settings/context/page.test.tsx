@@ -7,7 +7,7 @@ const api = vi.hoisted(() => ({
   context: vi.fn(), versions: vi.fn(), version: vi.fn(), saveContext: vi.fn(),
   updateSession: vi.fn(),
 }));
-const permissions = vi.hoisted(() => ({ readWorkspace: true, renameWorkspace: true }));
+const permissions = vi.hoisted(() => ({ readWorkspace: true, renameWorkspace: true, readMeetings: true }));
 vi.mock('@/components/enterprise/workspace-provider', () => ({
   useWorkspaceAccess: () => ({ access: { permissions }, loading: false }),
 }));
@@ -43,6 +43,7 @@ function deferred<T>() {
 beforeEach(() => {
   permissions.readWorkspace = true;
   permissions.renameWorkspace = true;
+  permissions.readMeetings = true;
   vi.clearAllMocks();
   history.replaceState(null, '', '/');
   api.me.mockReset().mockResolvedValue(profile);
@@ -59,6 +60,15 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe('Core account settings', () => {
+  it('links usage from account settings only when the user may read the report', async () => {
+    const view = render(<SettingsPage />);
+    await screen.findByText('Verificado');
+    expect(screen.getByRole('link', { name: 'Consumo' }).getAttribute('href')).toBe('/settings/usage');
+    permissions.readMeetings = false;
+    view.rerender(<SettingsPage />);
+    expect(screen.queryByRole('link', { name: 'Consumo' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Conta' })).toBeTruthy();
+  });
   it('keeps workspace details read-only without rename permission', async () => {
     permissions.renameWorkspace = false;
     render(<SettingsPage />);

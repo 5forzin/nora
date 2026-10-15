@@ -38,7 +38,7 @@ public class TaskRepositoryAdapter implements TaskRepository {
     /** The projection and the joins, shared by every read below so they cannot drift apart. */
     private static final String SELECT_TASK_ROW =
             "SELECT ai.id, ai.title, ai.assignee, ai.due_date, ai.priority, ai.status, "
-                    + "       a.meeting_id, m.title AS meeting_title, ai.updated_at "
+                    + "       a.meeting_id, m.title AS meeting_title, ai.updated_at, ai.source_quote "
                     + "FROM meeting_action_items ai "
                     + "JOIN meeting_analyses a ON a.id = ai.analysis_id "
                     + "JOIN meetings m ON m.id = a.meeting_id AND m.deleted_at IS NULL ";
@@ -50,15 +50,19 @@ public class TaskRepositoryAdapter implements TaskRepository {
 
     private static final String TENANT_AND_STATUS =
             "WHERE ai.tenant_id = :tenantId "
-                    + "  AND (CAST(:status AS text) IS NULL OR ai.status = CAST(:status AS text)) ";
+                    + "  AND (CAST(:status AS text) IS NULL OR ai.status = CAST(:status AS text)) "
+                    + "  AND (CAST(:meetingId AS uuid) IS NULL "
+                    + "OR a.meeting_id = CAST(:meetingId AS uuid)) ";
 
     @Override
     @Transactional(readOnly = true)
     @SuppressWarnings("unchecked")
-    public List<TaskRow> listByTenant(UUID tenantId, ActionItemStatus statusFilter) {
+    public List<TaskRow> listByTenant(
+            UUID tenantId, ActionItemStatus statusFilter, UUID meetingId) {
         var query = em.createNativeQuery(SELECT_TASK_ROW + TENANT_AND_STATUS + TASK_ORDER);
         query.setParameter("tenantId", tenantId);
         query.setParameter("status", statusFilter == null ? null : statusFilter.name());
+        query.setParameter("meetingId", meetingId);
         List<Object[]> rows = (List<Object[]>) query.getResultList();
         List<TaskRow> result = new ArrayList<>(rows.size());
         for (Object[] r : rows) {
@@ -80,12 +84,13 @@ public class TaskRepositoryAdapter implements TaskRepository {
     @Transactional(readOnly = true)
     @SuppressWarnings("unchecked")
     public PagedTasks listByTenant(
-            UUID tenantId, ActionItemStatus statusFilter, int page, int size) {
+            UUID tenantId, ActionItemStatus statusFilter, UUID meetingId, int page, int size) {
         String status = statusFilter == null ? null : statusFilter.name();
         String sql = SELECT_TASK_ROW + TENANT_AND_STATUS + TASK_ORDER + "LIMIT :size OFFSET :off";
         var query = em.createNativeQuery(sql);
         query.setParameter("tenantId", tenantId);
         query.setParameter("status", status);
+        query.setParameter("meetingId", meetingId);
         query.setParameter("size", size);
         query.setParameter("off", (long) page * size);
         List<Object[]> rows = (List<Object[]>) query.getResultList();
@@ -102,6 +107,7 @@ public class TaskRepositoryAdapter implements TaskRepository {
                                 + TENANT_AND_STATUS);
         countQuery.setParameter("tenantId", tenantId);
         countQuery.setParameter("status", status);
+        countQuery.setParameter("meetingId", meetingId);
         long total = ((Number) countQuery.getSingleResult()).longValue();
         return new PagedTasks(items, total, page, size);
     }
@@ -155,6 +161,19 @@ public class TaskRepositoryAdapter implements TaskRepository {
 
     @Override
     @Transactional
+    public void updateAssignee(UUID id, UUID tenantId, String assignee) {
+        em.createNativeQuery(
+                        "UPDATE meeting_action_items SET assignee = CAST(:assignee AS text), "
+                                + "updated_at = NOW() "
+                                + "WHERE id = :id AND tenant_id = :tenantId")
+                .setParameter("assignee", assignee)
+                .setParameter("id", id)
+                .setParameter("tenantId", tenantId)
+                .executeUpdate();
+    }
+
+    @Override
+    @Transactional
     public void updateDueDate(UUID id, UUID tenantId, LocalDate newDueDate) {
         // The value is bound as text and CAST in SQL, the same idiom the listing already uses for
         // its nullable status filter: a native query cannot infer the type of a plain null bind,
@@ -179,7 +198,16 @@ public class TaskRepositoryAdapter implements TaskRepository {
         String meetingTitle = (String) r[7];
         OffsetDateTime updatedAt = toOffset(r[8]);
         return new TaskRow(
-                id, title, assignee, dueDate, priority, status, meetingId, meetingTitle, updatedAt);
+                id,
+                title,
+                assignee,
+                dueDate,
+                priority,
+                status,
+                meetingId,
+                meetingTitle,
+                updatedAt,
+                (String) r[9]);
     }
 
     private static OffsetDateTime toOffset(Object value) {

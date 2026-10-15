@@ -33,7 +33,8 @@ class Settings(BaseSettings):
     # LLM provider-agnostic (ADR 0004). Default: OpenAI direct / gpt-4o-mini.
     llm_provider: str = Field(default="openai", alias="LLM_PROVIDER")
     llm_base_url: str = Field(default="https://api.openai.com/v1", alias="LLM_BASE_URL")
-    llm_api_key: str = Field(default="", alias="LLM_API_KEY")
+    llm_api_key: str = Field(default="", alias="LLM_API_KEY", repr=False)
+    llm_key_google: str = Field(default="", alias="LLM_KEY_GOOGLE", repr=False)
     llm_model: str = Field(default="gpt-4o-mini", alias="LLM_MODEL")
     llm_temperature: float = Field(default=0.2, alias="LLM_TEMPERATURE")
 
@@ -55,6 +56,12 @@ class Settings(BaseSettings):
     allow_unauthenticated_internal: bool = Field(
         default=False, alias="NORA_WORKER_ALLOW_UNAUTHENTICATED"
     )
+
+    @property
+    def provider_api_key(self) -> str:
+        if self.llm_provider.strip().lower() == "google":
+            return self.llm_key_google.strip()
+        return self.llm_api_key.strip()
 
 
 @lru_cache(maxsize=1)

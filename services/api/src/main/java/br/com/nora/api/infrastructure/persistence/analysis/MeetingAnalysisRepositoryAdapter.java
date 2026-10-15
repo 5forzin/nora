@@ -16,8 +16,11 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,15 +37,70 @@ public class MeetingAnalysisRepositoryAdapter implements MeetingAnalysisReposito
     @Override
     @Transactional
     public MeetingAnalysis save(MeetingAnalysis analysis) {
-        // Idempotent reprocessing: if an analysis already exists for the meeting, delete it before
-        // saving.
+        MeetingAnalysisJpaEntity e = toEntity(analysis);
         jpa.findByMeetingIdAndTenantId(analysis.meetingId(), analysis.tenantId())
-                .ifPresent(jpa::delete);
+                .ifPresent(
+                        previous -> {
+                            preserveReviewedTasks(previous.getActionItems(), e.getActionItems());
+                            jpa.delete(previous);
+                        });
         jpa.flush();
 
-        MeetingAnalysisJpaEntity e = toEntity(analysis);
         MeetingAnalysisJpaEntity saved = jpa.save(e);
         return toDomain(saved);
+    }
+
+    private record TaskIdentity(String title, String sourceQuote) {
+        static TaskIdentity of(ActionItemJpaEntity item) {
+            return new TaskIdentity(item.getTitle(), item.getSourceQuote());
+        }
+    }
+
+    /** A unique exact quote also identifies a task when the model paraphrases its title. */
+    private void preserveReviewedTasks(
+            List<ActionItemJpaEntity> previous, List<ActionItemJpaEntity> replacement) {
+        Map<TaskIdentity, List<ActionItemJpaEntity>> oldByIdentity =
+                previous.stream().collect(Collectors.groupingBy(TaskIdentity::of));
+        Map<TaskIdentity, Long> newCounts =
+                replacement.stream()
+                        .map(TaskIdentity::of)
+                        .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
+        Map<String, List<ActionItemJpaEntity>> oldByQuote =
+                previous.stream()
+                        .filter(item -> hasEvidence(item.getSourceQuote()))
+                        .collect(Collectors.groupingBy(ActionItemJpaEntity::getSourceQuote));
+        Map<String, Long> newQuoteCounts =
+                replacement.stream()
+                        .map(ActionItemJpaEntity::getSourceQuote)
+                        .filter(MeetingAnalysisRepositoryAdapter::hasEvidence)
+                        .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
+        for (ActionItemJpaEntity item : replacement) {
+            TaskIdentity identity = TaskIdentity.of(item);
+            List<ActionItemJpaEntity> candidates = oldByIdentity.get(identity);
+            if (candidates == null || candidates.size() != 1 || newCounts.get(identity) != 1) {
+                if (!hasEvidence(item.getSourceQuote())) {
+                    continue;
+                }
+                candidates = oldByQuote.get(item.getSourceQuote());
+                if (candidates == null
+                        || candidates.size() != 1
+                        || newQuoteCounts.get(item.getSourceQuote()) != 1) {
+                    continue;
+                }
+            }
+            ActionItemJpaEntity old = candidates.get(0);
+            item.setId(old.getId());
+            item.setStatus(old.getStatus());
+            item.setAssignee(old.getAssignee());
+            item.setDueDate(old.getDueDate());
+            item.setCreatedAt(old.getCreatedAt());
+            item.setUpdatedAt(old.getUpdatedAt());
+            item.setCompletedAt(old.getCompletedAt());
+        }
+    }
+
+    private static boolean hasEvidence(String sourceQuote) {
+        return sourceQuote != null && !sourceQuote.isBlank();
     }
 
     @Override
@@ -95,6 +153,7 @@ public class MeetingAnalysisRepositoryAdapter implements MeetingAnalysisReposito
         e.setMeetingId(a.meetingId());
         e.setTenantId(a.tenantId());
         e.setCommercialIntelligence(a.commercialIntelligence());
+        e.setQuality(a.quality());
         e.setSummary(a.summary());
         e.setSentimentOverall(a.sentimentOverall().name());
         e.setTopics(a.topics().toArray(new String[0]));
@@ -124,7 +183,7 @@ public class MeetingAnalysisRepositoryAdapter implements MeetingAnalysisReposito
         for (int i = 0; i < a.actionItems().size(); i++) {
             ActionItem ai = a.actionItems().get(i);
             ActionItemJpaEntity ae = new ActionItemJpaEntity();
-            ae.setId(UUID.randomUUID());
+            ae.setId(ai.id() == null ? UUID.randomUUID() : ai.id());
             ae.setAnalysisId(a.id());
             ae.setTenantId(a.tenantId());
             ae.setTitle(ai.title());
@@ -184,7 +243,8 @@ public class MeetingAnalysisRepositoryAdapter implements MeetingAnalysisReposito
                                                 ai.getDueDate(),
                                                 Priority.valueOf(ai.getPriority()),
                                                 ai.getSourceQuote(),
-                                                ActionItemStatus.valueOf(ai.getStatus())))
+                                                ActionItemStatus.valueOf(ai.getStatus()),
+                                                ai.getId()))
                         .toList();
         List<Risk> risks =
                 e.getRisks().stream()
@@ -225,6 +285,7 @@ public class MeetingAnalysisRepositoryAdapter implements MeetingAnalysisReposito
                 e.getPiiRedactionsApplied(),
                 e.getGeneratedAt(),
                 e.getCreatedAt(),
-                e.getCommercialIntelligence());
+                e.getCommercialIntelligence(),
+                e.getQuality());
     }
 }

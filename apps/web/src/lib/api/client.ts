@@ -590,7 +590,8 @@ export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH';
 export interface TaskListItemDto {
   id: string;
   title: string;
-  assignee?: string;
+  assignee?: string | null;
+  sourceQuote?: string | null;
   dueDate?: string;
   priority: TaskPriority;
   status: TaskStatus;
@@ -617,6 +618,7 @@ export interface TaskListResponse {
 
 export interface ListTasksParams {
   status?: TaskStatus;
+  meetingId?: string;
   page?: number;
   /** Capped at 100 by the backend (`TaskService.MAX_PAGE_SIZE`). */
   size?: number;
@@ -627,6 +629,7 @@ export async function listTasks(params?: TaskStatus | ListTasksParams): Promise<
   const opts: ListTasksParams = typeof params === 'string' ? { status: params } : (params ?? {});
   const qs = new URLSearchParams();
   if (opts.status) qs.set('status', opts.status);
+  if (opts.meetingId) qs.set('meetingId', opts.meetingId);
   if (opts.page !== undefined) qs.set('page', String(opts.page));
   if (opts.size !== undefined) qs.set('size', String(opts.size));
   const path = qs.toString().length > 0 ? `/tasks?${qs.toString()}` : `/tasks`;
@@ -637,7 +640,7 @@ export async function listTasks(params?: TaskStatus | ListTasksParams): Promise<
 // empty string clears it. That distinction is the contract, so do not collapse "" into undefined.
 export async function updateTask(
   id: string,
-  patch: { status?: TaskStatus; title?: string; dueDate?: string },
+  patch: { status?: TaskStatus; title?: string; dueDate?: string; assignee?: string },
 ): Promise<TaskListItemDto> {
   return request<TaskListItemDto>(`/tasks/${encodeURIComponent(id)}`, {
     method: 'PATCH',

@@ -28,7 +28,7 @@ export default function PasswordResetRequestPage() {
     return (
       <div>
         <MailIcon />
-        <h2 style={cardTitle}>Verifique seu e-mail.</h2>
+        <h2 style={cardTitle}>Verifique seu e-mail</h2>
         <p style={cardSub}>
           Se{" "}
           <strong style={{ color: "var(--ink)", fontWeight: 500 }}>{email}</strong> estiver
@@ -45,8 +45,8 @@ export default function PasswordResetRequestPage() {
 
   return (
     <div>
-      <h2 style={cardTitle}>Esqueci minha senha.</h2>
-      <p style={cardSub}>Digite o e-mail da conta — mandamos um link para redefinir.</p>
+      <h2 style={cardTitle}>Redefinir senha</h2>
+      <p style={cardSub}>Enviaremos um link para o e-mail da conta.</p>
 
       <form
         onSubmit={onSubmit}

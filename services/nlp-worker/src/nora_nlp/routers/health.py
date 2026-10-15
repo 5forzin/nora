@@ -34,10 +34,11 @@ def healthz() -> dict[str, str]:
 @router.get("/readyz")
 def readyz(settings: Settings = Depends(get_settings)) -> dict[str, str]:
     """Ready to serve traffic. Fails 503 if config does not satisfy the chosen mode."""
-    if not settings.use_llm_stub and not settings.llm_api_key:
+    if not settings.use_llm_stub and not settings.provider_api_key:
+        variable = "LLM_KEY_GOOGLE" if settings.llm_provider.lower() == "google" else "LLM_API_KEY"
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"code": "NOT_READY", "reason": "LLM_API_KEY missing with USE_LLM_STUB=false"},
+            detail={"code": "NOT_READY", "reason": f"{variable} missing with USE_LLM_STUB=false"},
         )
     return {
         "service": "nora-nlp-worker",

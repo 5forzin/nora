@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nora:schemas:analysis-quality:v1",
+  "$defs": {
+    "CommercialMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "products": {
+          "$ref": "#/$defs/EvidenceCounts"
+        },
+        "personas": {
+          "$ref": "#/$defs/EvidenceCounts"
+        },
+        "budgets": {
+          "$ref": "#/$defs/EvidenceCounts"
+        },
+        "sentimentByTopic": {
+          "$ref": "#/$defs/EvidenceCounts"
+        }
+      },
+      "required": [
+        "products",
+        "personas",
+        "budgets",
+        "sentimentByTopic"
+      ],
+      "title": "CommercialMetrics",
+      "type": "object"
+    },
+    "EvidenceCounts": {
+      "additionalProperties": false,
+      "properties": {
+        "total": {
+          "minimum": 0,
+          "title": "Total",
+          "type": "integer"
+        },
+        "withSourceQuote": {
+          "minimum": 0,
+          "title": "Withsourcequote",
+          "type": "integer"
+        },
+        "matchedSourceQuote": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Matchedsourcequote"
+        }
+      },
+      "required": [
+        "total",
+        "withSourceQuote"
+      ],
+      "title": "EvidenceCounts",
+      "type": "object"
+    },
+    "ExtractionMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "actionItems": {
+          "$ref": "#/$defs/EvidenceCounts"
+        },
+        "actionItemsWithAssignee": {
+          "minimum": 0,
+          "title": "Actionitemswithassignee",
+          "type": "integer"
+        },
+        "actionItemsWithDueDate": {
+          "minimum": 0,
+          "title": "Actionitemswithduedate",
+          "type": "integer"
+        },
+        "risks": {
+          "$ref": "#/$defs/EvidenceCounts"
+        },
+        "opportunities": {
+          "$ref": "#/$defs/EvidenceCounts"
+        },
+        "commercial": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CommercialMetrics"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "actionItems",
+        "actionItemsWithAssignee",
+        "actionItemsWithDueDate",
+        "risks",
+        "opportunities"
+      ],
+      "title": "ExtractionMetrics",
+      "type": "object"
+    },
+    "TranscriptMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "characterCount": {
+          "minimum": 0,
+          "title": "Charactercount",
+          "type": "integer"
+        },
+        "nonEmptyLineCount": {
+          "minimum": 0,
+          "title": "Nonemptylinecount",
+          "type": "integer"
+        },
+        "speakerLabelCount": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Speakerlabelcount"
+        },
+        "labeledTurnCount": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Labeledturncount"
+        },
+        "emptyLabeledTurnCount": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Emptylabeledturncount"
+        },
+        "replacementCharacterCount": {
+          "minimum": 0,
+          "title": "Replacementcharactercount",
+          "type": "integer"
+        },
+        "controlCharacterCount": {
+          "minimum": 0,
+          "title": "Controlcharactercount",
+          "type": "integer"
+        },
+        "duplicateLineCount": {
+          "minimum": 0,
+          "title": "Duplicatelinecount",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "characterCount",
+        "nonEmptyLineCount",
+        "replacementCharacterCount",
+        "controlCharacterCount",
+        "duplicateLineCount"
+      ],
+      "title": "TranscriptMetrics",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": "1",
+      "default": "1",
+      "title": "Version",
+      "type": "string"
+    },
+    "origin": {
+      "enum": [
+        "WORKER",
+        "LEGACY_DERIVED"
+      ],
+      "title": "Origin",
+      "type": "string"
+    },
+    "transcript": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TranscriptMetrics"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "extraction": {
+      "$ref": "#/$defs/ExtractionMetrics"
+    }
+  },
+  "required": [
+    "origin",
+    "transcript",
+    "extraction"
+  ],
+  "title": "AnalysisQuality",
+  "type": "object"
+}

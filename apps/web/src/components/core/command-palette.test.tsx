@@ -52,7 +52,7 @@ it('keeps IAM commands available without querying meetings for an administrator 
   render(<CommandPalette open onClose={() => undefined} />);
   expect(screen.getByText('Acessos — grupos e policies')).toBeTruthy();
   expect(screen.queryByText('Nova reunião')).toBeNull();
-  expect(screen.queryByText('Ver action items')).toBeNull();
+  expect(screen.queryByText('Ver tarefas')).toBeNull();
   expect(screen.queryByText('Nova sessão de chat')).toBeNull();
   expect(searchMeetings).not.toHaveBeenCalled();
 });

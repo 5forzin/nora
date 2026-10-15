@@ -120,12 +120,12 @@ export function tasksToCsv(items: TaskListItemDto[]): string {
  * with four of a tenant's forty tasks and no statement of why is a file that reads as a bug.
  */
 export function tasksToMarkdown(items: TaskListItemDto[], filterLabel: string): string {
-  const lines: string[] = ['# Action items', ''];
+  const lines: string[] = ['# Tarefas', ''];
 
   lines.push([`**Filtro:** ${filterLabel}`, `**Total:** ${items.length}`].join('  \n'), '');
 
   if (items.length === 0) {
-    lines.push('> Nenhum action item neste filtro.', '');
+    lines.push('> Nenhuma tarefa neste filtro.', '');
   } else {
     for (const t of items) {
       const parts = [
