@@ -284,7 +284,9 @@ public class McpToolInvoker {
         ObjectNode result = F.objectNode();
         result.put("meetingId", meeting.id().toString());
         Optional<CustomerConfidenceService.ConfidenceView> view =
-                customerConfidence.findViewByMeetingId(meeting.id(), principal.tenantId()).stream()
+                customerConfidence
+                        .findViewByMeetingId(meeting.id(), principal.tenantId(), principal.userId())
+                        .stream()
                         .findFirst();
         if (view.isPresent()) {
             result.set("customerConfidence", confidence(view.get()));
@@ -376,6 +378,11 @@ public class McpToolInvoker {
         node.put("summary", a.summary());
         node.put("sentiment", a.sentimentOverall().name());
         node.set("topics", strings(a.topics()));
+        node.set(
+                "commercialIntelligence",
+                a.commercialIntelligence() == null
+                        ? F.nullNode()
+                        : F.pojoNode(a.commercialIntelligence()));
 
         ArrayNode decisions = F.arrayNode();
         for (Decision d : a.decisions()) {
@@ -443,6 +450,7 @@ public class McpToolInvoker {
         node.put("band", a.band().name());
         putNullable(node, "trend", a.trend() == null ? null : a.trend().name());
         putNullable(node, "accountName", view.accountName());
+        putNullable(node, "clientCode", view.clientCode());
         putNullable(node, "rationale", a.rationale());
 
         ArrayNode signals = F.arrayNode();

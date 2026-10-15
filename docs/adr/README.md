@@ -108,6 +108,7 @@ repository does not have.
 | [0050](0050-the-landing-page-states-what-the-code-does.md) | The public landing page states what the code does, and marks what it does not | accepted (lifts the DEC-04 freeze recorded in 0038, 0040 and 0046; supersedes nothing) |
 | [0051](0051-the-substrate-is-an-azure-vm.md) | The substrate is an Azure VM, and Azure was never gone | accepted (supersedes 0036; corrects the "Azure is gone" overreach inherited from 0034) |
 | [0052](0052-core-enterprise-capability-boundary.md) | Enforce the Core and Enterprise capability boundary | accepted (partially supersedes 0038; tenant isolation and shared chat/RAG remain available to every plan) |
+| [0053](0053-structured-import-and-commercial-evidence.md) | Structured transcript import and evidence-backed commercial fields | accepted (extends 0052; preserves analysis privacy and declared participant identity) |
 
 Superseded portions do not invalidate a record's surviving decisions. Read the successor named
 in the status column before applying an older scope or infrastructure statement.

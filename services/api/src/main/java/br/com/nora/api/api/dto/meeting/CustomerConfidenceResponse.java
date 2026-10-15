@@ -16,7 +16,8 @@ public record CustomerConfidenceResponse(
         String accountName,
         String rationale,
         List<BuyingSignalResponse> buyingSignals,
-        List<ObjectionResponse> objections) {
+        List<ObjectionResponse> objections,
+        String clientCode) {
 
     /** Detected buying signal (ADR 0015). */
     public record BuyingSignalResponse(String type, String quote, Double weight) {}

@@ -20,6 +20,15 @@ public interface MeetingJpaRepository extends JpaRepository<MeetingJpaEntity, UU
     // bags at once. @BatchSize groups the load into ~N+1/batchSize queries — good
     // enough for listings with typical pagination.
 
+    @Query(
+            value =
+                    "SELECT * FROM meetings WHERE tenant_id = :tenantId "
+                            + "AND deleted_at IS NULL AND attributes ->> 'clientCode' = :clientCode "
+                            + "ORDER BY started_at ASC NULLS LAST, id ASC",
+            nativeQuery = true)
+    java.util.List<MeetingJpaEntity> findByClientCode(
+            @Param("tenantId") UUID tenantId, @Param("clientCode") String clientCode);
+
     Optional<MeetingJpaEntity> findByIdAndTenantId(UUID id, UUID tenantId);
 
     /**

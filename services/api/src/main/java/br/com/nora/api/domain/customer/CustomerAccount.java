@@ -16,7 +16,19 @@ public record CustomerAccount(
         UUID ownerUserId,
         String stage,
         OffsetDateTime createdAt,
-        OffsetDateTime updatedAt) {
+        OffsetDateTime updatedAt,
+        String externalClientCode) {
+
+    public CustomerAccount(
+            UUID id,
+            UUID tenantId,
+            String name,
+            UUID ownerUserId,
+            String stage,
+            OffsetDateTime createdAt,
+            OffsetDateTime updatedAt) {
+        this(id, tenantId, name, ownerUserId, stage, createdAt, updatedAt, null);
+    }
 
     private static final int NAME_MIN = 1;
     private static final int NAME_MAX = 240;

@@ -109,8 +109,7 @@ describe('the question carried over from the landing', () => {
     params = new URLSearchParams({ q: 'O que ficou pendente esta semana?' });
     renderChat();
 
-    await vi.waitFor(() => expect(composer()).not.toBeNull());
-    expect(composer().value).toBe('O que ficou pendente esta semana?');
+    await vi.waitFor(() => expect(composer()?.value).toBe('O que ficou pendente esta semana?'));
   });
 
   it('does not send it by itself — a link must not spend an LLM call on its own', async () => {

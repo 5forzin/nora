@@ -137,6 +137,7 @@ export interface MeetingAnalysis {
    * by the PII Shield (ADR 0012). Optional: old analyses may not have it.
    */
   metadata?: { piiRedactionsApplied?: number; [k: string]: unknown };
+  commercialIntelligence?: CommercialIntelligence | null;
 }
 
 export interface UserRef {
@@ -207,9 +208,59 @@ export interface CustomerConfidence {
   trend: ConfidenceTrend | null;
   /** Name of the account resolved via get-or-create; can be null. */
   accountName: string | null;
+  clientCode?: string | null;
   rationale: string;
   buyingSignals: BuyingSignal[];
   objections: Objection[];
+}
+
+export interface CommercialProduct {
+  name: string;
+  relationship: 'CURRENT' | 'OPPORTUNITY' | 'COMPETITOR' | 'MENTIONED';
+  sourceQuote: string;
+}
+
+export interface CommercialPersona {
+  speaker: string | null;
+  role: string | null;
+  decisionRole: 'DECISION_MAKER' | 'INFLUENCER' | 'USER' | 'UNKNOWN';
+  sourceQuote: string;
+}
+
+export interface CommercialBudget {
+  amount: number | null;
+  currency: string | null;
+  kind: 'BUDGET' | 'PROPOSAL' | 'PRICE' | 'REVENUE' | 'OTHER';
+  approval: 'APPROVED' | 'NOT_APPROVED' | 'UNKNOWN';
+  period: string | null;
+  sourceQuote: string;
+}
+
+export interface CommercialTopicSentiment {
+  topic: string;
+  sentiment: Sentiment;
+  sourceQuote: string;
+}
+
+export interface CommercialIntelligence {
+  products: CommercialProduct[];
+  personas: CommercialPersona[];
+  budgets: CommercialBudget[];
+  sentimentByTopic: CommercialTopicSentiment[];
+}
+
+export interface CustomerMeetingHistory {
+  clientCode: string;
+  items: {
+    id: string;
+    title: string;
+    startedAt: string | null;
+    processingStatus: ProcessingStatus;
+    summarySnippet?: string | null;
+    commercialIntelligence: CommercialIntelligence | null;
+    customerConfidence: CustomerConfidence | null;
+  }[];
+  truncated: boolean;
 }
 
 export interface MeetingDetail {
@@ -236,6 +287,7 @@ export interface MeetingDetail {
   goal?: MeetingGoal | null;
   productivity?: ProductivityAssessment | null;
   customerConfidence?: CustomerConfidence | null;
+  attributes?: Record<string, string>;
   createdAt: string;
   updatedAt: string;
 }

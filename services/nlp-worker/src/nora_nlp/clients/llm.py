@@ -14,6 +14,7 @@ We use the official ``openai`` SDK pointing at the configured ``base_url``.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -139,6 +140,9 @@ class LlmClient:
 
     def _extract(self, response: Any, *, mode: str) -> tuple[str, int, int]:
         choice = response.choices[0]
+        if getattr(choice, "finish_reason", None) == "length":
+            # Even syntactically complete JSON may omit observations when the token limit wins.
+            raise json.JSONDecodeError("Provider output exceeded its token limit", "", 0)
         content = choice.message.content or "{}"
         usage = response.usage
         tokens_input = usage.prompt_tokens if usage else 0
@@ -208,4 +212,87 @@ def build_json_schema_for_analysis() -> dict[str, Any]:
         "ISO 8601 date (YYYY-MM-DD), or null when the transcript only gives a relative "
         "date such as tomorrow or Friday. Never invent an absolute date."
     )
+    commercial = schema["$defs"]["CommercialIntelligence"]
+    commercial["description"] = (
+        "Extract commercial observations from the whole transcript independently of "
+        "customerConfidence, account identification and the tenant's product catalogue. "
+        "Check each collection for explicit evidence before returning an empty array."
+    )
+    descriptions = {
+        "products": (
+            "Named software, systems, products or modules explicitly discussed, even when absent "
+            "from tenantContext. Classify each by the relationship field's customer-usage rules, "
+            "not by the seller's catalogue or vendorCompetitorReference. "
+            "Skip anonymized names such as [COMPANY] or [[PERSON_NAME_1]]: "
+            "they identify no product."
+        ),
+        "personas": (
+            "Explicit job roles, decision authority, influence or usage responsibilities. "
+            "A stated role is sufficient even when no name is known: keep speaker null if no "
+            "allowed literal label is available, and decisionRole UNKNOWN "
+            "if authority is unstated. "
+            "Associate a role with a non-null speaker only when that speaker explicitly "
+            "self-declares it in their own turn, such as 'Sou diretor financeiro' or "
+            "'I am the finance director'. A role mentioned about another person does not belong "
+            "to the speaker: keep the role but set speaker null and decisionRole UNKNOWN. "
+            "With multiple speaker labels, isolate the selected speaker's own words first. "
+            "Never require an identified customer or reconstruct a redacted identity."
+        ),
+        "budgets": (
+            "Explicit monetary discussions: budgets, proposals, prices, revenue or other money. "
+            "Keep their distinct kinds. Include an explicitly absent or unapproved budget with "
+            "amount null; include a historical price as PRICE without treating it as approval. "
+            "Convert exact digit or written amounts and stated scales only. R$ means BRL, "
+            "For estimates or bounds such as 'under a thousand', 'more than ten million', "
+            "'up to fifty thousand' or 'about twenty thousand', amount must be null; "
+            "preserve the observation's kind, approval and quotation. "
+            "including R$50.000 without a space. Never derive budget "
+            "from revenue, NPS or headcount."
+        ),
+        "sentimentByTopic": (
+            "Material evaluations of specific topics such as support, price, implementation or "
+            "current systems. Extract supported positive, negative, neutral or mixed evaluations "
+            "individually, even if sentimentOverall differs. This is not a forecast or churn score."
+        ),
+    }
+    for field, description in descriptions.items():
+        commercial["properties"][field]["description"] = description
+    product = schema["$defs"]["CommercialProduct"]["properties"]
+    product["name"]["description"] = (
+        "Exact product name present in the selected evidence. Preserve its spelling; "
+        "do not replace it with a canonical name from the seller's catalogue."
+    )
+    product["relationship"] = dict(schema["$defs"]["ProductRelationship"])
+    product["relationship"]["description"] = (
+        "Only the CUSTOMER'S relationship to this product, with these mutually exclusive rules "
+        "in priority order: (1) CURRENT if the customer uses it NOW, including when replacing "
+        "it is discussed; CURRENT always wins even if it competes with the seller. "
+        "Past purchase, an abandoned implementation, returned licences or ended use do not "
+        "prove current use; classify a solely historical reference as MENTIONED. "
+        "(2) COMPETITOR only if NOT currently used and explicitly evaluated as an alternative "
+        "in a comparison or switching decision. (3) OPPORTUNITY for a requested product, need "
+        "or purchase interest without that explicit competing-alternative comparison. "
+        "(4) MENTIONED for a reference without usage, purchase interest or comparison evidence. "
+        "The seller's vendorCompetitorReference list never establishes this relationship. "
+        "Example: if the seller lists LedgerOne as a competitor and the customer says 'We use "
+        "LedgerOne today', return CURRENT, never COMPETITOR. 'We do not use NovaSuite and are "
+        "comparing it with your offer' supports COMPETITOR. These examples are not meeting facts."
+    )
+    schema["$defs"]["CommercialPersona"]["properties"]["speaker"]["description"] = (
+        "Literal anonymous speaker label or null. If role is non-null, keep a speaker only "
+        "when their own turn explicitly self-declares that role. Otherwise keep the role "
+        "with speaker null and decisionRole UNKNOWN, without reconstructing "
+        "a third party's identity."
+    )
+    for definition in (
+        "CommercialProduct",
+        "CommercialPersona",
+        "CommercialBudget",
+        "TopicSentiment",
+    ):
+        schema["$defs"][definition]["properties"]["sourceQuote"]["description"] = (
+            "Copy one contiguous verbatim passage from the transcript, at most 500 characters. "
+            "Preserve spelling, case, punctuation, speaker labels and PII placeholders. "
+            "Do not paraphrase, join distant passages, add ellipses or quote instructions/examples."
+        )
     return schema

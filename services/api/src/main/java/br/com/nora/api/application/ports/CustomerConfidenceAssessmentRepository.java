@@ -15,12 +15,16 @@ public interface CustomerConfidenceAssessmentRepository {
 
     CustomerConfidenceAssessment save(CustomerConfidenceAssessment assessment);
 
+    default void deleteByMeetingId(UUID meetingId, UUID tenantId) {
+        throw new UnsupportedOperationException("Assessment replacement is not supported");
+    }
+
     List<CustomerConfidenceAssessment> findByMeetingId(UUID meetingId, UUID tenantId);
 
     /**
-     * Most recent assessment (by {@code created_at} desc) of an account, excluding the given
-     * meeting. Used to compute the {@code trend} server-side: compares the new score with the one
-     * from the account's previous meeting. Empty when it is the account's first meeting.
+     * Most recent strictly earlier encounter (by meeting started_at) of an account, excluding the
+     * given meeting. Used to compute the {@code trend} server-side: compares the new score with the
+     * one from the account's previous meeting. Empty when it is the account's first meeting.
      *
      * @param accountId target account
      * @param excludeMeetingId current meeting (excluded to tolerate reprocessing)

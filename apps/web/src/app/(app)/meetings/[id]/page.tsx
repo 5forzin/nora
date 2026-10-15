@@ -9,6 +9,8 @@ import { formatDateTime, meetingInstant } from "@/lib/utils";
 import { MarkdownContent } from "@/components/markdown-content";
 import MeetingProductivitySection from "@/components/meeting-productivity-section";
 import CustomerConfidenceCard from "@/components/customer-confidence-card";
+import CommercialIntelligenceCard from "@/components/commercial-intelligence-card";
+import { CustomerMeetingHistory } from "@/components/customer-meeting-history";
 import { MeetingDangerZone, ReprocessButton } from "@/components/meeting-actions";
 import ExportMenu from "./export-menu";
 import MeetingProcessingPoller from "./processing-poller";
@@ -28,6 +30,8 @@ const PRIORITY_COLOR: Record<string, string> = {
   LOW: "var(--muted)",
 };
 
+const LEVEL_LABEL = { HIGH: "Alta", MEDIUM: "Média", LOW: "Baixa" };
+
 function durationLabel(seconds?: number): string | null {
   if (!seconds || seconds <= 0) return null;
   return `${Math.round(seconds / 60)}min`;
@@ -36,10 +40,16 @@ function durationLabel(seconds?: number): string | null {
 export default async function MeetingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   let meeting: MeetingDetail | undefined;
+  let isEnterprise = false;
   let permissions: Awaited<ReturnType<typeof getWorkspaceAccess>>['permissions'];
   try {
     const [detail, access] = await Promise.all([getMeeting(id), getWorkspaceAccess()]);
-    meeting = access.plan === "ENTERPRISE" ? detail : { ...detail, customerConfidence: null };
+    isEnterprise = access.plan === "ENTERPRISE";
+    meeting = isEnterprise ? detail : {
+      ...detail,
+      customerConfidence: null,
+      analysis: detail.analysis ? { ...detail.analysis, commercialIntelligence: null } : undefined,
+    };
     permissions = access.permissions;
   } catch (err) {
     // §3.4 — only a real 404 becomes "does not exist"; other errors (ex: 500)
@@ -113,6 +123,12 @@ export default async function MeetingDetailPage({ params }: { params: Promise<{ 
                   {t}
                 </span>
               ))}
+            </div>
+          )}
+          {(meeting.attributes?.externalId || meeting.attributes?.clientCode) && (
+            <div style={{ display: "flex", gap: "4px 14px", flexWrap: "wrap", marginTop: 12, fontSize: 12, color: "var(--muted)", overflowWrap: "anywhere" }}>
+              {meeting.attributes.externalId && <span>ID de origem {meeting.attributes.externalId}</span>}
+              {meeting.attributes.clientCode && <span>Cliente {meeting.attributes.clientCode}</span>}
             </div>
           )}
         </div>
@@ -227,7 +243,7 @@ export default async function MeetingDetailPage({ params }: { params: Promise<{ 
                       <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4, fontSize: 11.5, color: "var(--muted)", flexWrap: "wrap" }}>
                         <span>{t.assignee ?? "Sem responsável"}</span>
                         {t.dueDate && <span>vence {t.dueDate}</span>}
-                        <span style={{ color: PRIORITY_COLOR[t.priority] ?? "var(--muted)", letterSpacing: "0.04em" }}>{t.priority}</span>
+                        <span style={{ color: PRIORITY_COLOR[t.priority] ?? "var(--muted)", letterSpacing: "0.04em" }}>{LEVEL_LABEL[t.priority]}</span>
                       </div>
                       {t.sourceQuote && (
                         <div className="quote" style={{ marginTop: 8 }}>
@@ -257,7 +273,7 @@ export default async function MeetingDetailPage({ params }: { params: Promise<{ 
             <Section label="Riscos" right={`${a.risks.length}`}>
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 {a.risks.map((r: Risk, i) => (
-                  <SignalRow key={r.id ?? i} text={r.text} tag={`${r.severity} · ${r.category}`} color="var(--danger)" quote={r.sourceQuote} />
+                  <SignalRow key={r.id ?? i} text={r.text} tag={`${LEVEL_LABEL[r.severity]} · ${r.category}`} color="var(--danger)" quote={r.sourceQuote} />
                 ))}
               </div>
             </Section>
@@ -267,7 +283,7 @@ export default async function MeetingDetailPage({ params }: { params: Promise<{ 
             <Section label="Oportunidades" right={`${a.opportunities.length}`}>
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 {a.opportunities.map((o: Opportunity, i) => (
-                  <SignalRow key={o.id ?? i} text={o.text} tag={`${o.estimatedValue} · ${o.category}`} color="var(--success)" quote={o.sourceQuote} />
+                  <SignalRow key={o.id ?? i} text={o.text} tag={`${LEVEL_LABEL[o.estimatedValue]} · ${o.category}`} color="var(--success)" quote={o.sourceQuote} />
                 ))}
               </div>
             </Section>
@@ -287,9 +303,21 @@ export default async function MeetingDetailPage({ params }: { params: Promise<{ 
         </>
       )}
 
+      {a?.commercialIntelligence && (
+        <Section label="Contexto comercial">
+          <CommercialIntelligenceCard intelligence={a.commercialIntelligence} />
+        </Section>
+      )}
+
       {meeting.customerConfidence && (
         <Section label="Confiança do cliente">
           <CustomerConfidenceCard confidence={meeting.customerConfidence ?? null} />
+        </Section>
+      )}
+
+      {isEnterprise && meeting.attributes?.clientCode && (
+        <Section label="Histórico do cliente">
+          <CustomerMeetingHistory clientCode={meeting.attributes.clientCode} currentMeetingId={meeting.id} />
         </Section>
       )}
 

@@ -275,6 +275,7 @@ class AuthorizationCoverageIntegrationTest {
         calls.get("/meetings");
         calls.get("/meetings/search?q=proposta");
         calls.get("/meetings/participants");
+        calls.get("/meetings/customer-history?clientCode=C-42");
         calls.get("/meetings/" + meeting);
         calls.put("/meetings/" + meeting + "/goal", goalBody());
         calls.delete("/meetings/" + meeting + "/goal");

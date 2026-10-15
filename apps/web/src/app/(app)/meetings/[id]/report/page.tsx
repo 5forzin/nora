@@ -7,6 +7,7 @@ import { ApiRequestError, getMeeting } from "@/lib/api/client";
 import type { MeetingDetail, Severity } from "@/lib/api/types";
 import { formatDateTime, meetingInstant } from "@/lib/utils";
 import { MarkdownContent } from "@/components/markdown-content";
+import CommercialIntelligenceCard from "@/components/commercial-intelligence-card";
 import PrintButton from "./print-button";
 
 export const dynamic = "force-dynamic";
@@ -82,7 +83,11 @@ export default async function MeetingReportPage({ params }: { params: Promise<{ 
   let meeting: MeetingDetail | undefined;
   try {
     const [detail, access] = await Promise.all([getMeeting(id), getWorkspaceAccess()]);
-    meeting = access.plan === "ENTERPRISE" ? detail : { ...detail, customerConfidence: null };
+    meeting = access.plan === "ENTERPRISE" ? detail : {
+      ...detail,
+      customerConfidence: null,
+      analysis: detail.analysis ? { ...detail.analysis, commercialIntelligence: null } : undefined,
+    };
   } catch (err) {
     if (err instanceof ApiRequestError && err.status === 404) {
       notFound();
@@ -303,6 +308,12 @@ export default async function MeetingReportPage({ params }: { params: Promise<{ 
             </ReportSection>
           )}
 
+          {a?.commercialIntelligence && (
+            <ReportSection label="Contexto comercial">
+              <CommercialIntelligenceCard intelligence={a.commercialIntelligence} expandEvidence />
+            </ReportSection>
+          )}
+
           {meeting.customerConfidence && (
             <ReportSection label="Confiança do cliente">
               <div style={{ fontSize: 13.5, color: "var(--ink)" }}>
@@ -312,7 +323,9 @@ export default async function MeetingReportPage({ params }: { params: Promise<{ 
                     ? ` (${TREND_LABEL[meeting.customerConfidence.trend] ?? meeting.customerConfidence.trend})`
                     : ""}
                 </strong>
-                {meeting.customerConfidence.accountName ? (
+              {meeting.customerConfidence.clientCode ? (
+                  <span style={{ color: "var(--muted)" }}> · cliente: {meeting.customerConfidence.clientCode}</span>
+              ) : meeting.customerConfidence.accountName ? (
                   <span style={{ color: "var(--muted)" }}> · conta: {meeting.customerConfidence.accountName}</span>
                 ) : null}
               </div>

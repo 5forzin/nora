@@ -9,6 +9,10 @@ public interface CustomerAccountRepository {
 
     CustomerAccount save(CustomerAccount account);
 
+    default CustomerAccount getOrCreateByExternalCode(UUID tenantId, String clientCode) {
+        throw new UnsupportedOperationException("External customer codes are not supported");
+    }
+
     /**
      * Lookup by {@code (tenantId, LOWER(name))} — supports the account get-or-create
      * (case-insensitive dedup guaranteed by the UNIQUE index {@code

@@ -87,7 +87,7 @@ export default function CustomerConfidenceCard({
   // Internal meetings (no customer conversation) have no confidence: nothing to render.
   if (!confidence) return null;
 
-  const { score, band, trend, accountName, rationale, buyingSignals, objections } =
+  const { score, band, trend, accountName, clientCode, rationale, buyingSignals, objections } =
     confidence;
   const bandColor = BAND_COLOR[band];
 
@@ -96,10 +96,10 @@ export default function CustomerConfidenceCard({
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
         <div>
           <div className="sec-label" style={{ marginBottom: 4 }}>
-            Conta
+            {clientCode ? "Cliente" : "Conta"}
           </div>
           <div style={{ fontSize: 16, fontWeight: 500, letterSpacing: "-0.01em", color: "var(--ink)" }}>
-            {accountName ?? "Conta não identificada"}
+            {clientCode ?? accountName ?? "Conta não identificada"}
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>

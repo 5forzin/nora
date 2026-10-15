@@ -35,6 +35,12 @@ public class MeetingRepositoryAdapter implements MeetingRepository {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<Meeting> findByClientCode(UUID tenantId, String clientCode) {
+        return jpa.findByClientCode(tenantId, clientCode).stream().map(this::toDomain).toList();
+    }
+
+    @Override
     @Transactional
     public Meeting save(Meeting meeting) {
         MeetingJpaEntity entity = toEntity(meeting);

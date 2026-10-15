@@ -9,6 +9,9 @@ import org.springframework.data.repository.query.Param;
 public interface CustomerAccountJpaRepository
         extends JpaRepository<CustomerAccountJpaEntity, UUID> {
 
+    Optional<CustomerAccountJpaEntity> findByTenantIdAndExternalClientCode(
+            UUID tenantId, String externalClientCode);
+
     Optional<CustomerAccountJpaEntity> findByIdAndTenantId(UUID id, UUID tenantId);
 
     /**

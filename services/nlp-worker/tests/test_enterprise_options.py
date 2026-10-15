@@ -45,6 +45,7 @@ def test_disabled_confidence_is_null_even_if_the_provider_returns_it(fallback):
     response.pop("metadata")
     # Invalid commercial data must not survive or break the Core analysis.
     response["customerConfidence"] = {"score": 99, "unexpected": "restricted commercial result"}
+    response["commercialIntelligence"] = {"products": "restricted commercial result"}
     raw = json.dumps(response)
     client = MagicMock()
     client.chat_structured.return_value = (raw, 10, 20)
@@ -62,9 +63,13 @@ def test_disabled_confidence_is_null_even_if_the_provider_returns_it(fallback):
     ):
         result = llm_analyzer.analyze(_request(), settings)
     assert result.customer_confidence is None
+    assert result.commercial_intelligence is None
+    assert result.metadata.commercial_items_accepted == 0
+    assert result.metadata.commercial_items_rejected == 0
     assert "restricted commercial result" not in result.model_dump_json()
     first = client.chat_structured.call_args.kwargs
     assert first["json_schema"]["properties"]["customerConfidence"] == {"type": "null"}
+    assert first["json_schema"]["properties"]["commercialIntelligence"] == {"type": "null"}
     assert "Customer Confidence is disabled" in first["system_prompt"]
     if fallback:
         prompt = client.chat_json.call_args.kwargs["system_prompt"]

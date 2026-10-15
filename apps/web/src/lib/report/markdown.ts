@@ -10,6 +10,7 @@
 
 import type { MeetingDetail, Severity } from "@/lib/api/types";
 import { meetingInstant } from "@/lib/utils";
+import { BUDGET_APPROVAL_LABEL, BUDGET_KIND_LABEL, DECISION_ROLE_LABEL, PRODUCT_RELATIONSHIP_LABEL, TOPIC_SENTIMENT_LABEL, formatCommercialAmount } from '@/lib/commercial-intelligence';
 
 const BAND_LABEL: Record<string, string> = {
   LOW: "Baixa",
@@ -156,10 +157,35 @@ export function meetingToMarkdown(detail: MeetingDetail): string {
     if (p.rationale?.trim()) lines.push(p.rationale.trim(), "");
   }
 
+  if (a?.commercialIntelligence) {
+    const commercial = a.commercialIntelligence;
+    const evidence = (quote: string) => `> ${quote.replace(/\r?\n/g, '\n> ')}`;
+    lines.push('## Contexto comercial', '', '### Produtos', '');
+    if (!commercial.products.length) lines.push('Não identificado.', '');
+    for (const product of commercial.products) {
+      lines.push(`- **${product.name}** — ${PRODUCT_RELATIONSHIP_LABEL[product.relationship]}`, '', evidence(product.sourceQuote), '');
+    }
+    lines.push('### Pessoas e papéis', '');
+    if (!commercial.personas.length) lines.push('Não identificado.', '');
+    for (const persona of commercial.personas) {
+      lines.push(`- **${persona.speaker || 'Pessoa não identificada'}** — ${persona.role || 'Função não identificada'} · ${DECISION_ROLE_LABEL[persona.decisionRole]}`, '', evidence(persona.sourceQuote), '');
+    }
+    lines.push('### Valores', '');
+    if (!commercial.budgets.length) lines.push('Não identificado.', '');
+    for (const budget of commercial.budgets) {
+      lines.push(`- **${formatCommercialAmount(budget)}** — ${BUDGET_KIND_LABEL[budget.kind]} · ${BUDGET_APPROVAL_LABEL[budget.approval]}${budget.period ? ` · ${budget.period}` : ''}`, '', evidence(budget.sourceQuote), '');
+    }
+    lines.push('### Sentimento por tópico', '');
+    if (!commercial.sentimentByTopic.length) lines.push('Não identificado.', '');
+    for (const topic of commercial.sentimentByTopic) {
+      lines.push(`- **${topic.topic}** — ${TOPIC_SENTIMENT_LABEL[topic.sentiment]}`, '', evidence(topic.sourceQuote), '');
+    }
+  }
+
   if (detail.customerConfidence) {
     const c = detail.customerConfidence;
     const trend = c.trend ? ` (${TREND_LABEL[c.trend] ?? c.trend})` : "";
-    const account = c.accountName ? ` — conta: ${c.accountName}` : "";
+    const account = c.clientCode ? ` — cliente: ${c.clientCode}` : c.accountName ? ` — conta: ${c.accountName}` : "";
     lines.push(
       "## Confiança do cliente",
       "",

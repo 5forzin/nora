@@ -53,6 +53,7 @@ public final class AnalysisResponseMapper {
                         a.tokensOutput(),
                         a.processingMillis(),
                         a.piiRedactionsApplied()),
-                a.generatedAt());
+                a.generatedAt(),
+                a.commercialIntelligence());
     }
 }

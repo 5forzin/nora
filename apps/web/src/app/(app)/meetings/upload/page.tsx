@@ -53,6 +53,7 @@ import type { Route } from "next";
 import { ApiRequestError, getMeeting, listWorkflows, splitPreview, uploadMeeting } from "@/lib/api/client";
 import type { ProcessingStatus, SplitSegment } from "@/lib/api/types";
 import { useWorkspaceAccess } from "@/components/enterprise/workspace-provider";
+import { StructuredTranscriptImport } from "@/components/structured-transcript-import";
 
 type Format = "TXT" | "VTT" | "SRT";
 
@@ -165,11 +166,13 @@ export default function UploadMeetingPage() {
   if (!access?.permissions?.createMeetings) {
     return <div className="page"><h1 className="h1">Nova reunião</h1><p className="lede" style={{ marginTop: 12 }}>Você não tem permissão para enviar reuniões neste workspace.</p><Link href="/dashboard" className="btn btn-ghost" style={{ marginTop: 20 }}>Voltar às reuniões</Link></div>;
   }
-  return <UploadMeetingForm canReadFlows={access.permissions.readFlows === true} canManageFlows={access.permissions.manageFlows === true} />;
+  return <UploadMeetingForm canReadMeetings={access.permissions.readMeetings === true} canReprocessMeetings={access.permissions.reprocessMeetings === true} canReadFlows={access.permissions.readFlows === true} canManageFlows={access.permissions.manageFlows === true} />;
 }
 
-function UploadMeetingForm({ canReadFlows, canManageFlows }: { canReadFlows: boolean; canManageFlows: boolean }) {
+function UploadMeetingForm({ canReadMeetings, canReprocessMeetings, canReadFlows, canManageFlows }: { canReadMeetings: boolean; canReprocessMeetings: boolean; canReadFlows: boolean; canManageFlows: boolean }) {
   const router = useRouter();
+  const [importMode, setImportMode] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
 
   // Form state
   const [title, setTitle] = useState("");
@@ -661,6 +664,24 @@ function UploadMeetingForm({ canReadFlows, canManageFlows }: { canReadFlows: boo
   // language, participants and tags apply to all.
   const isBatchForm = files.length >= 2;
 
+  const modes = (
+    <div role="group" aria-label="Tipo de importação" style={{ display: "flex", gap: 8, marginBottom: 22 }}>
+      <button type="button" className={`btn ${importMode ? "btn-ghost" : "btn-primary"}`} aria-pressed={!importMode} disabled={importBusy} onClick={() => setImportMode(false)}>Transcrições</button>
+      {canReadMeetings && <button type="button" className={`btn ${importMode ? "btn-primary" : "btn-ghost"}`} aria-pressed={importMode} disabled={importBusy} onClick={() => setImportMode(true)}>JSON ou CSV</button>}
+    </div>
+  );
+
+  if (importMode && canReadMeetings) {
+    return (
+      <div className="page page--narrow" style={{ maxWidth: 760 }}>
+        <Breadcrumb />
+        <header style={{ marginBottom: 26 }}><h1 className="h1" style={{ fontSize: 26 }}>Importar reuniões</h1></header>
+        {modes}
+        <StructuredTranscriptImport onBusyChange={setImportBusy} canReprocess={canReprocessMeetings} />
+      </div>
+    );
+  }
+
   return (
     <div className="page page--narrow" style={{ maxWidth: 680 }}>
       <Breadcrumb />
@@ -673,6 +694,8 @@ function UploadMeetingForm({ canReadFlows, canManageFlows }: { canReadFlows: boo
           Suba uma ou mais transcrições (.txt, .vtt ou .srt) — a análise começa em segundo plano.
         </p>
       </header>
+
+      {modes}
 
       <form onSubmit={onSubmit} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         <Dropzone

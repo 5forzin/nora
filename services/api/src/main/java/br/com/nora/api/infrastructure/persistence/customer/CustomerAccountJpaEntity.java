@@ -11,6 +11,17 @@ import java.util.UUID;
 @Table(name = "customer_accounts")
 public class CustomerAccountJpaEntity {
 
+    @Column(name = "external_client_code")
+    private String externalClientCode;
+
+    public String getExternalClientCode() {
+        return externalClientCode;
+    }
+
+    public void setExternalClientCode(String value) {
+        externalClientCode = value;
+    }
+
     @Id private UUID id;
 
     @Column(name = "tenant_id", nullable = false)

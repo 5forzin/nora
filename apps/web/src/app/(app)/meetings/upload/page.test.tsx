@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const api = vi.hoisted(() => ({ upload: vi.fn(), meeting: vi.fn(), flows: vi.fn(), split: vi.fn() }));
-const permissions = vi.hoisted(() => ({ createMeetings: true, readFlows: true, manageFlows: true }));
+const permissions = vi.hoisted(() => ({ createMeetings: true, readMeetings: true, reprocessMeetings: true, readFlows: true, manageFlows: true }));
 vi.mock('@/components/enterprise/workspace-provider', () => ({
   useWorkspaceAccess: () => ({ access: { permissions }, loading: false }),
 }));
@@ -38,6 +38,8 @@ function file(text = 'Project meeting', name = 'project.txt') {
 
 beforeEach(() => {
   permissions.createMeetings = true;
+  permissions.readMeetings = true;
+  permissions.reprocessMeetings = true;
   permissions.readFlows = true;
   permissions.manageFlows = true;
   vi.clearAllMocks();
@@ -56,6 +58,14 @@ it('denies a direct upload route without mounting the form for a read-only user'
   render(<UploadMeetingPage />);
   expect(screen.getByText('Você não tem permissão para enviar reuniões neste workspace.')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Enviar e analisar' })).toBeNull();
+  expect(api.upload).not.toHaveBeenCalled();
+});
+
+it('keeps the transcript form available but hides structured imports without meeting read access', () => {
+  permissions.readMeetings = false;
+  render(<UploadMeetingPage />);
+  expect(screen.getByRole('button', { name: 'Enviar e analisar' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'JSON ou CSV' })).toBeNull();
   expect(api.upload).not.toHaveBeenCalled();
 });
 

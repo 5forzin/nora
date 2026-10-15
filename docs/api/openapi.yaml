@@ -1336,6 +1336,15 @@ paths:
         10MB) and the `metadata` part (JSON string `MeetingUploadMetadata`). Returns `202` while the
         NLP worker processes it asynchronously. A binary file/invalid extension returns `400`;
         exceeding the size limit returns `413 PAYLOAD_TOO_LARGE`.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          description: >
+            Optional tenant-and-user-scoped retry key. Identical transcript and metadata return
+            the original meeting without dispatching twice. Reusing a key with different data
+            returns 409; erased meetings retain a tombstone. Structured imports parse JSON/JSONL/CSV
+            in the browser, preview and select records, then send one TXT transcript per request.
+          schema: { type: string, pattern: '^[A-Za-z0-9_:-]{1,128}$', maxLength: 128 }
       requestBody:
         required: true
         content:
@@ -1363,6 +1372,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
 
@@ -1411,6 +1421,30 @@ paths:
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '502': { $ref: '#/components/responses/BadGateway' }
 
+  /meetings/customer-history:
+    get:
+      tags: [Meetings]
+      summary: Read dated encounters for one external client code
+      description: >
+        Enterprise only. Matches attributes.clientCode exactly after trimming the query.
+        Returns only meetings authorized by meeting:read, oldest startedAt first, with unknown
+        dates last and stable ID ordering. At most 200 authorized encounters are returned;
+        truncated means more authorized encounters exist. A common code identifies a client,
+        not a shared opportunity or a causal progression. Analysis generation time is not chronology.
+      parameters:
+        - in: query
+          name: clientCode
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 256 }
+      responses:
+        '200':
+          description: Authorized client encounters
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerHistory' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /meetings/{id}:
     get:
       tags: [Meetings]
@@ -3532,9 +3566,9 @@ components:
           type: array
           items: { type: string }
         attributes:
+          description: Optional source metadata. externalId identifies a source meeting; clientCode identifies the customer (CODT). Client codes are never sent as LLM evidence or used to infer an account name.
           type: object
           additionalProperties: { type: string }
-          description: 'Free-form attributes (max 20) used for fine-grained IAM filtering.'
     Participant:
       type: object
       required: [displayName]
@@ -3668,6 +3702,14 @@ components:
         participants:
           type: array
           items: { $ref: '#/components/schemas/Participant' }
+        attributes:
+          type: object
+          additionalProperties: { type: string }
+          description: Imported metadata; externalId identifies the source meeting and clientCode identifies the external client (for example CODT).
+        customerConfidence:
+          oneOf:
+            - { $ref: '#/components/schemas/CustomerConfidence' }
+            - { type: 'null' }
         tags:
           type: array
           items: { type: string }
@@ -3716,6 +3758,11 @@ components:
         opportunities:
           type: array
           items: { $ref: '#/components/schemas/Opportunity' }
+        commercialIntelligence:
+          oneOf:
+            - { $ref: '#/components/schemas/CommercialIntelligence' }
+            - { type: 'null' }
+          description: Evidence-backed commercial facts; null for Core, old analyses, or unsupported conversations. Rechecked against the stored tenant plan on every read.
         metadata:
           type: object
           properties:
@@ -3726,6 +3773,108 @@ components:
             processingMillis: { type: integer }
             piiRedactionsApplied: { type: integer }
         generatedAt: { type: string, format: date-time }
+    CommercialIntelligence:
+      type: object
+      required: [products, personas, budgets, sentimentByTopic]
+      properties:
+        products:
+          type: array
+          maxItems: 30
+          items:
+            type: object
+            required: [name, relationship, sourceQuote]
+            properties:
+              name: { type: string, minLength: 1 }
+              relationship: { type: string, enum: [CURRENT, OPPORTUNITY, COMPETITOR, MENTIONED] }
+              sourceQuote: { type: string, minLength: 1 }
+        personas:
+          type: array
+          maxItems: 30
+          items:
+            type: object
+            required: [speaker, role, decisionRole, sourceQuote]
+            properties:
+              speaker: { type: [string, 'null'], description: Anonymized speaker label when supported by the quote. }
+              role: { type: [string, 'null'] }
+              decisionRole: { type: string, enum: [DECISION_MAKER, INFLUENCER, USER, UNKNOWN] }
+              sourceQuote: { type: string, minLength: 1 }
+        budgets:
+          type: array
+          maxItems: 30
+          items:
+            type: object
+            required: [amount, currency, kind, approval, period, sourceQuote]
+            properties:
+              amount: { type: [number, 'null'], minimum: 0 }
+              currency: { type: [string, 'null'] }
+              kind: { type: string, enum: [BUDGET, PROPOSAL, PRICE, REVENUE, OTHER] }
+              approval: { type: string, enum: [APPROVED, NOT_APPROVED, UNKNOWN] }
+              period: { type: [string, 'null'] }
+              sourceQuote: { type: string, minLength: 1 }
+        sentimentByTopic:
+          type: array
+          maxItems: 30
+          items:
+            type: object
+            required: [topic, sentiment, sourceQuote]
+            properties:
+              topic: { type: string, minLength: 1 }
+              sentiment: { type: string, enum: [POSITIVE, NEUTRAL, NEGATIVE, MIXED] }
+              sourceQuote: { type: string, minLength: 1 }
+    CustomerConfidence:
+      type: object
+      description: Enterprise assessment. External client codes bind anonymized encounters without reconstructing a company name. Trend compares strictly earlier dated encounters, never processing time; unknown chronology returns null.
+      required: [score, band, trend, accountName, clientCode, rationale, buyingSignals, objections]
+      properties:
+        score: { type: integer, minimum: 0, maximum: 100 }
+        band: { type: string, enum: [LOW, MEDIUM, HIGH] }
+        trend: { type: [string, 'null'], enum: [IMPROVING, STABLE, DECLINING, null] }
+        accountName: { type: [string, 'null'] }
+        clientCode: { type: [string, 'null'] }
+        rationale: { type: string }
+        buyingSignals:
+          type: array
+          items:
+            type: object
+            properties:
+              type: { type: string }
+              quote: { type: string }
+              weight: { type: [number, 'null'] }
+        objections:
+          type: array
+          items:
+            type: object
+            properties:
+              type: { type: string }
+              quote: { type: string }
+              severity: { type: string }
+              competitor: { type: [string, 'null'] }
+    CustomerHistory:
+      type: object
+      required: [clientCode, items, truncated]
+      properties:
+        clientCode: { type: string }
+        truncated: { type: boolean }
+        items:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            required: [id, title, startedAt, processingStatus, summarySnippet, commercialIntelligence, customerConfidence]
+            properties:
+              id: { type: string, format: uuid }
+              title: { type: string }
+              startedAt: { type: [string, 'null'], format: date-time }
+              processingStatus: { $ref: '#/components/schemas/ProcessingStatus' }
+              summarySnippet: { type: [string, 'null'] }
+              commercialIntelligence:
+                oneOf:
+                  - { $ref: '#/components/schemas/CommercialIntelligence' }
+                  - { type: 'null' }
+              customerConfidence:
+                oneOf:
+                  - { $ref: '#/components/schemas/CustomerConfidence' }
+                  - { type: 'null' }
     ActionItem:
       type: object
       required: [title]

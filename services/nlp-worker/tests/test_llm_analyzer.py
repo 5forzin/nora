@@ -1,7 +1,7 @@
 """Tests for the LLM analyzer with a mocked LLM client.
 
-Validates the full pipeline (prompt loading -> tenant context injection ->
-LLM call -> Pydantic validation) without real API cost.
+Validates extraction and summary verification without real API cost. Product
+review integration has its own suite in test_product_verifier.py.
 """
 
 from __future__ import annotations
@@ -22,6 +22,15 @@ from nora_nlp.settings import Settings
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 DATA_DIR = REPO_ROOT / "data" / "synthetic"
+
+
+@pytest.fixture(autouse=True)
+def _isolate_product_review():
+    with patch(
+        "nora_nlp.services.llm_analyzer.verify_products",
+        side_effect=lambda _, intelligence, *args: (intelligence, 0, 0),
+    ):
+        yield
 
 
 def _make_settings() -> Settings:
@@ -117,6 +126,12 @@ _FAKE_LLM_RESPONSE = {
         {"name": "Carlos", "role": "Gerente Comercial", "mentionCount": 8},
         {"name": "Ana", "role": "Diretora Financeira", "mentionCount": 5},
     ],
+    "commercialIntelligence": {
+        "products": [],
+        "personas": [],
+        "budgets": [],
+        "sentimentByTopic": [],
+    },
 }
 
 
@@ -369,6 +384,12 @@ def test_analyze_handles_minimal_llm_response(MockClient):
         "sentimentOverall": "NEUTRAL",
         "topics": ["alinhamento"],
         "participants": [],
+        "commercialIntelligence": {
+            "products": [],
+            "personas": [],
+            "budgets": [],
+            "sentimentByTopic": [],
+        },
     }
     mock_instance = MagicMock()
     mock_instance.chat_structured.return_value = (

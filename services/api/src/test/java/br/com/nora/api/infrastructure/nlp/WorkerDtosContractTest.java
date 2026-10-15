@@ -57,6 +57,30 @@ class WorkerDtosContractTest {
         assertThat(json.path("products").get(0).has("keyDifferentiators")).isTrue();
     }
 
+    @Test
+    void commercialFactsPreserveUnknownsAndFinancialKinds() throws Exception {
+        WorkerDtos.AnalyzeResponse response =
+                MAPPER.readValue(
+                        """
+            {"commercialIntelligence": {
+              "products":[{"name":"ERP","relationship":"CURRENT","sourceQuote":"We use ERP"}],
+              "personas":[{"speaker":null,"role":null,"decisionRole":"UNKNOWN","sourceQuote":"We use ERP"}],
+              "budgets":[{"amount":120000,"currency":"BRL","kind":"REVENUE","approval":"UNKNOWN","period":"yearly","sourceQuote":"Revenue is BRL 120000 yearly"}],
+              "sentimentByTopic":[{"topic":"Support","sentiment":"NEGATIVE","sourceQuote":"Support is slow"}]
+            }}
+            """,
+                        WorkerDtos.AnalyzeResponse.class);
+        assertThat(response.commercialIntelligence().personas().getFirst().role()).isNull();
+        assertThat(response.commercialIntelligence().budgets().getFirst().kind().name())
+                .isEqualTo("REVENUE");
+        assertThat(response.commercialIntelligence().budgets().getFirst().approval().name())
+                .isEqualTo("UNKNOWN");
+        assertThat(
+                        MAPPER.readValue("{}", WorkerDtos.AnalyzeResponse.class)
+                                .commercialIntelligence())
+                .isNull();
+    }
+
     private static Set<String> fieldNames(JsonNode node) {
         Iterator<String> it = node.fieldNames();
         java.util.HashSet<String> names = new java.util.HashSet<>();

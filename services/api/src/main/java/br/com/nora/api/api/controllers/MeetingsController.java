@@ -3,6 +3,7 @@ package br.com.nora.api.api.controllers;
 import br.com.nora.api.api.dto.analysis.AnalysisResponse;
 import br.com.nora.api.api.dto.analysis.AnalysisResponseMapper;
 import br.com.nora.api.api.dto.meeting.CustomerConfidenceResponse;
+import br.com.nora.api.api.dto.meeting.CustomerHistoryResponse;
 import br.com.nora.api.api.dto.meeting.LiveAnalyzeDtos;
 import br.com.nora.api.api.dto.meeting.MeetingDetailResponse;
 import br.com.nora.api.api.dto.meeting.MeetingGoalRequest;
@@ -18,6 +19,7 @@ import br.com.nora.api.api.dto.meeting.ProductivityAssessmentResponse;
 import br.com.nora.api.api.dto.meeting.SplitPreviewDtos;
 import br.com.nora.api.api.security.AuthorizationNotRequired;
 import br.com.nora.api.api.security.CurrentUser;
+import br.com.nora.api.api.security.RequiresEnterprise;
 import br.com.nora.api.api.security.RequiresPermission;
 import br.com.nora.api.api.security.RequiresPermission.ResourceType;
 import br.com.nora.api.api.security.ResourceArns;
@@ -25,6 +27,7 @@ import br.com.nora.api.application.analysis.AnalysisException;
 import br.com.nora.api.application.analysis.AnalysisService;
 import br.com.nora.api.application.analysis.LiveAnalysisService;
 import br.com.nora.api.application.customer.CustomerConfidenceService;
+import br.com.nora.api.application.customer.CustomerHistoryService;
 import br.com.nora.api.application.embedding.EmbeddingService;
 import br.com.nora.api.application.iam.AuthorizationService;
 import br.com.nora.api.application.meeting.MeetingException;
@@ -88,6 +91,7 @@ public class MeetingsController {
 
     private static final Set<String> ALLOWED_FORMATS = Set.of("TXT", "VTT", "SRT");
 
+    private final CustomerHistoryService customerHistory;
     private final MeetingService meetings;
     private final MeetingUploadService uploads;
     private final AnalysisService analyses;
@@ -125,7 +129,9 @@ public class MeetingsController {
             EmbeddingService embeddings,
             ParticipantIdentityService participantIdentities,
             UserRepository users,
-            AiSpendRateLimiter spendLimiter) {
+            AiSpendRateLimiter spendLimiter,
+            CustomerHistoryService customerHistory) {
+        this.customerHistory = customerHistory;
         this.meetings = meetings;
         this.uploads = uploads;
         this.analyses = analyses;
@@ -554,6 +560,41 @@ public class MeetingsController {
                 .toList();
     }
 
+    @GetMapping("/customer-history")
+    @RequiresEnterprise
+    @RequiresPermission(action = "meeting:read", resource = ResourceType.MEETING, anyAllow = true)
+    public CustomerHistoryResponse customerHistory(@RequestParam("clientCode") String clientCode) {
+        var principal = CurrentUser.require();
+        var history = customerHistory.find(principal.tenantId(), principal.userId(), clientCode);
+        var items =
+                history.items().stream()
+                        .map(
+                                meeting ->
+                                        new CustomerHistoryResponse.Item(
+                                                meeting.id(),
+                                                meeting.title(),
+                                                meeting.startedAt(),
+                                                meeting.processingStatus().name(),
+                                                meeting.summarySnippet(),
+                                                analyses.findByMeeting(
+                                                                meeting.id(), principal.tenantId())
+                                                        .map(a -> a.commercialIntelligence())
+                                                        .orElse(null),
+                                                customerConfidence
+                                                        .findViewByMeetingId(
+                                                                meeting.id(),
+                                                                principal.tenantId(),
+                                                                principal.userId())
+                                                        .stream()
+                                                        .findFirst()
+                                                        .map(
+                                                                MeetingsController
+                                                                        ::toConfidenceResponse)
+                                                        .orElse(null)))
+                        .toList();
+        return new CustomerHistoryResponse(history.clientCode(), items, history.truncated());
+    }
+
     @GetMapping("/{id}")
     @AuthorizationNotRequired(reason = "Body: authorizes on the loaded meeting's attributes.")
     public MeetingDetailResponse get(@PathVariable("id") UUID id) {
@@ -583,7 +624,9 @@ public class MeetingsController {
         // Customer Confidence (ADR 0015): at most one assessment per account; the detail exposes
         // the first one (a meeting typically touches one account). Null for internal meetings.
         CustomerConfidenceResponse confidenceDto =
-                customerConfidence.findViewByMeetingId(m.id(), principal.tenantId()).stream()
+                customerConfidence
+                        .findViewByMeetingId(m.id(), principal.tenantId(), principal.userId())
+                        .stream()
                         .findFirst()
                         .map(MeetingsController::toConfidenceResponse)
                         .orElse(null);
@@ -609,7 +652,8 @@ public class MeetingsController {
                 productivityDto,
                 confidenceDto,
                 m.createdAt(),
-                m.updatedAt());
+                m.updatedAt(),
+                m.attributes());
     }
 
     /**
@@ -860,7 +904,8 @@ public class MeetingsController {
                                                 o.quote(),
                                                 o.severity().name(),
                                                 o.competitor()))
-                        .toList());
+                        .toList(),
+                view.clientCode());
     }
 
     private MeetingUploadMetadata parseMetadata(String json) {

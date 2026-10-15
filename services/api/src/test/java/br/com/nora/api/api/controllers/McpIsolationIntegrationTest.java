@@ -7,6 +7,7 @@ import br.com.nora.api.application.embedding.EmbeddingService;
 import br.com.nora.api.application.ports.EmbeddingClient;
 import br.com.nora.api.application.ports.NlpWorkerClient;
 import br.com.nora.api.domain.analysis.ActionItem;
+import br.com.nora.api.domain.analysis.CommercialIntelligence;
 import br.com.nora.api.domain.analysis.MeetingAnalysis;
 import br.com.nora.api.domain.analysis.Priority;
 import br.com.nora.api.domain.analysis.Sentiment;
@@ -182,6 +183,69 @@ class McpIsolationIntegrationTest {
         JsonNode search = call(member, "search_meetings", Map.of("query", "renovacao"));
         List<String> hits = idsOf(structured(search), "meetings");
         assertThat(hits).containsExactly(beta.meetingId().toString());
+    }
+
+    @Test
+    void commercialFactsFollowTheCurrentPlanInReadOnlyMcp() throws Exception {
+        Workspace ws = workspace("mcp-commercial-root@nora.dev", "Commercial");
+        JsonNode before =
+                structured(call(ws.mcp(), "get_meeting", Map.of("meetingId", ws.meetingId())));
+        assertThat(
+                        before.path("analysis")
+                                .path("commercialIntelligence")
+                                .path("products")
+                                .get(0)
+                                .path("name")
+                                .asText())
+                .isEqualTo("ERP");
+        jdbc.update("UPDATE tenants SET plan = 'FREE' WHERE id = ?", ws.tenantId());
+        JsonNode after =
+                structured(call(ws.mcp(), "get_meeting", Map.of("meetingId", ws.meetingId())));
+        assertThat(after.path("analysis").path("commercialIntelligence").isNull()).isTrue();
+    }
+
+    @Test
+    void customerHistoryFiltersConditionalDenyBeforeReturningCommercialData() throws Exception {
+        Workspace ws = workspace("history-cond-root@nora.dev", "History");
+        UUID visible =
+                uploadAndIndex(
+                        ws, "Sales encounter", Map.of("clientCode", "C-42", "department", "Sales"));
+        UUID hidden =
+                uploadAndIndex(
+                        ws, "Legal encounter", Map.of("clientCode", "C-42", "department", "Legal"));
+        jdbc.update(
+                "UPDATE meetings SET started_at = '2026-03-10T15:00:00Z' WHERE id = ?", visible);
+        jdbc.update("UPDATE meetings SET started_at = '2026-02-10T15:00:00Z' WHERE id = ?", hidden);
+        JsonNode rootDetail =
+                mapper.readTree(
+                        exchange(HttpMethod.GET, "/meetings/" + visible, null, ws.jwt()).getBody());
+        assertThat(rootDetail.path("customerConfidence").path("trend").asText())
+                .isEqualTo("STABLE");
+        UUID memberId = insertActiveMember(ws.tenantId(), "history-cond-member@nora.dev", "Member");
+        String allow = statement("Allow", "meeting:read", arn(ws.tenantId(), ":meeting/*"));
+        String deny =
+                conditionalStatement(
+                        "Deny",
+                        "meeting:read",
+                        arn(ws.tenantId(), ":meeting/*"),
+                        "{\"StringEquals\":{\"department\":\"Legal\"}}");
+        attach(
+                ws.jwt(),
+                memberId,
+                createPolicy(ws.jwt(), "HistoryDenyLegal", document(allow, deny)));
+        String member = login("history-cond-member@nora.dev");
+        var response =
+                exchange(
+                        HttpMethod.GET, "/meetings/customer-history?clientCode=C-42", null, member);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode history = mapper.readTree(response.getBody());
+        assertThat(idsOf(history, "items"))
+                .containsExactly(visible.toString())
+                .doesNotContain(hidden.toString());
+        assertThat(history.path("items").get(0).path("commercialIntelligence").isNull()).isFalse();
+        assertThat(history.path("items").get(0).path("customerConfidence").path("trend").isNull())
+                .isTrue();
+        assertThat(history.path("truncated").asBoolean()).isFalse();
     }
 
     /* ======================= half two: policy Deny ====================== */
@@ -537,7 +601,20 @@ class McpIsolationIntegrationTest {
                                     List.of(signal),
                                     List.of(),
                                     "rationale do stub para o teste de isolamento do MCP");
-                    return AnalysisResult.of(analysis, null, carrier);
+                    return AnalysisResult.of(
+                            analysis.withCommercialIntelligence(
+                                    new CommercialIntelligence(
+                                            List.of(
+                                                    new CommercialIntelligence.Product(
+                                                            "ERP",
+                                                            CommercialIntelligence.Relationship
+                                                                    .CURRENT,
+                                                            "We use ERP")),
+                                            List.of(),
+                                            List.of(),
+                                            List.of())),
+                            null,
+                            carrier);
                 }
 
                 @Override

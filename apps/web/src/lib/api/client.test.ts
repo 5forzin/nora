@@ -152,6 +152,33 @@ describe('request — the call it makes', () => {
     // cookies instead of in the response body. Dropping it silently downgrades an XSS defence.
     expect(headersOf(0)['X-NORA-Client']).toBe('web');
   });
+
+  it('preserves import identifiers and the idempotency key in multipart uploads', async () => {
+    fetchMock.mockResolvedValue(respond(202, { body: { id: 'meeting-imported', processingStatus: 'PENDING' } }));
+    const { uploadMeeting } = await loadClient();
+    await uploadMeeting({
+      title: 'Imported meeting', language: 'pt-BR', transcriptFormat: 'TXT',
+      attributes: { externalId: 'meeting-42', clientCode: 'C-18' },
+      idempotencyKey: 'import:v1:stable-key', file: new File(['Transcript'], 'transcript.txt'),
+    });
+    expect(headersOf(0)['Idempotency-Key']).toBe('import:v1:stable-key');
+    expect(headersOf(0)['Content-Type']).toBeUndefined();
+    const metadata = (initOf(0).body as FormData).get('metadata') as Blob;
+    const metadataText = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsText(metadata);
+    });
+    expect(JSON.parse(metadataText)).toMatchObject({ attributes: { externalId: 'meeting-42', clientCode: 'C-18' }, transcriptFormat: 'TXT' });
+  });
+
+  it('encodes an imported customer code in the authorized history request', async () => {
+    fetchMock.mockResolvedValue(respond(200, { body: { clientCode: 'A&B/42', items: [], truncated: false } }));
+    const { getCustomerMeetingHistory } = await loadClient();
+    await getCustomerMeetingHistory('A&B/42');
+    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE}/meetings/customer-history?clientCode=A%26B%2F42`);
+    expect(initOf(0).credentials).toBe('include');
+  });
 });
 
 describe('request — the 401 interceptor', () => {

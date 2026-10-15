@@ -1,8 +1,6 @@
 # Product Vision — NORA
 
 > Product reference document. Source of truth for **What** NORA is, for **whom**, and **why**.
->
-> For the **Agile Methodology with Squad Framework** course (Sprint 1+2, FIAP Challenge 2026 × TOTVS) this doc serves as the main Vision Statement.
 
 ## 1. Vision Statement
 
@@ -51,9 +49,9 @@ boundary is enforced by the API and reflected in the web navigation, as decided 
 
 | Core (`FREE` / `PRO`) | Enterprise (`ENTERPRISE`) adds |
 |---|---|
-| Capture, transcripts, summaries, decisions and action items | Executive overview across authorized company meetings |
+| Capture, structured transcript import, summaries, decisions and action items | Executive overview across authorized company meetings |
 | Optional Productivity Score, projects, tasks and trends | Company context, products, competitors and version history |
-| Chat over authorized meetings, grounded by semantic search | Customer Confidence for supported commercial meetings |
+| Chat over authorized meetings, grounded by semantic search | Customer Confidence, commercial evidence and dated client history |
 | Configured integrations, Flows and read-only MCP | Company users and invitations |
 | Account, security and workspace settings | IAM groups, policies, boundaries, simulator and audit |
 
