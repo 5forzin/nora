@@ -509,16 +509,18 @@ async function buildWorkspaceContext(
   cookieHeader: string,
   query: string,
   readCompanyContext: boolean,
+  appendTaskEvidence: boolean,
 ): Promise<WorkspaceContext> {
   const headers = { Cookie: cookieHeader, Accept: "application/json" };
   const api = { apiBaseUrl: API_BASE_URL, headers, timeoutMs: INTERNAL_CALL_TIMEOUT_MS };
   const [meetings, tasks, tenantContext] = await Promise.all([
-    fetchMeetingContext(api, query),
+    fetchMeetingContext(api, query, { includeActionItems: !appendTaskEvidence }),
     fetchPendingTaskContext(api),
     readCompanyContext ? fetchTenantContext(headers) : Promise.resolve(null),
   ]);
   const parts = tenantContext ? buildTenantContextLines(tenantContext) : [];
-  parts.push(meetings.text, tasks.text);
+  parts.push(meetings.text);
+  if (!appendTaskEvidence) parts.push(tasks.text);
   return { text: parts.filter(Boolean).join("\n\n"), sources: meetings.sources, pendingTasks: tasks };
 }
 
@@ -645,10 +647,12 @@ export async function POST(req: Request): Promise<Response> {
   // would leak out raw before the history/context redaction gate below.
   const lastUserMsg = [...history].reverse().find((m) => m.role === "user")?.content ?? "";
   const safeQuery = redactPii(lastUserMsg);
-  phase("workspace-context");
-  const workspaceContext = await buildWorkspaceContext(cookieHeader, safeQuery, session.readCompanyContext);
   const needsTaskList = /diretor|executiv|panorama|consolid/i.test(safeQuery)
     && /pend[eê]ncia|tarefas|pending|tasks|action\s*items/i.test(safeQuery);
+  phase("workspace-context");
+  const workspaceContext = await buildWorkspaceContext(
+    cookieHeader, safeQuery, session.readCompanyContext, needsTaskList,
+  );
   const taskEvidence = needsTaskList
     ? formatPendingTaskEvidence(workspaceContext.pendingTasks, workspaceContext.sources)
     : "";
@@ -681,7 +685,7 @@ export async function POST(req: Request): Promise<Response> {
     : `${SYSTEM_PROMPT}\n\n(Sem contexto de workspace disponível agora — responda de forma geral e, se precisar de dados de reuniões, peça pro usuário abrir/enviar a reunião.)`;
 
   const answerInstructions = taskEvidence
-    ? `${systemContent}\n\nNeste panorama, concentre a análise em decisões, riscos e relações entre áreas. O aplicativo anexará a lista atual de pendências consultadas, com responsáveis, prazos e fontes. Não reproduza essa lista nem crie uma seção de tarefas: ela será anexada diretamente após sua resposta. Não equipare as tarefas anexadas a critérios obrigatórios de liberação.`
+    ? `${systemContent}\n\nNeste panorama, concentre a análise em decisões, riscos e relações entre áreas. O aplicativo anexará a lista atual de pendências consultadas, com responsáveis, prazos e fontes. Não reproduza essa lista nem crie uma seção de tarefas: ela será anexada diretamente após sua resposta. Para cada critério obrigatório de liberação que você afirmar, indique o link da reunião que registre explicitamente essa condição. Resumos e decisões são interpretações da análise: não os apresente entre aspas como fala literal da transcrição. Sem evidência explícita de uma condição, descreva apenas o estado conhecido. Preserve o sentido da dependência: executar X após Y significa que Y condiciona X; isso não torna X uma condição de liberação de outro evento. Não derive critérios de tarefas extraídas ou de ausência de data.`
     : systemContent;
   const messages: ChatMessage[] = [{ role: "system", content: answerInstructions }, ...safeHistory];
   // Already resolved in the authentication gate above — no second trip to /auth/me.

@@ -168,6 +168,28 @@ describe('meeting context', () => {
     expect(formatMeetingSources(result.sources)).not.toContain(OTHER_ID);
   });
 
+  it('omits generated action items when the application supplies tasks separately', async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/search?') || url.includes('/meetings?'))
+        return json({ items: [{ id: ID }] });
+      return json(meeting());
+    });
+
+    const result = await fetchMeetingContext(API, 'Executive blockers', { includeActionItems: false });
+    expect(result.text).not.toContain('Meeting action items');
+    expect(result.text).not.toContain('Confirm delivery date');
+    expect(result.text).not.toContain('Sales owner');
+    expect(result.text).not.toContain('Send the revised plan.');
+    expect(result.text).toContain('The client may leave unless delivery recovers.');
+    expect(result.text).toContain('Escalate the supplier delay');
+    expect(result.text).toContain('Renewal is at risk');
+    expect(result.text).toContain('Delivery is six weeks late.');
+    expect(result.text).toContain('Expand after recovery');
+    expect(result.sources).toEqual([{ reference: 'M1', id: ID, title: 'Renewal review' }]);
+    expect(formatMeetingSources(result.sources)).toContain(`(/meetings/${ID})`);
+  });
+
   it('falls back to recent meetings when semantic search fails and bounds detail fan-out', async () => {
     const candidates = Array.from({ length: 15 }, (_, i) => ({
       id: `aaaaaaaa-aaaa-4aaa-8aaa-${String(i).padStart(12, '0')}`,
