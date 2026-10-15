@@ -24,6 +24,19 @@ info:
     of this document describes: `Platform Admin` and `Platform Internal`. Each operation says who
     authenticates it.
 
+    ## Workspace plans
+    `FREE` and `PRO` are Core. `ENTERPRISE` additionally enables IAM administration and
+    invitations, company context and its history, corporate domain settings, Customer Confidence
+    and its workflow condition. These endpoints return `403 ENTERPRISE_REQUIRED` for Core,
+    independently of the Root IAM bypass. Each Enterprise request still requires its IAM grant.
+    The current plan and effective navigation capabilities are available to every authenticated
+    member through `GET /auth/me`; the plan is read from the database on every request.
+    Core meeting details return `customerConfidence: null`, and the Core MCP catalogue excludes
+    `get_customer_confidence`; calling that tool directly returns an error tool result.
+    Flows using `customer_confidence_below` are omitted from Core listings. Direct reads, edits,
+    manual tests and execution history require Enterprise, including after a plan downgrade;
+    background execution rechecks the plan before evaluating conditions or running actions.
+
     ## Authentication
     Most endpoints require a JWT. There are two equivalent transport modes:
 
@@ -484,6 +497,28 @@ paths:
                 items: { type: string, format: uuid }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+
+  /iam/groups/{id}/policies:
+    get:
+      tags: [IAM]
+      summary: Lists policy IDs attached to the group
+      description: |
+        Enterprise only. Requires both `iam:policy:read` and `iam:group:read` on the tenant IAM
+        resource. Returns actual attachments; policy name or document alone never implies that
+        a group has the grant. A group outside the caller's tenant is indistinguishable from
+        a nonexistent group.
+      parameters: [{ $ref: '#/components/parameters/GroupId' }]
+      responses:
+        '200':
+          description: Attached policy IDs, ordered by ID
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string, format: uuid }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /iam/groups/{id}/members/{userId}:
     post:
@@ -2525,12 +2560,13 @@ paths:
       summary: What an embeddings backfill would do
       description: |
         Operator only, and free: it makes no call to the embedding provider, only SQL over
-        `meetings` and `meeting_embeddings`. Answers the question the RAG index cannot answer by
+        `meetings`, `meeting_analyses` and `meeting_embeddings`. Answers the question the RAG index cannot answer by
         itself — which tenants are invisible to `GET /meetings/search`, and why.
 
         A meeting counts as pending when it has an analysed summary and either no vector at all
-        (`missingVector`) or a vector produced by a different provider/model (`staleModel`). The
-        search only compares vectors from the same space, so those two are equally invisible.
+        (`missingVector`), a vector produced by a different provider/model (`staleModel`), or
+        a vector built from a truncated summary (`staleContent`). Search ignores wrong-model
+        vectors; truncated-summary vectors can miss relevant subjects from the full summary.
 
         `enabled: false` means no embedding credential is configured: the counters are still real,
         but `POST` would be refused with `409`. `source` names the database role that answered —
@@ -2551,13 +2587,13 @@ paths:
       summary: Runs a bounded embeddings backfill for one tenant
       description: |
         Operator only. Indexes up to `limit` pending meetings of `tenantId`, one embedding call
-        each, using the summary already stored on the meeting — it never re-runs the LLM analysis,
+        each, using the full summary already stored in the analysis — it never re-runs the LLM analysis,
         which is what `POST /meetings/{id}/reprocess` costs today for the same effect.
 
         Every call is billed, so the shape is deliberate: `tenantId` is required (never implicitly
         every tenant), `limit` defaults to 25 and is clamped to 100, and a run also stops early
         when it exhausts a 60s budget or hits 3 consecutive provider failures — `stoppedReason`
-        says which. Idempotent: a meeting that already carries a vector from the current model is
+        says which. Idempotent: a meeting with a full-summary vector from the current model is
         not a candidate, so repeating a run costs nothing.
 
         `remaining` is re-measured after the run rather than subtracted, and the usage is recorded
@@ -2973,7 +3009,7 @@ components:
           description: Present only in non-production environments; always `null` in production.
     Me:
       type: object
-      required: [userId, tenantId, email, emailVerified, createdAt]
+      required: [userId, tenantId, email, emailVerified, createdAt, tenantName, plan, root, capabilities, permissions]
       description: Identity of the authenticated user. Returned by `GET /auth/me` and `PATCH /users/me`.
       properties:
         userId: { type: string, format: uuid }
@@ -2982,6 +3018,49 @@ components:
         displayName: { type: [string, 'null'] }
         emailVerified: { type: boolean }
         createdAt: { type: string, format: date-time }
+        tenantName: { type: string }
+        plan:
+          type: string
+          enum: [FREE, PRO, ENTERPRISE]
+          description: Authoritative current workspace plan. FREE and PRO are Core.
+        root: { type: boolean }
+        capabilities:
+          type: object
+          description: Effective Enterprise entry points. All are false for Core; IAM still gates each operation.
+          required: [manageUsers, manageAccess, readCompanyContext, manageCompanyContext, viewExecutiveOverview]
+          properties:
+            manageUsers: { type: boolean }
+            manageAccess: { type: boolean }
+            readCompanyContext: { type: boolean }
+            manageCompanyContext: { type: boolean }
+            viewExecutiveOverview: { type: boolean }
+        permissions:
+          type: object
+          description: |
+            Shared feature access, independently of plan. Collection reads reflect the API's
+            any-Allow gate; results still receive per-item filtering. Mutations require a uniform
+            Allow across the resource scope and fail closed for conditional access or boundaries.
+            Fixed tenant/integration resources use the same exact-resource gate as their APIs.
+            Import requires upload and read; capture additionally requires STT and live analysis.
+            Every API operation independently rechecks authorization.
+          required: [createMeetings, captureMeetings, reprocessMeetings, deleteMeetings, eraseMeetings, writeTasks, manageFlows, testFlows, manageIntegrations, readFlows, readIntegrations, readWorkspace, renameWorkspace, updateMeetings, readMeetings, readTasks]
+          properties:
+            createMeetings: { type: boolean }
+            captureMeetings: { type: boolean }
+            reprocessMeetings: { type: boolean }
+            deleteMeetings: { type: boolean }
+            eraseMeetings: { type: boolean }
+            writeTasks: { type: boolean }
+            manageFlows: { type: boolean }
+            testFlows: { type: boolean }
+            manageIntegrations: { type: boolean }
+            readFlows: { type: boolean }
+            readIntegrations: { type: boolean }
+            readWorkspace: { type: boolean }
+            renameWorkspace: { type: boolean }
+            updateMeetings: { type: boolean }
+            readMeetings: { type: boolean }
+            readTasks: { type: boolean }
 
     # ---- account (/users/me) ----
     UpdateMeRequest:
@@ -3299,8 +3378,9 @@ components:
           type: string
           enum: [FREE, PRO, ENTERPRISE]
           description: |
-            The `Tenant.Plan` enum as persisted. These are the database's names, not the two
-            commercial tiers (Core / Enterprise) the product speaks in.
+            Current persisted plan. FREE and PRO enable Core; ENTERPRISE additionally enables
+            IAM administration, company context, corporate domain settings and Customer Confidence.
+            Plan changes are operator-managed; there is no tenant self-upgrade endpoint.
         createdAt: { type: string, format: date-time }
     TenantNameUpdateRequest:
       type: object
@@ -3539,6 +3619,7 @@ components:
         id: { type: string, format: uuid }
         title: { type: string }
         startedAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time, description: Upload time used when no meeting start was declared. }
         durationSeconds: { type: [integer, 'null'], format: int64 }
         # Always null today, and documented as such rather than quietly shipped populated in the
         # example: the listing query does not join users, so nothing fills it. A client that
@@ -4673,12 +4754,16 @@ components:
         defaultLimit: { type: integer, description: 'Batch size a `POST` uses when it omits `limit`.' }
         maxLimit: { type: integer, description: 'Hard ceiling per run.' }
         analysedMeetings: { type: integer, format: int64 }
-        indexed: { type: integer, format: int64, description: 'Vector present, current model.' }
+        indexed: { type: integer, format: int64, description: 'Full-summary vector present, current model.' }
         missingVector: { type: integer, format: int64, description: 'Analysed and never indexed.' }
         staleModel:
           type: integer
           format: int64
           description: 'Vector from another provider/model — as invisible as no vector at all.'
+        staleContent:
+          type: integer
+          format: int64
+          description: 'Current model, but source length differs from the full analysis summary.'
         tenants:
           type: array
           description: 'Worst first. Truncated when `tenantsTruncated` is true.'
@@ -4693,6 +4778,7 @@ components:
         indexed: { type: integer, format: int64 }
         missingVector: { type: integer, format: int64 }
         staleModel: { type: integer, format: int64 }
+        staleContent: { type: integer, format: int64 }
     EmbeddingBackfillRequest:
       type: object
       required: [tenantId]

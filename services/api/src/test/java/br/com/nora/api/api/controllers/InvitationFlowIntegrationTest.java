@@ -425,6 +425,10 @@ class InvitationFlowIntegrationTest {
                         .body(HttpStatus.CREATED);
         String verifyToken = signup.get("emailVerificationDevToken").asText();
         postJson("/auth/verify-email", Map.of("token", verifyToken)).expect(HttpStatus.NO_CONTENT);
+        jdbc.update(
+                "UPDATE tenants SET plan = 'ENTERPRISE' WHERE id = "
+                        + "(SELECT tenant_id FROM users WHERE email = ?)",
+                email);
         return login(email, pwd);
     }
 

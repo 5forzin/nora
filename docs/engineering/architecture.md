@@ -434,7 +434,9 @@ so the erasure path of ADR 0029 takes the vector with the meeting. RLS enforced 
 as V019.
 
 Indexing happens at the end of a successful analysis: `AnalysisService.java` passes
-`summarySnippet` to `EmbeddingService.index` (`application/embedding/EmbeddingService.java`).
+the complete `MeetingAnalysis.summary()` to `EmbeddingService.index`
+(`application/embedding/EmbeddingService.java`), up to the domain limit of 4,000 characters.
+The 240-character `summarySnippet` remains a list preview, not the semantic search input.
 **The meeting title is deliberately not part of the payload** — the summary has been through the PII
 Shield because it was generated from the redacted transcript, while the title comes raw from
 whoever typed it at upload (ADR 0012). The whole call is best-effort: an embedding failure logs and
@@ -458,15 +460,17 @@ permanent otherwise: before it, the only way to give an analysed meeting a vecto
 `POST /meetings/{id}/reprocess`, which re-runs the entire LLM analysis to obtain one embedding.
 
 **The input is already in the database.** A meeting that was analysed carries
-`meetings.summary_snippet`, which is exactly the text the live path indexes — the summary that went
+`meeting_analyses.summary`, which is exactly the text the live path indexes — the summary that went
 through the PII Shield, never the raw transcript and never the title (ADR 0012). So a backfill is
-one embedding call per meeting and no model call at all.
+one embedding call per meeting and no analysis-model call.
 
-**One query covers both failure shapes.** A meeting with no row in `meeting_embeddings` and a
+**One query covers missing and outdated vectors.** A meeting with no row in `meeting_embeddings` and a
 meeting whose row carries a different `model` are equally invisible to the search, which only
-compares vectors from the same space. The pending predicate is "has a summary snippet AND (no row
-OR row from another model)", so switching the embedding provider is repaired by the same mechanism
-as never having had a credential.
+compares vectors from the same space. A vector created from the former 240-character snippet also
+needs a backfill: `source_chars` is compared with `char_length(meeting_analyses.summary)`.
+Java stores a Unicode code-point count so supplementary characters do not cause repeated indexing.
+The preview reports `missingVector`, `staleModel` and `staleContent` separately. Only current-model
+vectors with a matching source length count as `indexed`.
 
 **It is bounded because it is billed.** There is no startup catch-up and no scheduled sweep — both
 would spend money without anyone asking. `GET` returns what a run *would* do, per tenant, from plain
@@ -776,6 +780,11 @@ fetches a short-lived session credential from `POST /stt/sessions`; `stt_cloud.r
 WebSocket per track behind the `SttBackend` trait in `stt.rs`. On the server,
 `SttController` → `SttSessionService` → `RealtimeSttBroker` (port) →
 `OpenAiRealtimeSessionBroker` (adapter) is the only code that reads the provider key.
+
+The provider payload uses `languages` for `gpt-live-transcribe` and `language` for legacy models.
+The desktop accumulates deltas per item, commits audio after speech pauses (or 15 seconds), and
+waits for completed events before `stop_recording` returns. Finalization is bounded to 10 seconds;
+an unfinished provider response is reported as an STT error.
 
 The on-device engine is gone: `stt_local.rs`, `whisper_model.rs`, `whisper-rs`, `sha2`, the whole
 Cargo `[features]` section, the `NORA_STT_BACKEND` selector and the `plugins.nora.whisperModel`

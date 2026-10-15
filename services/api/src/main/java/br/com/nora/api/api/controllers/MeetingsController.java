@@ -31,6 +31,7 @@ import br.com.nora.api.application.meeting.MeetingException;
 import br.com.nora.api.application.meeting.MeetingGoalService;
 import br.com.nora.api.application.meeting.MeetingService;
 import br.com.nora.api.application.meeting.MeetingService.UploadCommand;
+import br.com.nora.api.application.meeting.MeetingUploadService;
 import br.com.nora.api.application.meeting.ParticipantIdentityService;
 import br.com.nora.api.application.meeting.TranscriptSplitService;
 import br.com.nora.api.application.ports.MeetingRepository.MeetingFilter;
@@ -70,6 +71,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -87,6 +89,7 @@ public class MeetingsController {
     private static final Set<String> ALLOWED_FORMATS = Set.of("TXT", "VTT", "SRT");
 
     private final MeetingService meetings;
+    private final MeetingUploadService uploads;
     private final AnalysisService analyses;
     private final MeetingGoalService meetingGoals;
     private final LiveAnalysisService liveAnalysis;
@@ -110,6 +113,7 @@ public class MeetingsController {
 
     public MeetingsController(
             MeetingService meetings,
+            MeetingUploadService uploads,
             AnalysisService analyses,
             MeetingGoalService meetingGoals,
             LiveAnalysisService liveAnalysis,
@@ -123,6 +127,7 @@ public class MeetingsController {
             UserRepository users,
             AiSpendRateLimiter spendLimiter) {
         this.meetings = meetings;
+        this.uploads = uploads;
         this.analyses = analyses;
         this.meetingGoals = meetingGoals;
         this.liveAnalysis = liveAnalysis;
@@ -293,7 +298,9 @@ public class MeetingsController {
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @RequiresPermission(action = "meeting:upload", resource = ResourceType.MEETING)
     public ResponseEntity<MeetingUploadResponse> upload(
-            @RequestPart("metadata") String metadataJson, @RequestPart("file") MultipartFile file) {
+            @RequestPart("metadata") String metadataJson,
+            @RequestPart("file") MultipartFile file,
+            @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey) {
         AuthenticatedPrincipal principal = CurrentUser.require();
         MeetingUploadMetadata metadata = parseMetadata(metadataJson);
 
@@ -312,7 +319,7 @@ public class MeetingsController {
                         rawTranscript,
                         metadata.attributes() == null ? Map.of() : metadata.attributes());
 
-        Meeting saved = meetings.upload(cmd);
+        Meeting saved = uploads.upload(cmd, idempotencyKey);
         MeetingUploadResponse body =
                 new MeetingUploadResponse(
                         saved.id(),
@@ -517,7 +524,8 @@ public class MeetingsController {
                                             e == null ? null : e.productivityBand(),
                                             e == null ? null : e.productivityScore(),
                                             participantNames(m),
-                                            e == null ? 0 : e.openActionItems());
+                                            e == null ? 0 : e.openActionItems(),
+                                            m.createdAt());
                                 })
                         .toList();
         int totalPages =

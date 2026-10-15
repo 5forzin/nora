@@ -178,6 +178,61 @@ class IamIsolationIntegrationTest {
     /* =========================== attachments ========================== */
 
     @Test
+    void groupPolicyListingRequiresBothReadGrantsAndReturnsActualTenantScopedAttachments()
+            throws Exception {
+        String root = signupAndLogin("group-policies-root@nora.dev", "Attachment Root");
+        UUID tenant = readClaim(root, "tenantId");
+        String group = createGroup(root, "Configured group");
+        UUID memberId = insertActiveMember(tenant, "group-policies-reader@nora.dev", "Reader");
+        addMember(root, group, memberId);
+        String attached = createPolicy(root, "Attached read", readMeetings(tenant));
+        String unattached = createPolicy(root, "Unattached read", readMeetings(tenant));
+        attachToGroup(root, group, attached);
+        String path = "/iam/groups/" + group + "/policies";
+        JsonNode actual = read(authGet(path, root), HttpStatus.OK);
+        assertThat(actual.size()).isEqualTo(1);
+        assertThat(actual.get(0).asText()).isEqualTo(attached).isNotEqualTo(unattached);
+
+        String reader = login("group-policies-reader@nora.dev");
+        assertThat(getStatus(path, reader)).isEqualTo(HttpStatus.FORBIDDEN);
+        String policyRead =
+                createPolicy(root, "Policy reader", iamReadDocument(tenant, "iam:policy:read"));
+        assertThat(post(userPolicyPath(memberId, policyRead), null, root))
+                .isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(getStatus(path, reader)).isEqualTo(HttpStatus.FORBIDDEN);
+        String groupRead =
+                createPolicy(root, "Group reader", iamReadDocument(tenant, "iam:group:read"));
+        assertThat(post(userPolicyPath(memberId, groupRead), null, root))
+                .isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(read(authGet(path, reader), HttpStatus.OK).get(0).asText()).isEqualTo(attached);
+
+        String foreign = signupAndLogin("group-policies-foreign@nora.dev", "Foreign");
+        assertThat(getStatus(path, foreign)).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(getStatus("/iam/groups/" + UUID.randomUUID() + "/policies", root))
+                .isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(delete(groupPolicyPath(group, attached), root)).isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(read(authGet(path, root), HttpStatus.OK).isEmpty()).isTrue();
+        jdbc.update("UPDATE tenants SET plan = 'FREE' WHERE id = ?", tenant);
+        assertThat(getStatus(path, root)).isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    private String iamReadDocument(UUID tenant, String action) throws Exception {
+        return json(
+                Map.of(
+                        "version",
+                        "2026-10-14",
+                        "statements",
+                        List.of(
+                                Map.of(
+                                        "effect",
+                                        "Allow",
+                                        "action",
+                                        List.of(action),
+                                        "resource",
+                                        List.of("nora:tenant/" + tenant + ":iam/*")))));
+    }
+
+    @Test
     void attachments_cannotCrossTheTenantBoundary() throws Exception {
         String tokenA = signupAndLogin("iam-iso-att-a@nora.dev", "Alfa");
         UUID tenantA = readClaim(tokenA, "tenantId");
@@ -466,6 +521,10 @@ class IamIsolationIntegrationTest {
         JsonNode signup = postJson("/auth/signup", payload, HttpStatus.CREATED);
         String verify = json(Map.of("token", signup.get("emailVerificationDevToken").asText()));
         postJson("/auth/verify-email", verify, HttpStatus.NO_CONTENT);
+        jdbc.update(
+                "UPDATE tenants SET plan = 'ENTERPRISE' WHERE id = "
+                        + "(SELECT tenant_id FROM users WHERE email = ?)",
+                email);
         return login(email);
     }
 

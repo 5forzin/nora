@@ -11,16 +11,18 @@
  * Cells are addressed by `data-testid` and by column index, never by caption: the captions are
  * pt-BR product copy.
  */
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const listInvites = vi.fn();
 const listGroups = vi.fn();
+const inviteUser = vi.fn();
 vi.mock('@/lib/api/client', async (importOriginal) => ({
   // eslint-disable-next-line @typescript-eslint/consistent-type-imports
   ...(await importOriginal<typeof import('@/lib/api/client')>()),
   listInvites: (...a: unknown[]) => listInvites(...a),
   listGroups: (...a: unknown[]) => listGroups(...a),
+  inviteUser: (...a: unknown[]) => inviteUser(...a),
 }));
 
 import InvitationCard from '@/components/invitation-card';
@@ -49,7 +51,10 @@ const ACCEPTED = {
 
 beforeEach(() => {
   listGroups.mockReset().mockResolvedValue([]);
-  listInvites.mockReset().mockResolvedValue({ items: [PENDING, ACCEPTED], total: 2, page: 0, size: 20 });
+  inviteUser.mockReset().mockResolvedValue({});
+  listInvites
+    .mockReset()
+    .mockResolvedValue({ items: [PENDING, ACCEPTED], total: 2, page: 0, size: 20 });
 });
 
 afterEach(cleanup);
@@ -81,8 +86,45 @@ describe('invitation table — accepted by', () => {
 
     await vi.waitFor(() => screen.getByTestId(`invite-accepted-by-${ACCEPTED.id}`));
     const headers = [...document.querySelectorAll('thead th')];
-    const rowCells = [...(screen.getByTestId(`invite-accepted-by-${ACCEPTED.id}`).closest('tr') as HTMLTableRowElement).cells];
+    const rowCells = [
+      ...(
+        screen.getByTestId(`invite-accepted-by-${ACCEPTED.id}`).closest('tr') as HTMLTableRowElement
+      ).cells,
+    ];
     // One header per cell: the column was added to both halves of the table, not just the body.
     expect(headers.length).toBe(rowCells.length);
+  });
+});
+
+describe('Enterprise invitations', () => {
+  it('reloads prepared groups while preserving the invitation draft and requiring a selection', async () => {
+    const { rerender } = render(<InvitationCard requireGroup />);
+    fireEvent.click(screen.getByRole('button', { name: 'Convidar usuário' }));
+    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'new@example.invalid' } });
+    listGroups.mockResolvedValue([{ id: 'readers', name: 'Somente leitura' }]);
+    rerender(<InvitationCard requireGroup groupsRevision={1} />);
+    const group = await screen.findByRole('checkbox', { name: 'Somente leitura' });
+    expect((screen.getByLabelText('E-mail') as HTMLInputElement).value).toBe('new@example.invalid');
+    expect((group as HTMLInputElement).checked).toBe(false);
+    expect(inviteUser).not.toHaveBeenCalled();
+  });
+  it('requires an access group and passes the explicit selection to the invitation API', async () => {
+    listGroups.mockResolvedValue([{ id: 'viewers', name: 'Visualizadores' }]);
+    render(<InvitationCard requireGroup />);
+    fireEvent.click(screen.getByRole('button', { name: 'Convidar usuário' }));
+    await screen.findByText('Visualizadores');
+    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'new@example.invalid' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar convite' }));
+    await screen.findByText('Selecione ao menos um grupo para definir o acesso do usuário.');
+    expect(inviteUser).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Visualizadores' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar convite' }));
+    await vi.waitFor(() =>
+      expect(inviteUser).toHaveBeenCalledWith({
+        email: 'new@example.invalid',
+        groupIds: ['viewers'],
+        expiresInDays: 7,
+      }),
+    );
   });
 });

@@ -10,6 +10,10 @@ const SERVICES: ServiceKey[] = ["chat", "analysis", "multimodal"];
 
 type Notice = { kind: "ok" | "err"; text: string } | null;
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Falha inesperada";
+}
+
 export function ModelsClient({
   initialModels,
   initialBindings,
@@ -25,6 +29,10 @@ export function ModelsClient({
 
   const byId = useMemo(() => new Map(models.map((m) => [m.id, m])), [models]);
 
+  function updateBinding(binding: ServiceBinding) {
+    setBindings((prev) => [...prev.filter((b) => b.service !== binding.service), binding]);
+  }
+
   async function setBinding(service: ServiceKey, modelId: string) {
     const m = byId.get(modelId);
     // Guard: analysis requires strict JSON Schema (ADR 0003). Blocks an invalid binding before the round-trip.
@@ -35,13 +43,15 @@ export function ModelsClient({
     const current = bindings.find((b) => b.service === service);
     const enabled = current?.enabled ?? true;
     setBusy(`bind:${service}`);
-    const res = await bindServiceAction(service, modelId, enabled);
-    setBusy(null);
-    if (res.ok) {
-      setBindings((prev) => prev.map((b) => (b.service === service ? { ...b, modelId } : b)));
-      setNotice({ kind: "ok", text: `${SERVICE_LABEL[service]} agora usa "${m?.label}". Vale em runtime, sem redeploy.` });
-    } else {
-      setNotice({ kind: "err", text: `Falha ao trocar o modelo: ${res.error}` });
+    try {
+      const res = await bindServiceAction(service, modelId, enabled);
+      if (!res.ok) throw new Error(res.error);
+      updateBinding(res.value);
+      setNotice({ kind: "ok", text: `${SERVICE_LABEL[service]} agora usa "${byId.get(res.value.modelId)?.label ?? res.value.modelId}". Vale em runtime, sem redeploy.` });
+    } catch (error) {
+      setNotice({ kind: "err", text: `Falha ao trocar o modelo: ${errorMessage(error)}` });
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -49,12 +59,14 @@ export function ModelsClient({
     const current = bindings.find((b) => b.service === service);
     if (!current) return;
     setBusy(`bind:${service}`);
-    const res = await bindServiceAction(service, current.modelId, !current.enabled);
-    setBusy(null);
-    if (res.ok) {
-      setBindings((prev) => prev.map((b) => (b.service === service ? { ...b, enabled: !b.enabled } : b)));
-    } else {
-      setNotice({ kind: "err", text: `Falha ao alternar: ${res.error}` });
+    try {
+      const res = await bindServiceAction(service, current.modelId, !current.enabled);
+      if (!res.ok) throw new Error(res.error);
+      updateBinding(res.value);
+    } catch (error) {
+      setNotice({ kind: "err", text: `Falha ao alternar: ${errorMessage(error)}` });
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -64,13 +76,15 @@ export function ModelsClient({
       return;
     }
     setBusy(`del:${id}`);
-    const res = await removeModelAction(id);
-    setBusy(null);
-    if (res.ok) {
+    try {
+      const res = await removeModelAction(id);
+      if (!res.ok) throw new Error(res.error);
       setModels((prev) => prev.filter((m) => m.id !== id));
       setNotice({ kind: "ok", text: "Modelo removido do catálogo." });
-    } else {
-      setNotice({ kind: "err", text: `Falha ao remover: ${res.error}` });
+    } catch (error) {
+      setNotice({ kind: "err", text: `Falha ao remover: ${errorMessage(error)}` });
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -115,7 +129,8 @@ export function ModelsClient({
               </div>
               <select
                 value={b?.modelId ?? ""}
-                disabled={rowBusy}
+                aria-label={`Modelo para ${SERVICE_LABEL[service]}`}
+                disabled={busy !== null}
                 onChange={(e) => setBinding(service, e.target.value)}
                 style={select}
               >
@@ -127,7 +142,7 @@ export function ModelsClient({
                   </option>
                 ))}
               </select>
-              <button type="button" disabled={rowBusy} onClick={() => toggle(service)} style={{ ...pill, color: b?.enabled ? "var(--success)" : "var(--muted)" }}>
+              <button type="button" disabled={busy !== null || !b} onClick={() => toggle(service)} style={{ ...pill, color: b?.enabled ? "var(--success)" : "var(--muted)" }}>
                 <span style={{ width: 7, height: 7, borderRadius: "50%", background: b?.enabled ? "var(--success)" : "var(--border-strong)" }} />
                 {b?.enabled ? "Ativo" : "Desligado"}
               </button>
@@ -154,7 +169,7 @@ export function ModelsClient({
                 {m.cachedInputCostPer1M != null ? ` · cache $${m.cachedInputCostPer1M}` : ""}
               </div>
             </div>
-            <button type="button" disabled={busy === `del:${m.id}`} onClick={() => removeModel(m.id)} style={{ ...pill, color: "var(--danger)" }}>
+            <button type="button" disabled={busy !== null} onClick={() => removeModel(m.id)} style={{ ...pill, color: "var(--danger)" }}>
               Remover
             </button>
           </div>
@@ -164,9 +179,10 @@ export function ModelsClient({
       {showAdd ? (
         <AddModelForm
           onCancel={() => setShowAdd(false)}
-          onAdded={(text) => {
+          onAdded={(model) => {
+            setModels((prev) => [...prev.filter((m) => m.id !== model.id), model]);
             setShowAdd(false);
-            setNotice({ kind: "ok", text });
+            setNotice({ kind: "ok", text: `Modelo "${model.label}" adicionado ao catálogo.` });
           }}
           onError={(text) => setNotice({ kind: "err", text })}
         />
@@ -185,7 +201,7 @@ function AddModelForm({
   onError,
 }: {
   onCancel: () => void;
-  onAdded: (text: string) => void;
+  onAdded: (model: LlmModel) => void;
   onError: (text: string) => void;
 }) {
   const [provider, setProvider] = useState("");
@@ -211,20 +227,25 @@ function AddModelForm({
       return;
     }
     setSaving(true);
-    const res = await addModelAction({
-      provider: provider.trim(),
-      model: model.trim(),
-      displayName: displayName.trim(),
-      baseUrl: baseUrl.trim(),
-      modality,
-      supportsStrictJsonSchema: strict,
-      priceInputPerMTok: Number(priceIn) || 0,
-      priceOutputPerMTok: Number(priceOut) || 0,
-      priceCachedInputPerMTok: priceCached.trim() === "" ? null : Number(priceCached) || 0,
-    });
-    setSaving(false);
-    if (res.ok) onAdded(`Modelo "${displayName.trim()}" adicionado ao catálogo.`);
-    else onError(`Falha ao adicionar: ${res.error}`);
+    try {
+      const res = await addModelAction({
+        provider: provider.trim(),
+        model: model.trim(),
+        displayName: displayName.trim(),
+        baseUrl: baseUrl.trim(),
+        modality,
+        supportsStrictJsonSchema: strict,
+        priceInputPerMTok: Number(priceIn) || 0,
+        priceOutputPerMTok: Number(priceOut) || 0,
+        priceCachedInputPerMTok: priceCached.trim() === "" ? null : Number(priceCached) || 0,
+      });
+      if (!res.ok) throw new Error(res.error);
+      onAdded(res.value);
+    } catch (error) {
+      onError(`Falha ao adicionar: ${errorMessage(error)}`);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (

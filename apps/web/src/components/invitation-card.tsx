@@ -1,10 +1,9 @@
-"use client";
+'use client';
 
 /**
  * InvitationCard (US06, ADR 0011)
  * -------------------------------------------------------------------------
- * Invite management block in settings/iam. Rendered between the
- * CorporateDomainCard and the Groups list. Allows an admin with IAM
+ * Invite management block in the Enterprise user directory. Allows an admin with IAM
  * `iam:user:invite` / `iam:invite:read` / `iam:invite:revoke` to:
  *
  * - Filter invites by status (PENDING by default).
@@ -21,7 +20,7 @@
  * - Client-side validation is UX-only; backend is the source of truth (ADR 0011).
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ApiRequestError,
   type GroupDto,
@@ -31,35 +30,35 @@ import {
   listGroups,
   listInvites,
   revokeInvite,
-} from "@/lib/api/client";
+} from '@/lib/api/client';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const STATUS_FILTERS: ReadonlyArray<{ value: InviteStatus | "ALL"; label: string }> = [
-  { value: "PENDING", label: "Pendentes" },
-  { value: "ACCEPTED", label: "Aceitos" },
-  { value: "EXPIRED", label: "Expirados" },
-  { value: "REVOKED", label: "Revogados" },
-  { value: "ALL", label: "Todos" },
+const STATUS_FILTERS: ReadonlyArray<{ value: InviteStatus | 'ALL'; label: string }> = [
+  { value: 'PENDING', label: 'Pendentes' },
+  { value: 'ACCEPTED', label: 'Aceitos' },
+  { value: 'EXPIRED', label: 'Expirados' },
+  { value: 'REVOKED', label: 'Revogados' },
+  { value: 'ALL', label: 'Todos' },
 ];
 
 const STATUS_LABEL: Record<InviteStatus, string> = {
-  PENDING: "Pendente",
-  ACCEPTED: "Aceito",
-  EXPIRED: "Expirado",
-  REVOKED: "Revogado",
+  PENDING: 'Pendente',
+  ACCEPTED: 'Aceito',
+  EXPIRED: 'Expirado',
+  REVOKED: 'Revogado',
 };
 
 const STATUS_CLASSES: Record<InviteStatus, string> = {
-  PENDING: "bg-amber-100 text-amber-800",
-  ACCEPTED: "bg-green-100 text-green-800",
-  EXPIRED: "bg-slate-100 text-slate-600",
-  REVOKED: "bg-red-100 text-red-700",
+  PENDING: 'bg-amber-100 text-amber-800',
+  ACCEPTED: 'bg-green-100 text-green-800',
+  EXPIRED: 'bg-slate-100 text-slate-600',
+  REVOKED: 'bg-red-100 text-red-700',
 };
 
-const DATE_FORMATTER = new Intl.DateTimeFormat("pt-BR", {
-  dateStyle: "short",
-  timeStyle: "short",
+const DATE_FORMATTER = new Intl.DateTimeFormat('pt-BR', {
+  dateStyle: 'short',
+  timeStyle: 'short',
 });
 
 function formatDate(iso: string): string {
@@ -70,24 +69,30 @@ function formatDate(iso: string): string {
 
 function mapInviteError(err: unknown): string {
   if (!(err instanceof ApiRequestError)) {
-    return "Erro ao enviar convite. Tente novamente.";
+    return 'Erro ao enviar convite. Tente novamente.';
   }
   // 422 — backend returns a useful message. Detects the domain special case.
   if (err.status === 422) {
-    const msg = err.payload?.message ?? "";
-    const code = err.payload?.code ?? "";
-    if (code === "EMAIL_DOMAIN_NOT_ALLOWED" || /domain/i.test(msg)) {
-      return "E-mail nao corresponde ao dominio corporativo configurado.";
+    const msg = err.payload?.message ?? '';
+    const code = err.payload?.code ?? '';
+    if (code === 'EMAIL_DOMAIN_NOT_ALLOWED' || /domain/i.test(msg)) {
+      return 'O e-mail não corresponde ao domínio corporativo configurado.';
     }
-    return msg || "Dados invalidos.";
+    return msg || 'Dados inválidos.';
   }
-  if (err.status === 403) return "Voce nao tem permissao para convidar.";
-  if (err.status === 409) return "Ja existe convite pendente para esse e-mail.";
-  return err.payload?.message ?? "Erro ao enviar convite. Tente novamente.";
+  if (err.status === 403) return 'Você não tem permissão para convidar.';
+  if (err.status === 409) return 'Já existe convite pendente para esse e-mail.';
+  return err.payload?.message ?? 'Erro ao enviar convite. Tente novamente.';
 }
 
-export default function InvitationCard() {
-  const [statusFilter, setStatusFilter] = useState<InviteStatus | "ALL">("PENDING");
+export default function InvitationCard({
+  requireGroup = false,
+  groupsRevision = 0,
+}: {
+  requireGroup?: boolean;
+  groupsRevision?: number;
+}) {
+  const [statusFilter, setStatusFilter] = useState<InviteStatus | 'ALL'>('PENDING');
   const [invites, setInvites] = useState<Invite[]>([]);
   const [groups, setGroups] = useState<GroupDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,7 +100,7 @@ export default function InvitationCard() {
 
   // Form inline state.
   const [showForm, setShowForm] = useState(false);
-  const [formEmail, setFormEmail] = useState("");
+  const [formEmail, setFormEmail] = useState('');
   const [formGroupIds, setFormGroupIds] = useState<string[]>([]);
   const [formExpiresInDays, setFormExpiresInDays] = useState(7);
   const [formError, setFormError] = useState<string | null>(null);
@@ -108,24 +113,22 @@ export default function InvitationCard() {
     return m;
   }, [groups]);
 
-  const loadInvites = useCallback(async (filter: InviteStatus | "ALL") => {
+  const loadInvites = useCallback(async (filter: InviteStatus | 'ALL') => {
     setLoading(true);
     setError(null);
     try {
-      const resp = await listInvites(filter === "ALL" ? undefined : filter);
+      const resp = await listInvites(filter === 'ALL' ? undefined : filter);
       setInvites(resp.items);
     } catch (err) {
       setError(
-        err instanceof ApiRequestError
-          ? err.message
-          : "Nao foi possivel carregar os convites.",
+        err instanceof ApiRequestError ? err.message : 'Não foi possível carregar os convites.',
       );
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Loads groups once (lookup id -> name) + invites on mount.
+  // Reloading the lookup preserves an invitation draft after access setup.
   useEffect(() => {
     void (async () => {
       try {
@@ -135,20 +138,18 @@ export default function InvitationCard() {
         // Name lookup is best-effort — without groups, we show the id.
       }
     })();
-  }, []);
+  }, [groupsRevision]);
 
   useEffect(() => {
     void loadInvites(statusFilter);
   }, [statusFilter, loadInvites]);
 
   function toggleGroup(id: string) {
-    setFormGroupIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
+    setFormGroupIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
   function resetForm() {
-    setFormEmail("");
+    setFormEmail('');
     setFormGroupIds([]);
     setFormExpiresInDays(7);
     setFormError(null);
@@ -166,15 +167,19 @@ export default function InvitationCard() {
 
     const email = formEmail.trim().toLowerCase();
     if (!EMAIL_REGEX.test(email)) {
-      setFormError("Informe um e-mail valido.");
+      setFormError('Informe um e-mail valido.');
       return;
     }
     const expires = Number(formExpiresInDays);
     if (!Number.isInteger(expires) || expires < 1 || expires > 30) {
-      setFormError("Expiracao deve estar entre 1 e 30 dias.");
+      setFormError('Expiracao deve estar entre 1 e 30 dias.');
       return;
     }
 
+    if (requireGroup && formGroupIds.length === 0) {
+      setFormError('Selecione ao menos um grupo para definir o acesso do usuário.');
+      return;
+    }
     setFormSubmitting(true);
     try {
       await inviteUser({
@@ -194,10 +199,7 @@ export default function InvitationCard() {
   }
 
   async function onRevoke(invite: Invite) {
-    if (
-      typeof window !== "undefined" &&
-      !window.confirm(`Revogar convite para ${invite.email}?`)
-    ) {
+    if (typeof window !== 'undefined' && !window.confirm(`Revogar convite para ${invite.email}?`)) {
       return;
     }
     setError(null);
@@ -207,9 +209,7 @@ export default function InvitationCard() {
       setSuccess(`Convite revogado: ${invite.email}.`);
       await loadInvites(statusFilter);
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError ? err.message : "Falha ao revogar o convite.",
-      );
+      setError(err instanceof ApiRequestError ? err.message : 'Falha ao revogar o convite.');
     }
   }
 
@@ -218,10 +218,7 @@ export default function InvitationCard() {
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
           <h2 className="text-lg font-medium">Convites</h2>
-          <p className="text-sm text-slate-500">
-            Convide usuarios por e-mail. O convidado recebe um link unico para
-            criar conta.
-          </p>
+          <p className="text-sm text-slate-500">Envie um convite e defina os grupos de acesso.</p>
         </div>
         {!showForm && (
           <button
@@ -233,7 +230,7 @@ export default function InvitationCard() {
             }}
             className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white hover:bg-slate-800"
           >
-            Convidar usuario
+            Convidar usuário
           </button>
         )}
       </header>
@@ -273,10 +270,12 @@ export default function InvitationCard() {
           </div>
 
           <div className="space-y-1.5">
-            <span className="text-sm font-medium text-slate-700">Grupos</span>
+            <span className="text-sm font-medium text-slate-700">Grupos de acesso</span>
             {groups.length === 0 ? (
               <p className="text-xs text-slate-500">
-                Nenhum grupo disponivel. O convite sera criado sem grupos.
+                {requireGroup
+                  ? 'Peça ao administrador para preparar os acessos ou criar um grupo em Acessos.'
+                  : 'Nenhum grupo disponível. O convite será criado sem grupos.'}
               </p>
             ) : (
               <ul className="space-y-1 rounded-md border border-slate-200 bg-white p-2 text-sm">
@@ -305,10 +304,7 @@ export default function InvitationCard() {
           </div>
 
           <div className="space-y-1.5">
-            <label
-              htmlFor="invite-expires"
-              className="text-sm font-medium text-slate-700"
-            >
+            <label htmlFor="invite-expires" className="text-sm font-medium text-slate-700">
               Expira em (dias)
             </label>
             <input
@@ -335,10 +331,10 @@ export default function InvitationCard() {
           <div className="flex gap-2">
             <button
               type="submit"
-              disabled={formSubmitting}
+              disabled={formSubmitting || (requireGroup && groups.length === 0)}
               className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
             >
-              {formSubmitting ? "Enviando..." : "Enviar convite"}
+              {formSubmitting ? 'Enviando…' : 'Enviar convite'}
             </button>
             <button
               type="button"
@@ -359,7 +355,7 @@ export default function InvitationCard() {
         <select
           id="invite-status-filter"
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as InviteStatus | "ALL")}
+          onChange={(e) => setStatusFilter(e.target.value as InviteStatus | 'ALL')}
           className="rounded-md border border-slate-300 px-2 py-1 text-sm focus:border-slate-500 focus:outline-none"
         >
           {STATUS_FILTERS.map((f) => (
@@ -387,8 +383,10 @@ export default function InvitationCard() {
         </div>
       ) : invites.length === 0 ? (
         <p className="text-sm text-slate-500">
-          Nenhum convite com status{" "}
-          {STATUS_FILTERS.find((f) => f.value === statusFilter)?.label.toLowerCase() ?? statusFilter}.
+          Nenhum convite com status{' '}
+          {STATUS_FILTERS.find((f) => f.value === statusFilter)?.label.toLowerCase() ??
+            statusFilter}
+          .
         </p>
       ) : (
         <div className="overflow-x-auto">
@@ -403,7 +401,7 @@ export default function InvitationCard() {
                     every IAM operation asks for. It was already on the wire and thrown away. */}
                 <th className="py-2 pr-3 font-medium">Aceito por</th>
                 <th className="py-2 pr-3 font-medium">Grupos</th>
-                <th className="py-2 pr-3 font-medium text-right">Acoes</th>
+                <th className="py-2 pr-3 font-medium text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -454,7 +452,7 @@ export default function InvitationCard() {
                     )}
                   </td>
                   <td className="py-2 pr-3 text-right">
-                    {inv.status === "PENDING" ? (
+                    {inv.status === 'PENDING' ? (
                       <button
                         type="button"
                         onClick={() => void onRevoke(inv)}

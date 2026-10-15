@@ -14,12 +14,14 @@ export interface MeetingProductivitySectionProps {
   meetingId: string;
   goal: MeetingGoal | null;
   productivity: ProductivityAssessment | null;
+  canEdit?: boolean;
 }
 
 export default function MeetingProductivitySection({
   meetingId,
   goal: initialGoal,
   productivity,
+  canEdit = false,
 }: MeetingProductivitySectionProps) {
   const router = useRouter();
   const [goal, setGoal] = useState<MeetingGoal | null>(initialGoal);
@@ -43,9 +45,10 @@ export default function MeetingProductivitySection({
 
   // Case A: no goal and no productivity → CTA to assess productivity
   if (!goal && !productivity) {
+    if (!canEdit) return null;
     return (
       <Frame>
-        {editing ? (
+        {canEdit && editing ? (
           <MeetingGoalForm meetingId={meetingId} initialGoal={null} onSaved={handleSaved} onCancel={handleCancel} />
         ) : (
           <div className="card card--pad" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -71,7 +74,7 @@ export default function MeetingProductivitySection({
   if (goal && !productivity) {
     return (
       <Frame>
-        {editing ? (
+        {canEdit && editing ? (
           <MeetingGoalForm meetingId={meetingId} initialGoal={goal} onSaved={handleSaved} onCancel={handleCancel} />
         ) : (
           <div className="card card--pad" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -80,7 +83,7 @@ export default function MeetingProductivitySection({
               <span className="status-dot status-dot--processing" />
               Aguardando análise…
             </div>
-            <GoalControls onEdit={() => setEditing(true)} meetingId={meetingId} onRemoved={onGoalRemoved} />
+            {canEdit && <GoalControls onEdit={() => setEditing(true)} meetingId={meetingId} onRemoved={onGoalRemoved} />}
           </div>
         )}
       </Frame>
@@ -90,7 +93,7 @@ export default function MeetingProductivitySection({
   // Case C: productivity available
   return (
     <Frame>
-      {editing ? (
+      {canEdit && editing ? (
         <MeetingGoalForm meetingId={meetingId} initialGoal={goal} onSaved={handleSaved} onCancel={handleCancel} />
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -105,7 +108,7 @@ export default function MeetingProductivitySection({
               </div>
             </details>
           )}
-          <GoalControls onEdit={() => setEditing(true)} meetingId={meetingId} onRemoved={onGoalRemoved} />
+          {canEdit && <GoalControls onEdit={() => setEditing(true)} meetingId={meetingId} onRemoved={onGoalRemoved} />}
         </div>
       )}
     </Frame>

@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { listMeetings, type ListMeetingsParams } from "@/lib/api/client";
 import type { MeetingListItem, ProcessingStatus } from "@/lib/api/types";
 import DashboardFilters, { ProcessingPoller } from "./Filters";
+import { requireWorkspacePermission } from "@/lib/enterprise/require-permission";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +43,8 @@ function greeting(): string {
   return "Boa noite";
 }
 
-function groupOf(startedAt: string): (typeof GROUP_ORDER)[number] {
+function groupOf(startedAt: string | undefined): (typeof GROUP_ORDER)[number] {
+  if (!startedAt) return "Mais antigas";
   const d = new Date(startedAt);
   if (Number.isNaN(d.getTime())) return "Mais antigas";
   const now = new Date();
@@ -55,7 +57,8 @@ function groupOf(startedAt: string): (typeof GROUP_ORDER)[number] {
   return "Mais antigas";
 }
 
-function timeLabel(startedAt: string): string {
+function timeLabel(startedAt: string | undefined): string {
+  if (!startedAt) return "";
   const d = new Date(startedAt);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -180,7 +183,7 @@ function MeetingRow({ m }: { m: MeetingListItem }) {
         <StatusDot status={m.processingStatus} />
       </span>
       <span style={{ width: 56, flexShrink: 0, fontSize: 12, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
-        {timeLabel(m.startedAt)}
+        {timeLabel(m.startedAt ?? m.createdAt)}
       </span>
       <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
         <span style={{ fontSize: 14.5, fontWeight: 500, letterSpacing: "-0.012em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -225,6 +228,8 @@ export default async function DashboardPage({
   searchParams: Promise<{ search?: string; status?: string; from?: string; to?: string; page?: string }>;
 }) {
   const sp = await searchParams;
+  const access = await requireWorkspacePermission('readMeetings');
+  const canCreate = access.permissions?.createMeetings === true;
   const pageParam = Number.parseInt(sp.page ?? "", 10);
   const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 0;
 
@@ -250,7 +255,7 @@ export default async function DashboardPage({
 
   const grouped: Record<string, MeetingListItem[]> = {};
   for (const m of data.items) {
-    const g = groupOf(m.startedAt);
+    const g = groupOf(m.startedAt ?? m.createdAt);
     (grouped[g] ||= []).push(m);
   }
   const todayCount = grouped["Hoje"]?.length ?? 0;
@@ -281,12 +286,12 @@ export default async function DashboardPage({
               : `${data.totalItems} ${data.totalItems === 1 ? "reunião" : "reuniões"} no total.`}
           </h1>
         </div>
-        <Link href={"/meetings/upload" as Route} className="btn btn-primary" style={{ flexShrink: 0 }}>
+        {canCreate && <Link href={"/meetings/upload" as Route} className="btn btn-primary" style={{ flexShrink: 0 }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
             <path d="M12 5v14M5 12h14" />
           </svg>
           Nova reunião
-        </Link>
+        </Link>}
       </header>
 
       {(data.items.length > 0 || hasFilters) && <DashboardFilters defaults={filters} />}
@@ -301,15 +306,15 @@ export default async function DashboardPage({
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 20, padding: "72px 24px", textAlign: "center" }}>
           <div style={{ maxWidth: 400 }}>
             <h2 style={{ fontFamily: "var(--display)", fontSize: 19, fontWeight: 500, letterSpacing: "-0.018em", margin: "0 0 6px", color: "var(--ink)" }}>
-              {hasFilters ? "Nenhuma reunião com esses filtros." : "Sua primeira reunião está a um upload de distância."}
+              {hasFilters ? "Nenhuma reunião com esses filtros." : canCreate ? "Envie sua primeira reunião." : "Nenhuma reunião disponível."}
             </h2>
             <p style={{ fontSize: 13.5, color: "var(--muted)", margin: 0, lineHeight: 1.55 }}>
               {hasFilters
                 ? "Ajuste a busca ou limpe os filtros."
-                : "A Nora processa a transcrição e devolve resumo, decisões e action items em segundos."}
+                : canCreate ? "Importe uma transcrição para consultar resumo, decisões e tarefas." : "As reuniões disponíveis no workspace aparecerão aqui."}
             </p>
           </div>
-          {!hasFilters && (
+          {!hasFilters && canCreate && (
             <Link href={"/meetings/upload" as Route} className="btn btn-primary">
               Fazer upload
             </Link>

@@ -12,9 +12,9 @@ import { defineConfig, devices } from "@playwright/test";
  *      authenticated page at all.
  *
  * WHAT THIS DOES NOT DO, so a green run is not read as more than it is: it runs against a
- * build with `NEXT_PUBLIC_USE_MOCKS=true`, so no API, no database and no real session are
- * involved. It tests the shell — routing, headers, and what the browser objects to. Product
- * behaviour behind those routes is out of scope and stays untested.
+ * build with `NEXT_PUBLIC_USE_MOCKS=true` and a local HTTP fixture API for authenticated
+ * server rendering and client hydration. No database or real session is involved. Backend
+ * JWT verification and policy evaluation remain covered by the API suite.
  */
 export default defineConfig({
   testDir: "./e2e",
@@ -35,7 +35,8 @@ export default defineConfig({
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : [["list"]],
 
   use: {
-    baseURL: "http://127.0.0.1:3100",
+    // Match the build-time API hostname so its credentialed requests receive the cookie.
+    baseURL: "http://localhost:3100",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
@@ -56,10 +57,17 @@ export default defineConfig({
   // `npx next start`, not `npm run start -- --port 3100`: the package script already pins
   // `-p 3000`, so the npm form expands to `next start -p 3000 --port 3100` and works only
   // because Next happens to take the last flag.
-  webServer: {
-    command: "npx next start --port 3100",
-    url: "http://127.0.0.1:3100/healthz",
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
+  webServer: [
+    {
+      command: "node --experimental-strip-types e2e/mock-api.mts",
+      url: "http://localhost:8080/__e2e/health",
+      reuseExistingServer: false,
+    },
+    {
+      command: "npx next start --port 3100",
+      url: "http://localhost:3100/healthz",
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+  ],
 });

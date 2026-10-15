@@ -14,7 +14,7 @@
 >
 > | To know | Read |
 > |---|---|
-> | What is in scope, and what was closed | the accepted ADRs — [0038](../adr/0038-post-pitch-scope-realignment.md) for scope, [0039](../adr/0039-cloud-stt-openai-ephemeral-token.md) for STT, [0040](../adr/0040-pii-scope-analysis-transcription-subprocessor.md) for the PII boundary, [0041](../adr/0041-nora-as-mcp-server.md) for MCP |
+> | What is in scope, and what was closed | the accepted ADRs — [0038](../adr/0038-post-pitch-scope-realignment.md) for the original realignment, [0052](../adr/0052-core-enterprise-capability-boundary.md) for the Core/Enterprise boundary, [0039](../adr/0039-cloud-stt-openai-ephemeral-token.md) for STT, [0040](../adr/0040-pii-scope-analysis-transcription-subprocessor.md) for the PII boundary, [0041](../adr/0041-nora-as-mcp-server.md) for MCP |
 > | Per-story status (DONE / PARTIAL / MISSING / WONT) | [`docs/product/backlog.md`](backlog.md) — the single source. **This document does not restate it** |
 > | The schema, and how far the migrations go | [`docs/engineering/data-model.md`](../engineering/data-model.md) |
 > | What is deployed, and on what | [`README.md`](../../README.md) §Current state and [ADR 0036](../adr/0036-substrate-is-a-single-bare-metal-host.md) |
@@ -122,19 +122,40 @@ deleted, not rescheduled.** Azure is gone (ADR 0034/0036), and the operations bl
 a declared deferral with a written reason per item (ADR 0038 §6). The document it named,
 `docs/operations/dr-runbook.md`, was never written and is not planned.
 
+### 2.0 Final-demonstration scope (2026-10-14)
+
+[ADR 0052](../adr/0052-core-enterprise-capability-boundary.md) replaces the cosmetic plan split
+with server-enforced capabilities. `FREE` and `PRO` use Core; `ENTERPRISE` adds executive oversight
+and company administration. Shared meeting work, chat/RAG, configured integrations and privacy
+controls remain available in both surfaces. Tenant isolation is mandatory in both plans.
+
+| Release boundary | Required behavior |
+|---|---|
+| Core | Individual meeting flow without Enterprise navigation, IAM administration, company context or Customer Confidence |
+| Enterprise | Executive overview at `/enterprise`, users/invitations at `/enterprise/users`, IAM at `/enterprise/access`, company context at `/enterprise/company` |
+| Authorization | `/auth/me` and profile updates return the plan, Enterprise capabilities and separate shared-action permissions; every operation still enforces IAM |
+| Provisioning | Operator-selected Enterprise workspaces only; no automatic promotion, checkout or billing |
+| Executive demonstration | Decisions, historical risks and current pending tasks across authorized meetings, with source links and preserved task completion state |
+
+This is a bounded delivery. It does not reopen SSO, aggregated Account Health, commercial Next
+Best Action or contractual DPA/SLA. No competitor-superiority or production-scale claim follows
+from a successful demonstration. Release evidence comes from the final source revision's CI
+checks and the authenticated Core/Enterprise/member/tenant-isolation E2E flow, not from a dated
+test count in this document.
+
 ### 2.1 Closing out Sub-phase 1.11
 
 Two of the six items of 1.11 never shipped. (a), (b) and (c) are in §1; (d) "polished internal UX"
 was subjective and its real content landed with the v3 redesign (#219, #225) — it is retired rather
 than tracked, because there is no state in which it is finishable.
 
-| Item | State on 2026-08-17 |
+| Item | Current preparation boundary |
 |---|---|
-| **(e) Realistic demonstration seed** | **In progress, not in `main`.** A seed that populates a local environment with tenants, users, IAM policies and analysed meetings, driven through the product's own HTTP API rather than raw SQL — the schema has RLS, soft-delete and composite FKs, and a raw insert bypasses every validation the product applies |
-| **(f) Demo script** | **In progress, not in `main`.** This document and `docs/challenge/fiap-challenge-2026.md` used to promise two different durations for a script that did not exist. The duration will be declared in the demo document and in no other file, this one included |
+| **(e) Realistic demonstration seed** | Presentation data uses fictitious workspaces and API-created meetings, users and policies. Access credentials stay outside Git. A portable public seed command is not part of this release |
+| **(f) Demo script** | A private presentation guide supplies the demonstration order and access details. Its duration and credentials are maintained with that guide, rather than duplicated in public repository documentation |
 
-Neither is claimed as delivered here. When they land, they are reachable from
-`docs/challenge/` and `scripts/`, and this table is what should be updated.
+Prepared demonstration data and a private guide do not establish a reproducible public seed
+workflow. The repository documents the capability boundary and keeps the login material private.
 
 There is a real tension in (e) worth stating rather than discovering: a demonstration seed with a
 specific vendor's vocabulary sits next to the non-negotiable "**no hardcoded TOTVS in product

@@ -93,7 +93,7 @@ repository does not have.
 | [0035](0035-local-stt-whisper-on-client.md) | Local STT: Whisper embedded in Tauri (Rust), on the client machine | superseded by 0039 (it supersedes 0009 and partially supersedes 0008; those parts stand) |
 | [0036](0036-substrate-is-a-single-bare-metal-host.md) | The substrate is a single bare-metal Ubuntu host, not a Proxmox VM | superseded by 0051 (it supersedes 0034 §1 substrate and §9 backup; its single-host and Compose reasoning stand) |
 | [0037](0037-ssh-over-the-existing-tunnel.md) | SSH reaches the host through the existing Cloudflare Tunnel, gated by Access | accepted (extends 0025 and 0034 §2) |
-| [0038](0038-post-pitch-scope-realignment.md) | Post-pitch scope realignment | accepted (supersedes 0014) |
+| [0038](0038-post-pitch-scope-realignment.md) | Post-pitch scope realignment | accepted (supersedes 0014; plan boundary and Enterprise scope partially superseded by 0052) |
 | [0039](0039-cloud-stt-openai-ephemeral-token.md) | Cloud STT: OpenAI transcription reached with an ephemeral session token | accepted (supersedes 0035) |
 | [0040](0040-pii-scope-analysis-transcription-subprocessor.md) | The PII non-negotiable is scoped to analysis; transcription becomes a declared subprocessor | accepted (relates to 0012 and 0033; supersedes neither) |
 | [0041](0041-nora-as-mcp-server.md) | NORA as an MCP server (the inbound path) | accepted (relates to 0031, the outbound path) |
@@ -107,14 +107,10 @@ repository does not have.
 | [0049](0049-permission-boundaries.md) | Permission boundaries: a cap that never grants, and the four questions a cap raises | accepted (successor record to 0007; supersedes nothing) |
 | [0050](0050-the-landing-page-states-what-the-code-does.md) | The public landing page states what the code does, and marks what it does not | accepted (lifts the DEC-04 freeze recorded in 0038, 0040 and 0046; supersedes nothing) |
 | [0051](0051-the-substrate-is-an-azure-vm.md) | The substrate is an Azure VM, and Azure was never gone | accepted (supersedes 0036; corrects the "Azure is gone" overreach inherited from 0034) |
+| [0052](0052-core-enterprise-capability-boundary.md) | Enforce the Core and Enterprise capability boundary | accepted (partially supersedes 0038; tenant isolation and shared chat/RAG remain available to every plan) |
 
-**50 numbered records, 45 of them `accepted`, measured 2026-08-23.** The other five are the ones
-this index exists to keep straight: 0009, 0014 and 0035 are superseded outright, and 0016 and 0026
-are **partially** superseded — their surviving halves still bind, so treating them as dead is as
-wrong as treating them as whole. There is no `0000` and no gap: the sequence runs 0001–0050.
+Superseded portions do not invalidate a record's surviving decisions. Read the successor named
+in the status column before applying an older scope or infrastructure statement.
 
-**Recount rather than copy.** `ls docs/adr/[0-9]*.md | wc -l` gives the total and the `Status:` line
-of each file gives the split. Both numbers above were wrong somewhere in this repository on
-2026-08-23 — the backlog carried "49 numbered ADRs, 36 of them accepted", where 36 was the figure
-that fitted an earlier universe of 41 records and had simply been carried forward, inside a
-paragraph whose stated purpose was to prove the figures had been recounted.
+The files and their `Status:` lines determine the record count; this index does not keep a dated
+second count that can disagree with them.

@@ -55,7 +55,8 @@ public final class WorkerDtos {
             @JsonProperty("includeRisks") Boolean includeRisks,
             @JsonProperty("includeOpportunities") Boolean includeOpportunities,
             @JsonProperty("maxActionItems") Integer maxActionItems,
-            @JsonProperty("promptVersion") String promptVersion) {}
+            @JsonProperty("promptVersion") String promptVersion,
+            @JsonProperty("includeCustomerConfidence") Boolean includeCustomerConfidence) {}
 
     public record AnalyzeResponse(
             @JsonProperty("meetingId") String meetingId,

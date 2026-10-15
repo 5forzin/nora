@@ -12,7 +12,9 @@ export type ProcessingStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
 export interface MeetingListItem {
   id: string;
   title: string;
-  startedAt: string;
+  startedAt: string | null;
+  /** Upload time when no meeting start was declared. Optional for older API deployments. */
+  createdAt?: string;
   durationSeconds?: number;
   /**
    * Declared required and non-null here for a field the API has never once populated:
@@ -282,6 +284,35 @@ export interface SplitPreviewResponse {
 // ---------- Account & Workspace (settings — Account/Security/Workspace) ----------
 
 /** Authenticated user (GET /auth/me; PATCH /users/me returns the same shape). */
+export type WorkspacePlan = 'FREE' | 'PRO' | 'ENTERPRISE';
+
+export interface WorkspaceCapabilities {
+  manageUsers: boolean;
+  manageAccess: boolean;
+  readCompanyContext: boolean;
+  manageCompanyContext: boolean;
+  viewExecutiveOverview: boolean;
+}
+
+export interface WorkspacePermissions {
+  readMeetings: boolean;
+  createMeetings: boolean;
+  captureMeetings: boolean;
+  updateMeetings: boolean;
+  reprocessMeetings: boolean;
+  deleteMeetings: boolean;
+  eraseMeetings: boolean;
+  readTasks: boolean;
+  writeTasks: boolean;
+  readFlows: boolean;
+  manageFlows: boolean;
+  testFlows: boolean;
+  readIntegrations: boolean;
+  manageIntegrations: boolean;
+  readWorkspace: boolean;
+  renameWorkspace: boolean;
+}
+
 export interface MeResponse {
   userId: string;
   tenantId: string;
@@ -291,6 +322,11 @@ export interface MeResponse {
   emailVerified: boolean;
   /** ISO-8601. */
   createdAt: string;
+  tenantName: string;
+  plan: WorkspacePlan;
+  root: boolean;
+  capabilities: WorkspaceCapabilities;
+  permissions: WorkspacePermissions;
 }
 
 /** Current workspace (tenant) (GET /tenant; PUT /tenant/name returns the same shape). */
@@ -299,7 +335,7 @@ export interface TenantInfo {
   name: string;
   /** Immutable workspace identifier, defined at signup. */
   slug: string;
-  plan: string;
+  plan: WorkspacePlan;
   /** ISO-8601. */
   createdAt: string;
 }

@@ -18,9 +18,9 @@
 
 **THAT** automatically processes meeting transcripts and delivers, in seconds, structured summaries, action items and, for commercial teams, advanced signals of opportunity, risk and customer confidence per conversation — with context calibrated to the customer's own business, native integration via the **Model Context Protocol (MCP)**, an IAM model with users, groups and policies, and LGPD-by-design handling of personal data,
 
-**UNLIKE** generic transcription tools (Otter.ai, Fireflies) or international Sales Intelligence platforms (Gong, Clari) that use generic knowledge, do not speak Portuguese natively and do not respect Brazilian data protection legislation,
+**WITH A FOCUS ON** following decisions, risks and current action items across authorized meetings, with links back to their sources,
 
-**NORA** is the only conversational intelligence platform that learns each company's vocabulary, products and context — making any organisation capable of extracting real intelligence from its own meetings, regardless of sector or ecosystem. It starts as a personal copilot (Core, freemium) and evolves into a complete revenue engine for teams (Enterprise), with natural bottom-up adoption *(Product-Led Growth)*.
+**NORA** provides an individual meeting workspace in Core and company administration, executive oversight and configurable business context in Enterprise. The demonstration delivers those flows without claiming exclusive capabilities, a complete revenue platform or a validated commercial acquisition model.
 
 ---
 
@@ -45,49 +45,33 @@ the pitch.
 
 ## 2. The Platform: Core and Enterprise
 
-NORA is a platform with two plans that share the same AI engine and infrastructure, but serve distinct profiles and needs.
+Core and Enterprise share the meeting engine, chat/RAG and infrastructure. Their capability
+boundary is enforced by the API and reflected in the web navigation, as decided in
+[ADR 0052](../adr/0052-core-enterprise-capability-boundary.md).
 
-The box below lists **what each plan has**. It used to list what each plan was meant to have, which
-is a different document.
+| Core (`FREE` / `PRO`) | Enterprise (`ENTERPRISE`) adds |
+|---|---|
+| Capture, transcripts, summaries, decisions and action items | Executive overview across authorized company meetings |
+| Optional Productivity Score, projects, tasks and trends | Company context, products, competitors and version history |
+| Chat over authorized meetings, grounded by semantic search | Customer Confidence for supported commercial meetings |
+| Configured integrations, Flows and read-only MCP | Company users and invitations |
+| Account, security and workspace settings | IAM groups, policies, boundaries, simulator and audit |
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        NORA  PLATFORM                               │
-├──────────────────────────────────┬──────────────────────────────────┤
-│          NORA  CORE              │        NORA  ENTERPRISE          │
-│      Individual professional     │         Teams and companies      │
-├──────────────────────────────────┼──────────────────────────────────┤
-│ • Automatic meeting summaries    │ • Everything in Core, plus       │
-│ • Action item detection          │ • Company Context (products,     │
-│ • Productivity Score, opt-in     │   ICP, competitors, glossary)    │
-│ • Chat over your own meetings,   │   injected into every analysis   │
-│   grounded by semantic search    │ • Customer Confidence per call:  │
-│ • Project tracking (by tag)      │   score, band, buying signals,   │
-│ • PII Shield over text (LGPD)    │   objections, per-account trend  │
-│ • NORA Flows: trigger →          │ • AWS-style IAM: Root + Users +  │
-│   condition → action, on a       │   Groups + Policies, with        │
-│   canvas                         │   immutable policy versioning    │
-│ • OAuth integrations with nine   │ • Isolated multi-tenancy:        │
-│   external tools (outbound)      │   tenant filter + Postgres RLS   │
-│ • Freemium / individual plan     │                                  │
-├──────────────────────────────────┴──────────────────────────────────┤
-│  SURFACES: Web SaaS · Desktop (Windows) · REST API                  │
-│            MCP server, read-only first cut (ADR 0041)               │
-├─────────────────────────────────────────────────────────────────────┤
-│  GO-TO-MARKET: Product-Led Growth                                   │
-│  An individual adopts Core (freemium) → shows it to the company →   │
-│  the company buys Enterprise                                        │
-└─────────────────────────────────────────────────────────────────────┘
-```
+Tenant isolation and text/analysis privacy controls apply to **both** columns. They are not paid
+features. Enterprise capabilities still require the caller's IAM permissions; a plan does not
+grant administration rights.
 
-**The split is commercial framing, and the code does not enforce it.** `tenants.plan` exists
-(`V001__create_tenants.sql:12`, values `FREE` / `PRO` / `ENTERPRISE`) and is read back by
-`GET /tenant`, but no endpoint, guard or component gates a feature on it — the web shell renders a
-hardcoded `Core` badge (`apps/web/src/components/core/app-shell.tsx:347`). Every tenant can reach
-everything the tenant's IAM policies allow. Entitlement enforcement would be new work, and
-[ADR 0038](../adr/0038-post-pitch-scope-realignment.md) §1 declares a destination with no paying
-tenant to enforce it against. The columns above describe **who each capability is for**, not a
-licence check.
+`GET /auth/me` and profile updates return the stored plan, Enterprise capabilities and separate
+permissions for shared actions. Navigation and action controls use that access metadata;
+individual API requests still enforce IAM. Enterprise users enter through
+`/enterprise`, with administration at `/enterprise/users`, `/enterprise/access` and
+`/enterprise/company`. Core users do not see these controls, and direct API calls do not bypass
+the boundary. Legacy `/overview` and `/settings/iam` routes preserve entitled navigation through
+redirects; they do not activate Enterprise.
+
+Enterprise is operator-provisioned for this project. Signup and existing workspaces are not
+automatically promoted, and there is no checkout, billing or self-service upgrade flow. This
+separation does not reopen the corporate capabilities closed by ADR 0038.
 
 ### What this box used to promise, and what closed it
 
@@ -102,7 +86,7 @@ tidy box — the same argument [ADR 0014](../adr/0014-defer-post-mvp-commercial-
 | **Enterprise SLA + BR support**, and the **Enterprise DPA** that used to be counted with it | **WONT.** All three are contractual instruments between a supplier and a customer. There is no customer, so signing or publishing any of them would be theatre — and their absence therefore stops being a gap. The DPA's death is also why ADR 0040 §5 can state plainly that no data processing agreement governs the transcription provider | ADR 0038 §4 |
 | **Commercial Next Best Action** | **Never built, and never tracked.** No code in the web app, the API or the worker ever produced it, and no user story covers it. It was a box item with nothing behind it — see §5, where it now sits in the *Does Not* column | — (removed here) |
 | **Configurable Competitive Radar** | **Not a feature.** What exists is real but smaller: the tenant lists its competitors in the Company Context, and the analysis marks an objection with the competitor named in it (`competitor` on each objection). There is no radar, no aggregation and no alerting | — (restated at true size) |
-| **Team analytics & dashboards** | **Partially built, and smaller than the phrase suggests.** `/dashboard` is a chronological, filterable meeting list (US16), not team analytics. What exists of analytics is `/trends` (US21, delivered): task load per week or month over the meetings the caller may open, and a ranking of the topics the analyses extracted. There is no per-person productivity view and no cross-team comparison, and the theme ranking is a lexical count, not a clustering | ADR 0038 §5 |
+| **Team analytics & dashboards** | **Partially built, and smaller than the phrase suggests.** `/dashboard` lists meetings and `/trends` reports task load and extracted topics. Enterprise `/enterprise` consolidates decisions, historical risks and current pending tasks with source links across meetings the caller may open. It does not infer distinct active risks, resolve them automatically or compare employee productivity | ADR 0038 §5 · ADR 0052 |
 | **Integration over MCP** (Calendar/Outlook, Linear/Jira, GitHub) | **Delivered by a different protocol.** What this row promised is NORA writing into those tools, and that is the nine OAuth integrations (ADR 0031), not MCP. MCP is the opposite direction and is now built as a read-only server (ADR 0041) — it never was going to deliver this row. See §7 | ADR 0031 · ADR 0041 |
 
 ## 3. Where the current state is written down
@@ -170,7 +154,7 @@ commitments, and they are the part to keep true.
 | **AI** | An **analysis, structuring and recommendation** engine that amplifies the human. Output via strict JSON Schema | An AI that makes commercial decisions autonomously without human review |
 | **Integration** | An **open** platform in **two** directions, both built. **Outbound:** data *leaves* NORA for the tools the user already uses, over OAuth integrations driven by Flows (ADR 0030/0031). **Inbound:** an external client asks NORA questions over MCP, authenticated by a tenant-scoped token and answering only what the user it acts for could read in the web app (ADR 0041) | A closed system that requires replacing the existing tools. The outbound direction is OAuth and **not** MCP, whatever this document called it for fifteen months. The inbound one is MCP and is **read-only**; it also deliberately falls short of the specification's OAuth 2.1 authorization server, so a client that speaks only that flow needs a pasted token (ADR 0041 §3) |
 | **Data** | An **LGPD-by-design** system: personal data in **text** is detected and redacted before the analysis LLM (ADR 0012), and structured PII is redacted in the BFF on the chat and search paths (ADR 0033) | A platform that stores or shares third-party conversation data. **Not a guarantee that covers audio**: once the cloud transcription of ADR 0039 lands, raw audio reaches a declared external subprocessor before any redaction exists (ADR 0040). The scope of the promise is text, and it is stated in §5 |
-| **Model** | A SaaS with an **individual freemium** (Core) evolving into **paid enterprise** via PLG | A product that requires a corporate purchase as its entry point |
+| **Model** | Core for individual meeting work and an operator-provisioned Enterprise workspace for this demonstration | A delivered billing, checkout or commercial upgrade flow |
 
 ## 5. Does — Does Not table
 
@@ -189,9 +173,9 @@ commitments, and they are the part to keep true.
 | **Core — Projects** | **Groups meetings by tag** into projects, client-side, with no manual filling and no separate backend | It is not a project manager. It sends nothing to Jira or Linear by itself — that is the **Integrations** row, and it is Flows that triggers it |
 | **Core — Flows** | **Automations on a canvas** (ADR 0030/0032): a trigger, optional conditions, and actions on connected tools. All four real triggers are offered — `meeting.analysis_completed`, `action_item.created`, `meeting.risk_detected`, and `schedule.cron`, which a timer fires (US75, ADR 0047) | The schedule is a **closed vocabulary** — hourly, daily or weekly, in America/Sao_Paulo — not a cron expression, and nothing outside it can be saved. It is **not a digest**: a scheduled run executes once per meeting analysed since the previous run, so there is no "summary of the week" block. `schedule.cron` was rejected at save time until it had a dispatcher, rather than accepted and silently never fired |
 | **Core — Integrations** | **Connects nine external tools over OAuth and equivalents** — Google, Microsoft, Slack, GitHub, Notion, Todoist, Linear, Telegram, Trello — with tokens encrypted at rest (AES-GCM, ADR 0031). This is the **outbound** path: data leaves NORA for the tools the user already has | **This is not MCP**, despite fifteen months of this document calling it that. Each integration is optional and independent. The inbound path — an external client querying NORA — is the MCP server of ADR 0041, a separate row below. See §7 |
-| **Core — MCP server** | **Answers an external MCP client** — Claude Desktop, an IDE, a coding or research agent — over `POST /mcp`, with five read tools: list meetings, meeting detail, semantic search, action items and Customer Confidence. Authenticated by a tenant-scoped token the user mints in settings, stored only as a SHA-256 hash and revocable. Every tool call resolves the same IAM principal and evaluates the same actions as the web surface (`meeting:read`, `task:read`), so a client can never see more than the person it acts for (ADR 0041) | **Read-only.** No tool creates, updates or deletes anything; writing is the outbound direction above, through Flows. **Not an OAuth 2.1 authorization server**, which is what the MCP specification asks of a remote server — a client that speaks only that flow needs a token pasted into its configuration (ADR 0041 §3). Speaks the `initialize` handshake revisions (`2025-11-25`, `2025-06-18`) and refuses anything else loudly; it does not implement the handshake-free revision |
+| **Shared — MCP server** | **Answers an external MCP client** over `POST /mcp`: meetings, meeting detail, semantic search and action items are shared; Customer Confidence requires Enterprise. A tenant-scoped, revocable token resolves the same IAM principal and capabilities as the web surface (ADR 0041, ADR 0052) | **Read-only**, with no OAuth 2.1 authorization server. A client supporting only that OAuth flow needs a token supplied in its configuration. Supported `initialize` revisions are `2025-11-25` and `2025-06-18`; the handshake-free revision is not supported |
 | **Enterprise — Company Context** | **Learns the customer's business**: the admin configures products, ICP, competitors, glossary and objection handling; the context is injected into every analysis and into the chat's answers | Does not use generic or hardcoded knowledge from any vendor — the context is always the tenant's |
-| **Enterprise — Semantic search / RAG** | **Delivered** (US15, PR #206): one embedding per meeting (migration `V021`), `EmbeddingService` + `HttpEmbeddingClient` with provider-agnostic embeddings (Gemini/OpenAI), exposed as `GET /meetings/search` and consumed by the chat as RAG context | **Does not use `pgvector`, despite the container image being `pgvector/pgvector:pg16`.** The extension is never created; the vector is a JSON array in a `TEXT` column and cosine similarity is computed in Java. Adequate for tens or hundreds of meetings per tenant, and it is a scale ceiling, not a feature |
+| **Shared — Semantic search / RAG** | **Delivered** (US15, PR #206): one embedding per meeting (`V021`), provider-agnostic embeddings and `GET /meetings/search` grounding the chat. Both Core and Enterprise may search meetings their IAM policies permit (ADR 0052) | Vectors are JSON arrays in a `TEXT` column; cosine similarity is computed in Java. The `pgvector` extension is not enabled. Production-scale performance is not established |
 | **Enterprise — Customer Confidence** | **Delivered full-stack** (ADR 0015, PR #148): the worker emits a 0–100 score + band + buying signals + objections + `accountName`; the backend recomputes the trend per account authoritatively and persists it; `GET /meetings/{id}` returns the block; `CustomerConfidenceCard` UI in the meeting detail. Objections carry the `competitor` named in them, when one is named | Does not score internal meetings — the block is emitted only for conversations with a customer, lead or prospect, and is `null` otherwise. Does not invent signals: every buying signal and objection must carry a literal `quote` from the transcript |
 | **Enterprise — Account Health** | — | **Closed scope, not deferred** (ADR 0038 §4). The aggregated score per account over time (US50) and the band-change alert (US51) are **WONT**: they aggregate over history that does not exist. `account_health_snapshots` was foreseen in ADR 0006 and never migrated; it stops being debt. The per-meeting signal that *is* built is the Customer Confidence row above |
 | **Enterprise — Next Action** | — | **Never built, and never tracked.** "Recommends the Next Best Action in the next 48–72h" sat in this column as delivered behaviour with no implementation in the web app, the API or the worker, and no user story anywhere in the backlog. It is stated as absent rather than quietly deleted, because it was read as a commitment for as long as it stood here |

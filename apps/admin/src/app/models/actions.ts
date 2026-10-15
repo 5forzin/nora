@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { requireAccess } from "@/lib/access";
-import type { ServiceKey } from "@/lib/contracts";
+import type { LlmModel, ServiceBinding, ServiceKey } from "@/lib/contracts";
 import { bindService, createModel, removeModel, type NewModelInput } from "@/lib/data";
 import { getOperator } from "@/lib/operator";
 
@@ -22,9 +22,9 @@ import { getOperator } from "@/lib/operator";
  * unsigned header.
  */
 
-type ActionResult = { ok: true } | { ok: false; error: string };
+type ActionResult<T = undefined> = { ok: true; value: T } | { ok: false; error: string };
 
-function fail(e: unknown): ActionResult {
+function fail(e: unknown): { ok: false; error: string } {
   return { ok: false, error: e instanceof Error ? e.message : "Falha inesperada" };
 }
 
@@ -41,12 +41,12 @@ export async function bindServiceAction(
   service: ServiceKey,
   modelId: string,
   enabled: boolean,
-): Promise<ActionResult> {
+): Promise<ActionResult<ServiceBinding>> {
   try {
     const operador = await operadorAutorizado();
-    await bindService(service, modelId, enabled, operador);
+    const value = await bindService(service, modelId, enabled, operador);
     revalidatePath("/models");
-    return { ok: true };
+    return { ok: true, value };
   } catch (e) {
     return fail(e);
   }
@@ -57,18 +57,18 @@ export async function removeModelAction(id: string): Promise<ActionResult> {
     const operador = await operadorAutorizado();
     await removeModel(id, operador);
     revalidatePath("/models");
-    return { ok: true };
+    return { ok: true, value: undefined };
   } catch (e) {
     return fail(e);
   }
 }
 
-export async function addModelAction(input: NewModelInput): Promise<ActionResult> {
+export async function addModelAction(input: NewModelInput): Promise<ActionResult<LlmModel>> {
   try {
     const operador = await operadorAutorizado();
-    await createModel(input, operador);
+    const value = await createModel(input, operador);
     revalidatePath("/models");
-    return { ok: true };
+    return { ok: true, value };
   } catch (e) {
     return fail(e);
   }

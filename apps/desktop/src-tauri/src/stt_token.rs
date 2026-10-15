@@ -141,9 +141,9 @@ pub fn classify(status: u16) -> &'static str {
 pub async fn fetch_session(
     app: &AppHandle,
     language: &str,
+    expected_owner: &crate::auth_bridge::SessionIdentity,
 ) -> Result<RealtimeSession, SessionError> {
-    let jwt = crate::auth_bridge::web_session_jwt(app)
-        .map_err(|e| SessionError::new("STT_AUTH_REJECTED", e))?;
+    let jwt = authorized_session_jwt(crate::auth_bridge::web_session_jwt(app), expected_owner)?;
 
     let url = format!(
         "{}/stt/sessions",
@@ -200,6 +200,16 @@ pub async fn fetch_session(
     Ok(session)
 }
 
+fn authorized_session_jwt(
+    jwt: Result<String, String>,
+    expected_owner: &crate::auth_bridge::SessionIdentity,
+) -> Result<String, SessionError> {
+    let jwt = jwt.map_err(|_| SessionError::new("STT_AUTH_REJECTED", "SESSION_UNAVAILABLE"))?;
+    crate::auth_bridge::ensure_session_owner(&jwt, expected_owner)
+        .map_err(|error| SessionError::new("STT_AUTH_REJECTED", error))?;
+    Ok(jwt)
+}
+
 /// Keeps an error message to one readable line — an HTML error page from a misrouted proxy is
 /// otherwise pasted whole into a toast.
 ///
@@ -220,6 +230,59 @@ fn first_line(body: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_owner() -> crate::auth_bridge::SessionIdentity {
+        crate::auth_bridge::SessionIdentity {
+            user_id: "11111111-1111-4111-8111-111111111111".into(),
+            tenant_id: "22222222-2222-4222-8222-222222222222".into(),
+        }
+    }
+
+    fn test_jwt(owner: &crate::auth_bridge::SessionIdentity, signature: &str) -> String {
+        use base64::Engine as _;
+        let claims = serde_json::json!({ "sub": owner.user_id, "tenantId": owner.tenant_id });
+        format!(
+            "e30.{}.{}",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims.to_string()),
+            signature
+        )
+    }
+
+    #[test]
+    fn reconnect_accepts_a_refreshed_jwt_only_for_the_original_user_and_tenant() {
+        let owner = test_owner();
+        for signature in ["initial", "refreshed"] {
+            let jwt = test_jwt(&owner, signature);
+            assert_eq!(
+                authorized_session_jwt(Ok(jwt.clone()), &owner).unwrap(),
+                jwt
+            );
+        }
+        for changed in [
+            crate::auth_bridge::SessionIdentity {
+                user_id: "33333333-3333-4333-8333-333333333333".into(),
+                ..owner.clone()
+            },
+            crate::auth_bridge::SessionIdentity {
+                tenant_id: "44444444-4444-4444-8444-444444444444".into(),
+                ..owner.clone()
+            },
+        ] {
+            let error =
+                authorized_session_jwt(Ok(test_jwt(&changed, "new-login")), &owner).unwrap_err();
+            assert_eq!(error.code, "STT_AUTH_REJECTED");
+            assert!(error.message.starts_with("ACCOUNT_MISMATCH"));
+        }
+    }
+
+    #[test]
+    fn missing_or_invalid_identity_cannot_mint_an_stt_session() {
+        for jwt in [Err("missing cookie".into()), Ok("invalid".into())] {
+            let error = authorized_session_jwt(jwt, &test_owner()).unwrap_err();
+            assert_eq!(error.code, "STT_AUTH_REJECTED");
+            assert!(error.message.starts_with("SESSION_UNAVAILABLE"));
+        }
+    }
 
     fn session(expires_at: &str) -> RealtimeSession {
         RealtimeSession {

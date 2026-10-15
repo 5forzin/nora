@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Route } from "next";
+import { requireWorkspacePermission } from "@/lib/enterprise/require-permission";
 
 import { listMeetings } from "@/lib/api/client";
 import type { MeetingListItem, ProcessingStatus } from "@/lib/api/types";
@@ -228,7 +229,7 @@ function DetailView({ p }: { p: Project }) {
   );
 }
 
-function EmptyView() {
+function EmptyView({ canCreate }: { canCreate: boolean }) {
   return (
     <>
       <Header />
@@ -251,16 +252,16 @@ function EmptyView() {
             {copy.emptyTitle}
           </h2>
           <p style={{ fontSize: 13.5, color: "var(--muted)", margin: 0, lineHeight: 1.55 }}>
-            {copy.emptyBody}
+            {canCreate ? copy.emptyBody : 'Os projetos agrupam as reuniões disponíveis por assunto.'}
           </p>
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
-          <Link
+          {canCreate && <Link
             href={"/meetings/upload" as Route}
             style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 16px", background: "var(--ink)", color: "var(--canvas)", borderRadius: 9, fontSize: 13, fontWeight: 500 }}
           >
             {copy.emptyUploadCta}
-          </Link>
+          </Link>}
           <Link
             href={"/chat" as Route}
             style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 16px", background: "var(--sidebar)", color: "var(--ink)", border: "1px solid var(--border)", borderRadius: 9, fontSize: 13, fontWeight: 500 }}
@@ -279,6 +280,7 @@ export default async function ProjectsPage({
   searchParams: Promise<{ tag?: string }>;
 }) {
   const sp = await searchParams;
+  const access = await requireWorkspacePermission('readMeetings');
   const activeTag = sp.tag?.trim() || undefined;
 
   let items: MeetingListItem[] = [];
@@ -328,7 +330,7 @@ export default async function ProjectsPage({
       ) : projects.length > 0 ? (
         <ListView projects={projects} />
       ) : (
-        <EmptyView />
+        <EmptyView canCreate={access.permissions.createMeetings === true} />
       )}
     </div>
   );

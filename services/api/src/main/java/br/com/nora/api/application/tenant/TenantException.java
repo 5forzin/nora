@@ -26,6 +26,12 @@ public sealed class TenantException extends RuntimeException {
         }
     }
 
+    public static final class EnterpriseRequired extends TenantException {
+        public EnterpriseRequired() {
+            super("ENTERPRISE_REQUIRED", "This feature requires an Enterprise workspace.");
+        }
+    }
+
     /**
      * Invalid domain format (US32). Mapped to HTTP 422 to signal that the payload is syntactically
      * correct but semantically not acceptable.

@@ -4,6 +4,8 @@ import br.com.nora.api.application.platform.UsageRecorder;
 import br.com.nora.api.application.ports.NlpWorkerClient;
 import br.com.nora.api.infrastructure.nlp.WorkerDtos;
 import br.com.nora.api.infrastructure.nlp.WorkerDtos.LiveHighlights;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,7 +44,7 @@ public class LiveAnalysisService {
         long startedAt = System.nanoTime();
         try {
             WorkerDtos.LiveAnalyzeResponse response =
-                    worker.analyzeLive(transcriptChunk, language, previous);
+                    worker.analyzeLive(transcriptChunk, language, recentHighlights(previous));
             recordUsage(tenantId, response.metadata(), startedAt, "ok");
             return response;
         } catch (RuntimeException ex) {
@@ -52,6 +54,28 @@ public class LiveAnalysisService {
             recordUsage(tenantId, null, startedAt, "error");
             throw ex;
         }
+    }
+
+    /**
+     * The worker's v1 limits apply to one chunk, not the meeting's accumulated highlights. Only
+     * recent items are needed as deduplication context; the client keeps the complete feed.
+     */
+    private static LiveHighlights recentHighlights(LiveHighlights previous) {
+        if (previous == null) {
+            return null;
+        }
+        return new LiveHighlights(
+                recent(previous.decisions(), 20),
+                recent(previous.nextSteps(), 20),
+                recent(previous.observations(), 20),
+                recent(previous.tasks(), 30));
+    }
+
+    private static <T> List<T> recent(List<T> items, int limit) {
+        if (items == null || items.isEmpty()) {
+            return List.of();
+        }
+        return new ArrayList<>(items.subList(Math.max(0, items.size() - limit), items.size()));
     }
 
     /**

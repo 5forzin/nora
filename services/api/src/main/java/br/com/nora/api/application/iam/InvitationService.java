@@ -128,6 +128,8 @@ public class InvitationService {
                 tenants.findById(tenantId)
                         .orElseThrow(() -> new TenantException.NotFound(tenantId));
 
+        requireEnterprise(tenant);
+
         // 2. Email format. Reuses Email.of (lowercase + trim + regex).
         Email email = parseEmail(rawEmail);
 
@@ -235,6 +237,11 @@ public class InvitationService {
             throw InvitationException.inviteExpired();
         }
 
+        Tenant tenant =
+                tenants.findById(invite.tenantId())
+                        .orElseThrow(() -> new TenantException.NotFound(invite.tenantId()));
+        requireEnterprise(tenant);
+
         // Password validation by the domain (same policy as signup).
         PasswordPolicy.validate(password);
         String safeDisplayName =
@@ -304,6 +311,12 @@ public class InvitationService {
                 settings.jwtTtl().toSeconds(),
                 refresh.rawToken(),
                 settings.refreshTokenTtl().toSeconds());
+    }
+
+    private static void requireEnterprise(Tenant tenant) {
+        if (tenant.plan() != Tenant.Plan.ENTERPRISE) {
+            throw new TenantException.EnterpriseRequired();
+        }
     }
 
     /**

@@ -391,7 +391,7 @@ function DetectionRow({ row, fresh }: { row: FeedRow; fresh: boolean }) {
 }
 
 function HighlightsColumn({ onCollapse }: { onCollapse: () => void }) {
-  const { highlights, isAnalyzing, lastUpdatedAt, lastLatencyMs } = useLiveHighlights();
+  const { highlights, isAnalyzing, lastUpdatedAt, lastLatencyMs, error } = useLiveHighlights();
   const feed = useMemo(() => buildFeed(highlights), [highlights]);
   const total = feed.length;
   const newestAt = total > 0 ? feed[0].receivedAt : 0;
@@ -468,6 +468,11 @@ function HighlightsColumn({ onCollapse }: { onCollapse: () => void }) {
           </IconButton>
         </div>
       </div>
+      {error && (
+        <div role="alert" style={{ padding: "10px 12px", fontSize: 12, color: "var(--danger)" }}>
+          {error}
+        </div>
+      )}
       <div className="flex-1 min-h-0 overflow-y-auto" style={{ padding: "6px 8px" }}>
         {total === 0 ? (
           <div
@@ -528,165 +533,22 @@ function AudioConfigSection({
   currentMic: string;
   currentSysAudio: string | null;
 }) {
-  const [devices, setDevices] = useState<string[]>([]);
-  const [mic, setMic] = useState<string>(currentMic || "");
-  const [sysEnabled, setSysEnabled] = useState<boolean>(currentSysAudio !== null);
-  const [applying, setApplying] = useState(false);
-
-  // There used to be a `check_system_audio_prerequisites` call here whose only job was to
-  // put up an "install BlackHole" notice on macOS. The client is Windows-only now, where
-  // WASAPI loopback needs no driver, so there is nothing left for the probe to warn about —
-  // the Tauri command went with it.
-  useEffect(() => {
-    invoke<string[]>("list_audio_devices")
-      .then(setDevices)
-      .catch((e) => console.error("[overlay] list_audio_devices:", e));
-  }, []);
-
-  // Re-sync local state when the recording status changes
-  useEffect(() => {
-    setMic(currentMic || "");
-  }, [currentMic]);
-  useEffect(() => {
-    setSysEnabled(currentSysAudio !== null);
-  }, [currentSysAudio]);
-
-  const dirty =
-    (mic || null) !== (currentMic || null) ||
-    sysEnabled !== (currentSysAudio !== null);
-
-  const apply = async () => {
-    if (!dirty || applying) return;
-    setApplying(true);
-    try {
-      await emit("nora://restart-recording", {
-        deviceName: mic || null,
-        captureSystemAudio: sysEnabled,
-      });
-    } catch (e) {
-      console.error("[overlay] emit restart failed:", e);
-    } finally {
-      // Wait for status events to ripple back before clearing
-      setTimeout(() => setApplying(false), 600);
-    }
-  };
-
-  const selectStyle: React.CSSProperties = {
-    width: "100%",
-    padding: "5px 26px 5px 9px",
-    fontSize: 12,
-    background: "var(--canvas)",
-    border: "1px solid var(--border)",
-    borderRadius: 7,
-    color: "var(--ink)",
-    outline: "none",
-    letterSpacing: "-0.005em",
-    appearance: "none",
-    backgroundImage:
-      'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'10\' height=\'10\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%236E7178\' stroke-width=\'2\' stroke-linecap=\'round\'><polyline points=\'6 9 12 15 18 9\'/></svg>")',
-    backgroundRepeat: "no-repeat",
-    backgroundPosition: "right 8px center",
-    fontFamily: "var(--sans)",
-  };
-
   return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <h3
-          style={{
-            fontSize: 10.5,
-            fontWeight: 500,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            color: "var(--muted)",
-            margin: 0,
-          }}
-        >
-          Áudio
-        </h3>
-        {dirty && (
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={apply}
-            disabled={applying}
-          >
-            {applying ? (
-              <>
-                <span
-                  style={{
-                    width: 9,
-                    height: 9,
-                    border: "1.5px solid rgba(253,253,252,0.4)",
-                    borderTopColor: "var(--canvas)",
-                    borderRadius: "50%",
-                    animation: "nora-spin 0.9s linear infinite",
-                  }}
-                />
-                Reiniciando…
-              </>
-            ) : (
-              "Aplicar e reiniciar"
-            )}
-          </Button>
-        )}
-      </div>
-      <div className="grid grid-cols-2 gap-2 mb-2">
-        <label className="flex flex-col gap-1">
-          <span style={{ fontSize: 10, color: "var(--muted)", letterSpacing: "0.04em", textTransform: "uppercase" }}>
-            Microfone
-          </span>
-          <select
-            value={mic}
-            onChange={(e) => setMic(e.target.value)}
-            style={selectStyle}
-          >
-            <option value="">Padrão do sistema</option>
-            {devices.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span style={{ fontSize: 10, color: "var(--muted)", letterSpacing: "0.04em", textTransform: "uppercase" }}>
-            Áudio do sistema
-          </span>
-          {/* Not a selector, on purpose. The WASAPI loopback attaches to the Windows default
-              output device and to nothing else; the <select> that used to be here was filled
-              with INPUT devices, sent the chosen one through three layers, and had it
-              discarded — while the status echoed the choice back as if it had been honoured
-              (desktop audit #14). */}
-          <div
-            style={{
-              ...selectStyle,
-              color: "var(--muted)",
-              background: "var(--sidebar)",
-              cursor: "default",
-              backgroundImage: "none",
-              padding: "5px 9px",
-            }}
-            title={
-              sysEnabled
-                ? "A captura acompanha o dispositivo de saída padrão do Windows."
-                : undefined
-            }
-          >
-            {sysEnabled ? "Saída padrão do Windows" : "Desativado"}
-          </div>
-        </label>
-      </div>
-      <label className="flex items-center gap-2 cursor-pointer" style={{ fontSize: 11.5 }}>
-        <input
-          type="checkbox"
-          checked={sysEnabled}
-          onChange={(e) => setSysEnabled(e.target.checked)}
-          style={{ accentColor: "var(--accent)" }}
-        />
-        <span style={{ color: "var(--ink)" }}>Capturar áudio do sistema</span>
-      </label>
-    </div>
+    <section aria-label="Fontes de áudio" style={{ fontSize: 12 }}>
+      <dl className="grid grid-cols-2 gap-2">
+        <div>
+          <dt style={{ color: "var(--muted)" }}>Microfone</dt>
+          <dd>{currentMic || "Desativado"}</dd>
+        </div>
+        <div>
+          <dt style={{ color: "var(--muted)" }}>Áudio do sistema</dt>
+          <dd>{currentSysAudio ? "Saída padrão do Windows" : "Desativado"}</dd>
+        </div>
+      </dl>
+      <p style={{ color: "var(--muted)", marginTop: 8 }}>
+        Altere as fontes no dock antes de iniciar a gravação.
+      </p>
+    </section>
   );
 }
 
@@ -762,7 +624,7 @@ function ConfigDrawer({
                 letterSpacing: "-0.005em",
               }}
             >
-              Mostrar dock no rodapé
+              Mostrar dock
             </div>
             <div
               style={{
@@ -824,17 +686,12 @@ function ConfigDrawer({
               margin: 0,
             }}
           >
-            Falantes detectados
+            Nome na transcrição
           </h3>
-          <span style={{ fontSize: 11, color: "var(--muted)" }}>
-            {detectedSpeakers.length}{" "}
-            {detectedSpeakers.length === 1 ? "pessoa" : "pessoas"}
-          </span>
         </div>
         {detectedSpeakers.length === 0 ? (
           <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5 }}>
-            Ainda não detectei outros falantes. Você pode renomear cada voz aqui
-            em tempo real.
+            Aguardando fala do áudio do sistema.
           </div>
         ) : (
           <div className="flex flex-col gap-1.5">
@@ -846,6 +703,7 @@ function ConfigDrawer({
                 />
                 <Input
                   type="text"
+                  aria-label="Nome do áudio do sistema"
                   value={overrides[s.speakerId] ?? ""}
                   onChange={(e) => onRename(s.speakerId, e.target.value)}
                   placeholder={s.fallback}
@@ -1035,7 +893,9 @@ export function OverlayPage() {
           ? {
               variant: "warn",
               title: "Áudio do sistema indisponível",
-              body: "A gravação continua apenas com o seu microfone — a fala dos outros participantes não será transcrita.",
+              body: micDevice
+                ? "A gravação continua apenas com o seu microfone."
+                : "A gravação foi interrompida.",
               duration: 10000,
             }
           : {
@@ -1046,7 +906,7 @@ export function OverlayPage() {
             },
       );
     },
-    [pushNotification],
+    [pushNotification, micDevice],
   );
 
   // STT sidecar errors (Rust emits "stt-error" with the sidecar's raw

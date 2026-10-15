@@ -40,6 +40,7 @@ const PROTECTED: ReadonlyArray<{ prefix: string; page: string }> = [
   { prefix: "/people", page: "/people" },
   { prefix: "/integrations", page: "/integrations" },
   { prefix: "/flows", page: "/flows" },
+  { prefix: "/enterprise", page: "/enterprise/access" },
 ];
 
 test.describe("route protection", () => {
@@ -65,8 +66,17 @@ test.describe("route protection", () => {
       const response = await authedPage.goto(path);
       await expect(authedPage).not.toHaveURL(/\/auth\/login/);
       expect(response!.status(), `${path} should exist — a 404 is not a passing case`).toBe(200);
+      await expect(authedPage.getByRole('heading', { level: 1 })).toBeVisible();
+      await expect(authedPage.getByRole('complementary').getByRole('link', { name: 'Acessos', exact: true })).toBeVisible();
     });
   }
+
+  test('the legacy IAM URL resolves to Enterprise access before rendering', async ({ authedPage }) => {
+    await authedPage.goto('/settings/iam');
+    await expect(authedPage).toHaveURL(/\/enterprise\/access$/);
+    await expect(authedPage.getByRole('heading', { name: 'Acessos', exact: true })).toBeVisible();
+    await expect(authedPage.getByRole('navigation', { name: 'Gestão de acessos' })).toBeVisible();
+  });
 
   test("the landing page is public", async ({ page }) => {
     const response = await page.goto("/");

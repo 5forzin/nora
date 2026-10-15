@@ -5,14 +5,13 @@
  *
  * Same shape as the meeting detail's export menu: a small menu that closes on outside click and
  * on Esc, and two outputs generated client-side by the pure helpers in
- * `@/lib/report/tasks-export`, downloaded through Blob + `<a download>` with no server
- * round-trip. Both formats carry exactly the rows the screen is showing — the active status
- * filter included — which the caption in the menu states so a shorter file than expected does
- * not read as a bug.
+ * `@/lib/report/tasks-export`. Both formats retrieve every page matching the active status
+ * filter before downloading; a failed page never produces a partial file.
  */
 import { useEffect, useRef, useState } from "react";
 
-import type { TaskListItemDto } from "@/lib/api/client";
+import type { TaskStatus } from "@/lib/api/client";
+import { loadTasksForExport } from "@/lib/report/load-tasks";
 import { taskExportFileName, tasksToCsv, tasksToMarkdown } from "@/lib/report/tasks-export";
 
 function DownloadIcon() {
@@ -32,13 +31,20 @@ function ChevronDownIcon() {
 }
 
 export default function TasksExportMenu({
-  items,
+  status,
+  totalItems,
   filterLabel,
+  disabled,
+  onError,
 }: {
-  items: TaskListItemDto[];
+  status?: TaskStatus;
+  totalItems: number;
   filterLabel: string;
+  disabled: boolean;
+  onError: (message: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   // Closes on outside click / Esc — same minimal menu pattern as the meeting export, no lib.
@@ -71,6 +77,23 @@ export default function TasksExportMenu({
     setOpen(false);
   }
 
+  async function exportTasks(format: "csv" | "md") {
+    setExporting(true);
+    onError(null);
+    try {
+      const items = await loadTasksForExport(status);
+      download(
+        format === "csv" ? tasksToCsv(items) : tasksToMarkdown(items, filterLabel),
+        taskExportFileName(format, filterLabel),
+        format === "csv" ? "text/csv" : "text/markdown",
+      );
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "Falha ao exportar as tarefas. Tente novamente.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div ref={wrapRef} style={{ position: "relative", display: "inline-block" }}>
       <button
@@ -78,25 +101,24 @@ export default function TasksExportMenu({
         className="btn btn-secondary btn-sm"
         aria-haspopup="menu"
         aria-expanded={open}
-        disabled={items.length === 0}
+        disabled={disabled || totalItems === 0 || exporting}
         onClick={() => setOpen((v) => !v)}
       >
         <DownloadIcon />
-        Exportar
+        {exporting ? "Exportando…" : "Exportar"}
         <ChevronDownIcon />
       </button>
       {open && (
         <div className="menu-pop" role="menu" aria-label="Formatos de exportação">
           <p style={{ margin: 0, padding: "6px 10px 8px", fontSize: 11, color: "var(--muted)", lineHeight: 1.4 }}>
-            {items.length} {items.length === 1 ? "item" : "itens"} · filtro “{filterLabel}”
+            Todos os {totalItems} {totalItems === 1 ? "item" : "itens"} · filtro “{filterLabel}”
           </p>
           <button
             type="button"
             role="menuitem"
             className="menu-item"
-            onClick={() =>
-              download(tasksToCsv(items), taskExportFileName("csv", filterLabel), "text/csv")
-            }
+            disabled={exporting || disabled}
+            onClick={() => void exportTasks("csv")}
           >
             CSV (.csv)
           </button>
@@ -104,13 +126,8 @@ export default function TasksExportMenu({
             type="button"
             role="menuitem"
             className="menu-item"
-            onClick={() =>
-              download(
-                tasksToMarkdown(items, filterLabel),
-                taskExportFileName("md", filterLabel),
-                "text/markdown",
-              )
-            }
+            disabled={exporting || disabled}
+            onClick={() => void exportTasks("md")}
           >
             Markdown (.md)
           </button>

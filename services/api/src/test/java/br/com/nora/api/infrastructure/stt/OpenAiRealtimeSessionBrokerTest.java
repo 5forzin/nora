@@ -28,16 +28,21 @@ class OpenAiRealtimeSessionBrokerTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static SttProperties props(String baseUrl, String key) {
+        return props(baseUrl, key, "gpt-live-transcribe", "");
+    }
+
+    private static SttProperties props(
+            String baseUrl, String key, String model, String turnDetection) {
         return new SttProperties(
                 "pt",
                 new SttProperties.OpenAi(
                         key,
                         baseUrl,
                         "wss://provider.example/realtime?intent=transcription",
-                        "gpt-live-transcribe",
+                        model,
                         "audio/pcm",
                         24_000,
-                        "server_vad",
+                        turnDetection,
                         600,
                         4_000),
                 new SttProperties.RateLimit(12));
@@ -134,7 +139,32 @@ class OpenAiRealtimeSessionBrokerTest {
         assertThat(input.path("format").path("rate").asInt()).isEqualTo(24_000);
         assertThat(input.path("transcription").path("model").asText())
                 .isEqualTo("gpt-live-transcribe");
+        assertThat(input.path("transcription").path("languages"))
+                .isEqualTo(MAPPER.readTree("[\"pt\"]"));
+        assertThat(input.path("transcription").has("language")).isFalse();
+        assertThat(input.path("turn_detection").isNull()).isTrue();
+    }
+
+    @Test
+    void legacyModelsKeepTheSingularLanguageAndConfiguredVad(WireMockRuntimeInfo wm)
+            throws Exception {
+        stub(wm.getWireMock(), 200, "{\"value\":\"ek_ephemeral\",\"expires_at\":1786000000}");
+        SttProperties config =
+                props(wm.getHttpBaseUrl() + "/v1", KEY, "gpt-4o-mini-transcribe", "server_vad");
+
+        new OpenAiRealtimeSessionBroker(config, MAPPER).openSession("pt");
+
+        LoggedRequest request =
+                wm.getWireMock()
+                        .find(postRequestedFor(urlPathEqualTo("/v1/realtime/client_secrets")))
+                        .get(0);
+        JsonNode input =
+                MAPPER.readTree(request.getBodyAsString())
+                        .path("session")
+                        .path("audio")
+                        .path("input");
         assertThat(input.path("transcription").path("language").asText()).isEqualTo("pt");
+        assertThat(input.path("transcription").has("languages")).isFalse();
         assertThat(input.path("turn_detection").path("type").asText()).isEqualTo("server_vad");
     }
 

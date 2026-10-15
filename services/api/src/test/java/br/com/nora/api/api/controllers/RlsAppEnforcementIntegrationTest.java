@@ -257,6 +257,14 @@ class RlsAppEnforcementIntegrationTest {
         JsonNode detail = authGet("/meetings/" + meetingId, token).read(HttpStatus.OK);
         assertThat(detail.has("analysis")).isTrue();
 
+        ResponseEntity<String> retry =
+                multipartUpload(
+                        "/meetings", token, metadata, content.getBytes(StandardCharsets.UTF_8));
+        assertThat(retry.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        JsonNode replay = mapper.readTree(retry.getBody());
+        assertThat(replay.path("id").asText()).isEqualTo(meetingId);
+        assertThat(replay.path("processingStatus").asText()).isEqualTo("COMPLETED");
+
         // And now the half of enforce that fails SILENTLY. The operator console aggregates
         // meeting_analyses across tenants with no tenant GUC set. As nora_app that is
         // fail-closed, so without the BYPASSRLS telemetry datasource this returns zero and
@@ -307,6 +315,7 @@ class RlsAppEnforcementIntegrationTest {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
         headers.setBearerAuth(token);
+        headers.set("Idempotency-Key", "rls-upload");
 
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
         HttpHeaders metaH = new HttpHeaders();

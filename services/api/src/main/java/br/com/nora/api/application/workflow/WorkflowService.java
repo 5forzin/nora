@@ -4,6 +4,7 @@ import br.com.nora.api.application.ports.Clock;
 import br.com.nora.api.application.ports.WorkflowExecutionRepository;
 import br.com.nora.api.application.ports.WorkflowRepository;
 import br.com.nora.api.application.ports.WorkflowScheduleRepository;
+import br.com.nora.api.application.tenant.EnterpriseEntitlementService;
 import br.com.nora.api.domain.workflow.ScheduleSpec;
 import br.com.nora.api.domain.workflow.TriggerType;
 import br.com.nora.api.domain.workflow.Workflow;
@@ -43,6 +44,7 @@ public class WorkflowService {
     private final WorkflowContextFactory contextFactory;
     private final ScheduleOccurrences occurrences;
     private final Clock clock;
+    private final EnterpriseEntitlementService entitlements;
 
     public WorkflowService(
             WorkflowRepository workflows,
@@ -53,7 +55,8 @@ public class WorkflowService {
             WorkflowEngine engine,
             WorkflowContextFactory contextFactory,
             ScheduleOccurrences occurrences,
-            Clock clock) {
+            Clock clock,
+            EnterpriseEntitlementService entitlements) {
         this.workflows = workflows;
         this.executions = executions;
         this.schedules = schedules;
@@ -63,23 +66,33 @@ public class WorkflowService {
         this.contextFactory = contextFactory;
         this.occurrences = occurrences;
         this.clock = clock;
+        this.entitlements = entitlements;
     }
 
     @Transactional(readOnly = true)
     public List<Workflow> list(UUID tenantId) {
-        return workflows.listByTenant(tenantId);
+        List<Workflow> found = workflows.listByTenant(tenantId);
+        if (entitlements.isEnterprise(tenantId)) {
+            return found;
+        }
+        return found.stream().filter(w -> !parser.requiresEnterprise(w.definitionJson())).toList();
     }
 
     @Transactional(readOnly = true)
     public Workflow get(UUID id, UUID tenantId) {
-        return workflows
-                .findByIdAndTenant(id, tenantId)
-                .orElseThrow(WorkflowException.NotFound::new);
+        Workflow found =
+                workflows
+                        .findByIdAndTenant(id, tenantId)
+                        .orElseThrow(WorkflowException.NotFound::new);
+        if (parser.requiresEnterprise(found.definitionJson())) {
+            entitlements.requireEnterprise(tenantId);
+        }
+        return found;
     }
 
     @Transactional
     public Workflow create(UUID tenantId, String name, JsonNode definition, boolean active) {
-        Validated validated = validate(name, definition);
+        Validated validated = validate(tenantId, name, definition);
         OffsetDateTime now = now();
         Workflow workflow =
                 new Workflow(
@@ -100,7 +113,7 @@ public class WorkflowService {
     public Workflow update(
             UUID id, UUID tenantId, String name, JsonNode definition, boolean active) {
         Workflow existing = get(id, tenantId);
-        Validated validated = validate(name, definition);
+        Validated validated = validate(tenantId, name, definition);
         OffsetDateTime now = now();
         Workflow updated =
                 new Workflow(
@@ -145,7 +158,7 @@ public class WorkflowService {
     private record Validated(
             String name, TriggerType triggerType, String definitionJson, ScheduleSpec schedule) {}
 
-    private Validated validate(String name, JsonNode definition) {
+    private Validated validate(UUID tenantId, String name, JsonNode definition) {
         if (name == null || name.isBlank()) {
             throw new WorkflowException.InvalidName();
         }
@@ -154,6 +167,9 @@ public class WorkflowService {
         }
         String canonical = parser.canonicalJson(definition);
         WorkflowDefinition parsed = parser.parse(canonical, actions.types());
+        if (parsed.nodes().stream().anyMatch(n -> "customer_confidence_below".equals(n.type()))) {
+            entitlements.requireEnterprise(tenantId);
+        }
         TriggerType triggerType = TriggerType.fromWire(parsed.triggerNode().type());
         // The parser has already validated the vocabulary and thrown a 422 if it did not hold, so
         // re-reading it here cannot fail on a definition that got this far.

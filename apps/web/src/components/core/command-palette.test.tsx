@@ -17,6 +17,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 const searchMeetings = vi.fn();
+const access = vi.hoisted(() => ({
+  plan: 'FREE', capabilities: { manageAccess: false },
+  permissions: { readMeetings: true, readTasks: true, createMeetings: true, readFlows: true },
+}));
+vi.mock('@/components/enterprise/workspace-provider', () => ({
+  useWorkspaceAccess: () => ({ access, loading: false }),
+}));
 vi.mock('@/lib/api/client', async (importOriginal) => ({
   // eslint-disable-next-line @typescript-eslint/consistent-type-imports
   ...(await importOriginal<typeof import('@/lib/api/client')>()),
@@ -30,10 +37,25 @@ import { errorCopy } from '@/lib/strings';
 const HIT = { id: 'm-1', title: 'Discovery Acme', startedAt: '2026-05-02T14:00:00Z' };
 
 beforeEach(() => {
+  access.plan = 'FREE';
+  access.capabilities.manageAccess = false;
+  Object.assign(access.permissions, { readMeetings: true, readTasks: true, createMeetings: true, readFlows: true });
   searchMeetings.mockReset().mockResolvedValue({ items: [HIT] });
 });
 
 afterEach(cleanup);
+
+it('keeps IAM commands available without querying meetings for an administrator without read grants', () => {
+  access.plan = 'ENTERPRISE';
+  access.capabilities.manageAccess = true;
+  Object.assign(access.permissions, { readMeetings: false, readTasks: false, createMeetings: false, readFlows: false });
+  render(<CommandPalette open onClose={() => undefined} />);
+  expect(screen.getByText('Acessos — grupos e policies')).toBeTruthy();
+  expect(screen.queryByText('Nova reunião')).toBeNull();
+  expect(screen.queryByText('Ver action items')).toBeNull();
+  expect(screen.queryByText('Nova sessão de chat')).toBeNull();
+  expect(searchMeetings).not.toHaveBeenCalled();
+});
 
 /** Types into the palette input and lets the debounce fire. */
 async function type(text: string) {

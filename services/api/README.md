@@ -46,6 +46,17 @@ run a Maven wrapper this repository does not have.
 - `GET /actuator/health` (public)
 - all other routes: protected by JWT (US01-US04). See the OpenAPI at `/swagger-ui/index.html`.
 
+`POST /meetings` accepts an optional `Idempotency-Key` header (1–128 ASCII letters, digits,
+hyphens or underscores). Persist it with the recording and reuse the same metadata and transcript
+on retries. Keys are scoped to the authenticated tenant and user. A replay returns HTTP 202 with
+the original meeting ID and current processing status, without scheduling another analysis.
+Changed content returns `409 UPLOAD_IDEMPOTENCY_CONFLICT`; a removed or erased meeting returns
+`409 UPLOAD_ALREADY_REMOVED`. Requests without a key retain the independent-upload behavior.
+
+Live analysis forwards only the latest 20 decisions, next steps and observations, and 30 tasks,
+as deduplication context to the worker. These are per-request context limits, not limits on the
+meeting's accumulated highlights; the Desktop retains and deduplicates the complete feed.
+
 ## Multi-tenancy
 
 Every new tenant-bound entity must include `tenant_id`. See `docs/adr/0002-multi-tenancy.md` and `docs/engineering/data-model.md`.

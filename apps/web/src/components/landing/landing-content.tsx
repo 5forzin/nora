@@ -1,7 +1,7 @@
-import Link from "next/link";
+import Link from 'next/link';
 
-import { NoraLogo } from "@/components/brand/nora-logo";
-import { ShaderOrb } from "@/components/brand/shader-orb";
+import { NoraLogo } from '@/components/brand/nora-logo';
+import { ShaderOrb } from '@/components/brand/shader-orb';
 
 function Check({ size = 14, strokeWidth = 2.4 }: { size?: number; strokeWidth?: number }) {
   return (
@@ -20,15 +20,6 @@ function Check({ size = 14, strokeWidth = 2.4 }: { size?: number; strokeWidth?: 
   );
 }
 
-/**
- * Marks a line as planned rather than delivered. The page keeps the product
- * narrative (issue #456, option 2), so anything that is not built yet has to be
- * legible as roadmap at a glance instead of reading as a shipped feature.
- */
-function RoadmapTag() {
-  return <span className="roadmap-tag">Roadmap</span>;
-}
-
 // ── How it works ──
 export function LandingHowItWorks() {
   return (
@@ -36,20 +27,17 @@ export function LandingHowItWorks() {
       <div className="container">
         <div style={{ maxWidth: 720 }}>
           <div className="section-label">Como funciona</div>
-          <h2 className="section-title">Da transcrição ao action item, sem fricção.</h2>
+          <h2 className="section-title">Da reunião aos próximos passos.</h2>
           <p className="section-subtitle">
-            Três passos. Aceita texto, áudio capturado em tempo real no Desktop, ou arquivo do seu
-            app de videoconferência.
+            Importe uma transcrição ou capture a reunião pelo Desktop para Windows.
           </p>
         </div>
 
         <div className="steps-grid">
           <div className="step-card">
             <span className="step-num">01 · Suba</span>
-            <h3>Transcrição em qualquer formato.</h3>
-            <p>
-              .txt, .vtt, .srt — ou capture áudio do sistema no app Desktop (Windows, macOS, Linux).
-            </p>
+            <h3>Importe ou capture a reunião.</h3>
+            <p>.txt, .vtt, .srt — ou capture áudio do sistema no app Desktop para Windows.</p>
             <div className="step-visual">
               <div className="mock-file">
                 <div className="mock-file-icon">
@@ -67,18 +55,18 @@ export function LandingHowItWorks() {
                     <polyline points="14 2 14 8 20 8" />
                   </svg>
                 </div>
-                <span className="mock-file-name">discovery-totvs-14mai.vtt</span>
-                <span className="mock-file-size">42 KB</span>
+                <span className="mock-file-name">reuniao-exemplo.vtt</span>
+                <span className="mock-file-size">Exemplo</span>
               </div>
             </div>
           </div>
 
           <div className="step-card">
             <span className="step-num">02 · Nora processa</span>
-            <h3>Análise estruturada em 30s.</h3>
+            <h3>Análise estruturada.</h3>
             <p>
-              PII Shield redige dados pessoais. LLM extrai resumo, decisões e tasks com confiança
-              calibrada.
+              O PII Shield mascara dados pessoais no texto antes da análise. A Nora extrai resumo,
+              decisões e tarefas.
             </p>
             <div className="step-visual">
               <div className="mock-orb-row">
@@ -87,7 +75,7 @@ export function LandingHowItWorks() {
                 </div>
                 <div>
                   <div className="text">Detectando action items…</div>
-                  <div className="sub">3 de 4 estágios · 78%</div>
+                  <div className="sub">Exemplo de processamento</div>
                 </div>
               </div>
             </div>
@@ -95,10 +83,10 @@ export function LandingHowItWorks() {
 
           <div className="step-card">
             <span className="step-num">03 · Você recebe</span>
-            <h3>Resumo navegável + integração.</h3>
+            <h3>Consulte e acompanhe.</h3>
             <p>
-              Resumo, decisões, tasks com prioridade. Empurre pra Linear, GitHub ou Calendar pelos
-              conectores OAuth.
+              Consulte as fontes, acompanhe tarefas e use os fluxos para enviar resultados às
+              ferramentas conectadas.
             </p>
             <div className="step-visual">
               <div className="mock-summary">
@@ -118,8 +106,8 @@ export function LandingHowItWorks() {
 // ── Privacy ──
 const PROMISES = [
   {
-    title: "Infraestrutura própria",
-    body: "Multi-tenancy com isolamento por tenant_id em toda consulta ao banco. Os dados de uma organização não são visíveis para outra.",
+    title: 'Isolamento por workspace',
+    body: 'Reuniões e análises ficam vinculadas ao workspace. A API verifica o acesso a cada recurso; o banco aplica isolamento entre organizações.',
     icon: (
       <svg
         width="16"
@@ -137,8 +125,8 @@ const PROMISES = [
     ),
   },
   {
-    title: "Nunca treinam modelos",
-    body: "Suas reuniões não viram fine-tune de ninguém. Antes de qualquer chamada a um LLM externo, o PII Shield redige CPF, CNPJ, e-mail, telefone, cartão e nomes.",
+    title: 'Texto protegido antes da análise',
+    body: 'O PII Shield identifica e mascara tipos de dados pessoais no texto, incluindo CPF, CNPJ, e-mail, telefone, cartão, nomes e endereços.',
     icon: (
       <svg
         width="16"
@@ -156,8 +144,8 @@ const PROMISES = [
     ),
   },
   {
-    title: "Direito ao esquecimento",
-    body: "Apagar uma reunião é definitivo: transcrição, participantes, tags e análises somem junto, sem trâmite e sem ligação. LGPD Art. 18.",
+    title: 'Exclusão definitiva',
+    body: 'A exclusão definitiva remove a reunião, sua transcrição, participantes e análise. Ela é uma ação separada da remoção comum de uma reunião.',
     icon: (
       <svg
         width="16"
@@ -176,8 +164,8 @@ const PROMISES = [
     ),
   },
   {
-    title: "Trilha de auditoria",
-    body: "Login, cadastro, troca de senha, upload e reprocessamento de reunião ficam registrados com autor, alvo e horário — visíveis na tela de IAM (ADR 0007).",
+    title: 'Trilha de auditoria',
+    body: 'No Enterprise, administradores consultam eventos de autenticação e alterações de acesso, com autor, alvo e horário.',
     icon: (
       <svg
         width="16"
@@ -201,15 +189,11 @@ export function LandingPrivacy() {
     <section id="privacidade" className="privacy">
       <div className="container">
         <div className="privacy-head">
-          <div className="section-label">Privacidade · LGPD-first</div>
-          <h2 className="section-title">
-            Sua privacidade não é uma feature.
-            <br />É o ponto de partida.
-          </h2>
+          <div className="section-label">Privacidade</div>
+          <h2 className="section-title">Dados, acesso e exclusão.</h2>
           <p className="section-subtitle">
-            Não é compliance teatro: o PII Shield, a retenção, o audit log e o direito ao
-            esquecimento existem antes do produto fazer qualquer coisa. ADRs públicos, decisões
-            registradas, código auditável.
+            O mascaramento protege o texto enviado para análise. No Desktop, o áudio é enviado ao
+            provedor de transcrição antes desse tratamento.
           </p>
         </div>
 
@@ -222,42 +206,32 @@ export function LandingPrivacy() {
             </div>
           ))}
         </div>
-
-        {/* Only numbers the code backs, and none that goes stale on its own — the ADR
-            count and the audio-retention window were both fiction. */}
-        <div className="privacy-strip">
-          <div className="privacy-stat">
-            <span className="privacy-stat-num">0</span>
-            <span className="privacy-stat-lbl">áudio guardado no servidor</span>
-          </div>
-          <div className="privacy-stat">
-            <span className="privacy-stat-num">0</span>
-            <span className="privacy-stat-lbl">dados de cliente em treinamento</span>
-          </div>
-          <div className="privacy-stat">
-            <span className="privacy-stat-num">RLS</span>
-            <span className="privacy-stat-lbl">isolamento por tenant aplicado no banco</span>
-          </div>
-          <div className="privacy-stat">
-            <span className="privacy-stat-num">100%</span>
-            <span className="privacy-stat-lbl">PT-BR, LGPD nativo</span>
-          </div>
-        </div>
       </div>
     </section>
   );
 }
 
 // ── Pricing ──
-// No quota is enforced anywhere in the API, so the plan list stops quoting one.
 const CORE_FEATURES = [
-  "Resumo + decisões + action items",
-  "Productivity Score opt-in",
-  "PII Shield pessoal completo",
-  "Reuniões e projetos sem limite de cota",
-  "Integrações OAuth: Calendar, Linear, GitHub, Notion, Slack, Trello, Todoist, Telegram",
-  "Servidor MCP somente leitura pros seus agentes",
-  "Desktop app (Windows, macOS, Linux)",
+  'Resumos, decisões e action items',
+  'Chat com fontes das reuniões',
+  'Projetos, participantes e acompanhamento de tarefas',
+  'Productivity Score com objetivo definido por você',
+  'Captura e transcrição no Desktop para Windows',
+  'Relatórios em Markdown e PDF',
+  'Integrações OAuth e fluxos de automação',
+  'Servidor MCP para consultas somente leitura',
+];
+
+const ENTERPRISE_FEATURES = [
+  'Recursos do Core no workspace da equipe',
+  'Visão executiva de riscos, decisões e pendências',
+  'Diretório de usuários, grupos e convites',
+  'Policies, limites de permissão e auditoria',
+  'Contexto da empresa, produtos e concorrentes',
+  'Histórico de versões do contexto',
+  'Customer Confidence por reunião',
+  'Restrição de convites por domínio corporativo',
 ];
 
 export function LandingPricing() {
@@ -266,9 +240,10 @@ export function LandingPricing() {
       <div className="container">
         <div style={{ maxWidth: 720 }}>
           <div className="section-label">Planos</div>
-          <h2 className="section-title">Core grátis. Enterprise quando o time chegar.</h2>
+          <h2 className="section-title">Core para você. Enterprise para sua equipe.</h2>
           <p className="section-subtitle">
-            Adoção PLG: começa pelo indivíduo, escala pra empresa. Sem armadilha de upgrade.
+            O cadastro cria um workspace Core. Os recursos Enterprise ficam em workspaces
+            habilitados, com acesso por convite.
           </p>
         </div>
 
@@ -277,11 +252,11 @@ export function LandingPricing() {
             <div className="pricing-head">
               <span className="badge">Core</span>
               <h3>Copiloto pessoal</h3>
-              <p>Pra profissionais individuais que vivem em reuniões.</p>
+              <p>Reuniões, perguntas e tarefas do dia a dia.</p>
             </div>
             <div className="pricing-price">
               <span className="num">Grátis</span>
-              <span className="unit">pra sempre</span>
+              <span className="unit">cadastro individual</span>
             </div>
             <ul className="pricing-features">
               {CORE_FEATURES.map((f) => (
@@ -294,7 +269,7 @@ export function LandingPricing() {
             <Link
               href="/auth/signup"
               className="btn btn-ghost btn-lg"
-              style={{ justifyContent: "center" }}
+              style={{ justifyContent: 'center' }}
             >
               Começar grátis
             </Link>
@@ -303,54 +278,31 @@ export function LandingPricing() {
           <div className="pricing-card highlighted">
             <div className="pricing-head">
               <span className="badge ent">Enterprise</span>
-              <RoadmapTag />
-              <h3>Motor de receita pra equipes</h3>
-              <p>Pra times comerciais e empresas que vivem em conversas com cliente.</p>
+              <h3>Workspace de equipe</h3>
+              <p>Contexto compartilhado e gestão de acesso.</p>
             </div>
             <div className="pricing-price">
-              <span className="num">A definir</span>
-              <span className="unit">a Nora ainda não é comercializada</span>
+              <span className="num">Por convite</span>
+              <span className="unit">workspace Enterprise</span>
             </div>
             <ul className="pricing-features">
-              <li>
-                <Check />
-                Tudo do Core
-              </li>
-              <li>
-                <Check />
-                <span>
-                  <strong>Product Context</strong> — catálogo de produtos, concorrentes, ICP e
-                  objeções
-                </span>
-              </li>
-              <li>
-                <Check />
-                <span>
-                  <strong>Customer Confidence</strong> — score de saúde por conta
-                </span>
-              </li>
-              <li>
-                <Check />
-                <span>
-                  <strong>IAM granular</strong> estilo AWS · Groups, Policies, Conditions
-                </span>
-              </li>
-              <li>
-                <Check />
-                Multi-tenancy isolado por tenant_id, com RLS no Postgres
-              </li>
-              <li>
-                <Check />
-                <span>
-                  Glossário do workspace via RAG <RoadmapTag />
-                </span>
-              </li>
+              {ENTERPRISE_FEATURES.map((feature) => (
+                <li key={feature}>
+                  <Check />
+                  {feature}
+                </li>
+              ))}
             </ul>
-            {/* No sales channel exists, so the card carries a note instead of a
-                button that only scrolls the page back to the signup section. */}
+            <Link
+              href="/auth/login?next=%2Fenterprise"
+              className="btn btn-primary btn-lg"
+              style={{ justifyContent: 'center' }}
+            >
+              Entrar no workspace
+            </Link>
             <p className="pricing-note">
-              Sem canal comercial por enquanto: o plano Enterprise é a direção do produto, não uma
-              assinatura que dá pra fechar hoje.
+              Para usuários de um workspace habilitado. Não há contratação ou cobrança pela
+              plataforma.
             </p>
           </div>
         </div>
@@ -362,32 +314,32 @@ export function LandingPricing() {
 // ── FAQ ──
 const FAQS = [
   {
-    q: "Nora grava minhas reuniões?",
-    a: "Não. A Nora processa transcrições que você sobe; no app Desktop, a captura e a transcrição acontecem na sua máquina — o áudio não passa pela infraestrutura da Nora, só o texto. No servidor existe uma purga automática por idade da reunião, mas ela vem desligada por padrão: enquanto ninguém configurar uma janela de retenção, nada é apagado sozinho. Apagar uma reunião em definitivo é uma ação sua, a qualquer momento.",
+    q: 'Como a Nora recebe uma reunião?',
+    a: 'Você pode importar uma transcrição em .txt, .vtt ou .srt. No Desktop para Windows, o app captura o áudio e o envia diretamente ao provedor de transcrição; a infraestrutura da Nora recebe o texto. Não há upload de arquivos de áudio ou vídeo.',
   },
   {
-    q: "E a LGPD? Meus dados podem ser usados pra treinar modelos?",
-    a: "Nunca. Antes de qualquer envio a um LLM externo, o PII Shield detecta e redige CPF, CNPJ, e-mail, telefone, cartão e nomes brasileiros. Nenhum dado seu treina modelos de terceiros. E o direito ao esquecimento (Art. 18) é exercido reunião a reunião: apagar uma é permanente e leva junto transcrição, participantes e análises.",
+    q: 'Qual é a diferença entre Core e Enterprise?',
+    a: 'Core reúne captura, reuniões, chat, projetos e tarefas. Enterprise acrescenta visão executiva, usuários e convites, grupos e policies, contexto da empresa e Customer Confidence por reunião. O acesso a cada recurso também depende das permissões do usuário.',
   },
   {
-    q: "Funciona com Google Meet, Zoom, Teams?",
-    a: "Sim. Você pode subir o arquivo de transcrição que essas ferramentas exportam (.txt, .vtt, .srt) ou usar o app Desktop, que captura o áudio do sistema independente da ferramenta de chamada.",
+    q: 'Como entro em um workspace Enterprise?',
+    a: 'Um administrador de um workspace Enterprise envia um convite por e-mail e define seus grupos de acesso. O cadastro público cria um workspace Core; não há contratação ou ativação automática de Enterprise pelo site.',
   },
   {
-    q: "Em quais idiomas funciona?",
-    a: "PT-BR nativo, com suporte secundário a EN-US. O modelo entende gírias, regionalismos e siglas brasileiras (ADR, MCP, CPF, etc.) sem precisar traduzir.",
+    q: 'Como funciona o tratamento de dados pessoais?',
+    a: 'O PII Shield mascara tipos de dados pessoais na transcrição antes da análise por IA. O áudio usado para transcrição é enviado ao provedor externo antes desse tratamento. No chat, a ocultação de nomes ainda é uma limitação conhecida. Esses controles não representam certificação de conformidade com a LGPD.',
   },
   {
-    q: "Qual a diferença pro Gong / Otter / Fireflies?",
-    a: "Gong e Clari são caros, em inglês e usam conhecimento genérico. Otter e Fireflies só transcrevem. Nora aprende o contexto do seu workspace (produtos, concorrentes, ICP, objeções) e devolve análise estruturada — em português, com conformidade LGPD.",
+    q: 'Funciona com Google Meet, Zoom e Teams?',
+    a: 'Você pode importar uma transcrição exportada por essas ferramentas, nos formatos aceitos, ou capturar o áudio do sistema pelo Desktop para Windows. A captura não depende de um bot na chamada.',
   },
   {
-    q: "Posso integrar com Linear, GitHub, Slack?",
-    a: "Sim, por OAuth: você conecta a sua conta na tela de Integrações e os fluxos escrevem por lá. Hoje existem conectores de Google (Gmail + Calendar), Microsoft (Outlook + Calendar), Slack, Telegram, GitHub, Notion, Todoist, Linear e Trello. Jira, Salesforce e Pipedrive estão no roadmap, sem data. O servidor MCP da Nora é o caminho contrário: ele expõe cinco ferramentas somente leitura pro seu agente consultar reuniões, tasks e Customer Confidence — MCP não escreve nada nas suas ferramentas.",
+    q: 'Posso integrar com minhas ferramentas?',
+    a: 'Os conectores OAuth e os fluxos enviam resultados às contas conectadas. O servidor MCP funciona no sentido inverso: permite que um agente consulte dados da Nora, somente para leitura e respeitando as permissões do usuário. Customer Confidence fica restrito ao Enterprise.',
   },
   {
-    q: "Onde os dados ficam armazenados?",
-    a: "Em servidor próprio, autogerenciado. Nenhum serviço da aplicação fica acessível diretamente da internet: as portas que o stack publica ficam restritas ao loopback da máquina, e todo o acesso público entra por um túnel de saída. O isolamento entre organizações é feito por tenant_id em toda consulta ao banco. Você pode apagar qualquer reunião em definitivo a qualquer momento; exportação em massa dos seus dados ainda está no roadmap.",
+    q: 'Posso exportar ou excluir uma reunião?',
+    a: 'Cada reunião pode ser exportada em Markdown ou aberta como relatório para impressão e PDF. A exclusão definitiva remove também a transcrição e a análise, mediante confirmação. A remoção comum e a exclusão definitiva são ações distintas.',
   },
 ];
 
@@ -418,16 +370,13 @@ export function LandingFAQ() {
 // ── Final CTA ──
 export function LandingFinalCTA() {
   return (
-    <section id="cta" style={{ padding: "20px 0 80px" }}>
+    <section id="cta" style={{ padding: '20px 0 80px' }}>
       <div className="container">
         <div className="cta">
           <div className="cta-inner">
             <h2>Sua próxima reunião pode terminar com o resumo pronto.</h2>
-            <p>
-              Grátis pra começar. Sem cartão. Sem armadilha de upgrade. Em PT-BR, com a sua
-              privacidade no centro.
-            </p>
-            <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+            <p>Importe uma transcrição e consulte decisões, fontes e próximos passos.</p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
               <Link href="/auth/signup" className="btn btn-primary btn-lg">
                 Começar grátis
                 <svg
@@ -458,7 +407,7 @@ export function LandingFinalCTA() {
 }
 
 // ── Footer ──
-const REPO_URL = "https://github.com/sf0rzin/nora";
+const REPO_URL = 'https://github.com/5forzin/nora';
 
 export function LandingFooter() {
   return (
@@ -467,9 +416,7 @@ export function LandingFooter() {
         <div className="footer-inner">
           <div className="footer-brand">
             <NoraLogo size={22} animate={false} />
-            <p>
-              Inteligência conversacional pra reuniões. Em português, com conformidade LGPD nativa.
-            </p>
+            <p>Reuniões, decisões e próximos passos. Projeto FIAP × TOTVS 2026.</p>
           </div>
           <div className="footer-col">
             <h4>Produto</h4>
@@ -528,7 +475,7 @@ export function LandingFooter() {
                 </a>
               </li>
               <li>
-                <a href="#privacidade">Privacidade · LGPD</a>
+                <a href="#privacidade">Privacidade</a>
               </li>
             </ul>
           </div>

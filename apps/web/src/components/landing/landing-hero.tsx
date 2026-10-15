@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import Link from 'next/link';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 function HeroSoundwave() {
   const bars = useMemo(() => {
@@ -35,7 +35,7 @@ function HeroSoundwave() {
 
 const SUGGESTIONS = [
   {
-    label: "Resumir reunião",
+    label: 'Resumir reunião',
     icon: (
       <svg
         width="14"
@@ -55,7 +55,7 @@ const SUGGESTIONS = [
     ),
   },
   {
-    label: "Action items",
+    label: 'Action items',
     icon: (
       <svg
         width="14"
@@ -73,7 +73,7 @@ const SUGGESTIONS = [
     ),
   },
   {
-    label: "Analisar transcrição",
+    label: 'Analisar transcrição',
     icon: (
       <svg
         width="14"
@@ -94,13 +94,13 @@ const SUGGESTIONS = [
 
 /** Hero: headline + composer + soundwave + suggestions + project context. */
 export function LandingHero() {
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState('');
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     const ta = taRef.current;
     if (!ta) return;
-    ta.style.height = "auto";
+    ta.style.height = 'auto';
     ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`;
   }, [prompt]);
 
@@ -121,6 +121,7 @@ export function LandingHero() {
           <div className="hero-composer">
             <textarea
               ref={taRef}
+              aria-label="Pergunta sobre suas reuniões"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="Pergunte qualquer coisa sobre suas reuniões…"
@@ -129,11 +130,11 @@ export function LandingHero() {
             {/* `q` is read back by the auth screen and shown to the visitor, so the
                 typed question survives the jump instead of being dropped on signup. */}
             <Link
-              href={{ pathname: "/auth/signup", query: trimmed ? { q: trimmed } : {} }}
-              className={`hero-composer-send ${trimmed ? "is-active" : ""}`}
-              aria-label="Perguntar Nora"
+              href={{ pathname: '/auth/signup', query: trimmed ? { q: trimmed } : {} }}
+              className={`hero-composer-send ${trimmed ? 'is-active' : ''}`}
+              aria-label="Perguntar à Nora"
             >
-              Perguntar Nora
+              Perguntar à Nora
               <svg
                 width="13"
                 height="13"

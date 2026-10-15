@@ -10,6 +10,7 @@ import br.com.nora.api.application.meeting.MeetingService;
 import br.com.nora.api.application.ports.MeetingRepository.MeetingFilter;
 import br.com.nora.api.application.ports.TaskRepository.TaskRow;
 import br.com.nora.api.application.task.TaskService;
+import br.com.nora.api.application.tenant.EnterpriseEntitlementService;
 import br.com.nora.api.domain.analysis.ActionItem;
 import br.com.nora.api.domain.analysis.ActionItemStatus;
 import br.com.nora.api.domain.analysis.Decision;
@@ -97,6 +98,7 @@ public class McpToolInvoker {
     private final TaskService tasks;
     private final EmbeddingService embeddings;
     private final AiSpendRateLimiter spendLimiter;
+    private final EnterpriseEntitlementService entitlements;
 
     public McpToolInvoker(
             AuthorizationService authz,
@@ -105,7 +107,8 @@ public class McpToolInvoker {
             CustomerConfidenceService customerConfidence,
             TaskService tasks,
             EmbeddingService embeddings,
-            AiSpendRateLimiter spendLimiter) {
+            AiSpendRateLimiter spendLimiter,
+            EnterpriseEntitlementService entitlements) {
         this.authz = authz;
         this.meetings = meetings;
         this.analyses = analyses;
@@ -113,6 +116,7 @@ public class McpToolInvoker {
         this.tasks = tasks;
         this.embeddings = embeddings;
         this.spendLimiter = spendLimiter;
+        this.entitlements = entitlements;
     }
 
     /** Raised for a bad argument. Reported as a tool result, never as a JSON-RPC error. */
@@ -275,6 +279,7 @@ public class McpToolInvoker {
     /* ========================= get_customer_confidence ========================== */
 
     private ObjectNode getConfidence(AuthenticatedPrincipal principal, JsonNode args) {
+        entitlements.requireEnterprise(principal.tenantId());
         Meeting meeting = requireReadableMeeting(principal, uuidArg(args, "meetingId"));
         ObjectNode result = F.objectNode();
         result.put("meetingId", meeting.id().toString());

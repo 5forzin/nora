@@ -1,4 +1,5 @@
 import type { Route } from "next";
+import { requireWorkspacePermission } from "@/lib/enterprise/require-permission";
 import Link from "next/link";
 
 import { getTrends, type TrendsGranularity } from "@/lib/api/client";
@@ -251,6 +252,7 @@ export default async function TrendsPage({
   searchParams: Promise<{ granularity?: string; from?: string; to?: string }>;
 }) {
   const sp = await searchParams;
+  const access = await requireWorkspacePermission('readMeetings');
   const granularity: TrendsGranularity = isGranularity(sp.granularity) ? sp.granularity : "WEEK";
 
   let data: TrendsResponse | null = null;
@@ -273,7 +275,7 @@ export default async function TrendsPage({
         </div>
       </header>
 
-      <TrendsFilters granularity={granularity} from={sp.from} to={sp.to} />
+      <TrendsFilters granularity={granularity} from={sp.from} to={sp.to} timezone={data?.timezone} />
 
       {errorMessage && (
         <div className="notice" style={{ marginTop: 16 }}>
@@ -284,9 +286,9 @@ export default async function TrendsPage({
       {data && data.dataState === "NO_MEETINGS" && (
         <NotEnoughData
           title="Sem dados suficientes."
-          body="Nenhuma reunião sua no período selecionado. Ajuste o período ou envie uma transcrição — a partir da primeira análise este painel começa a mostrar carga de tarefas e temas recorrentes."
-          ctaHref={"/meetings/upload" as Route}
-          ctaLabel="Fazer upload"
+          body="Nenhuma reunião disponível no período selecionado. Ajuste o período para consultar temas e tarefas."
+          ctaHref={(access.permissions.createMeetings ? '/meetings/upload' : '/dashboard') as Route}
+          ctaLabel={access.permissions.createMeetings ? 'Fazer upload' : 'Ver reuniões'}
         />
       )}
 

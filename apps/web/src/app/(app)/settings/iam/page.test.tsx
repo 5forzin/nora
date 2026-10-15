@@ -59,7 +59,7 @@ vi.mock('@/lib/api/client', async (importOriginal) => ({
   updatePolicyDocument: (...a: unknown[]) => updatePolicyDocument(...a),
 }));
 
-import IamPage from '@/app/(app)/settings/iam/page';
+import IamPage from '@/components/enterprise/access-manager';
 
 const GROUP = {
   id: 'g-1',
@@ -311,12 +311,14 @@ describe('IAM policy history', () => {
 
   it('reads nothing until the history is opened', async () => {
     await renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Policies' }));
     expect(listPolicyVersions).not.toHaveBeenCalled();
   });
 
   it('lists the revisions of the policy that was opened', async () => {
     listPolicyVersions.mockResolvedValue([V2, V1]);
     await renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Policies' }));
 
     fireEvent.click(screen.getByTestId(`policy-versions-toggle-${POLICY.id}`));
 
@@ -330,6 +332,7 @@ describe('IAM policy history', () => {
   it('re-reads on every open, so an edit made meanwhile is not missing from the history', async () => {
     listPolicyVersions.mockResolvedValue([V1]);
     await renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Policies' }));
 
     const toggle = screen.getByTestId(`policy-versions-toggle-${POLICY.id}`);
     fireEvent.click(toggle);
@@ -343,6 +346,7 @@ describe('IAM policy history', () => {
   it('loads an old revision into the editor and saves nothing by itself', async () => {
     listPolicyVersions.mockResolvedValue([V2, V1]);
     await renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Policies' }));
 
     fireEvent.click(screen.getByTestId(`policy-versions-toggle-${POLICY.id}`));
     await vi.waitFor(() =>
@@ -361,10 +365,23 @@ describe('IAM policy history', () => {
   it('surfaces a history read that failed, and offers it again', async () => {
     listPolicyVersions.mockRejectedValueOnce(new Error('backend down'));
     await renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Policies' }));
 
     fireEvent.click(screen.getByTestId(`policy-versions-toggle-${POLICY.id}`));
     await vi.waitFor(() => expect(listPolicyVersions).toHaveBeenCalled());
     // The policy row and the rest of the screen survive it.
     expect(screen.getByTestId(`policy-versions-toggle-${POLICY.id}`)).toBeTruthy();
+  });
+});
+
+
+describe('IAM audit availability', () => {
+  it('keeps group administration available when the audit read fails', async () => {
+    listAuditEvents.mockRejectedValue(new Error('offline'));
+    await renderPage();
+    expect(screen.getByTestId(`group-members-toggle-${GROUP.id}`)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Auditoria' }));
+    expect(screen.getByRole('alert').textContent).toContain('Não foi possível consultar a auditoria');
+    expect(screen.queryByText('Sem eventos.')).toBeNull();
   });
 });

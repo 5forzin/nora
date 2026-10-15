@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Route } from "next";
 import { notFound } from "next/navigation";
 
+import { getWorkspaceAccess } from "@/lib/enterprise/access";
 import { ApiRequestError, getMeeting } from "@/lib/api/client";
 import type { ActionItem, Decision, MeetingDetail, Opportunity, Risk } from "@/lib/api/types";
 import { formatDateTime, meetingInstant } from "@/lib/utils";
@@ -35,8 +36,11 @@ function durationLabel(seconds?: number): string | null {
 export default async function MeetingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   let meeting: MeetingDetail | undefined;
+  let permissions: Awaited<ReturnType<typeof getWorkspaceAccess>>['permissions'];
   try {
-    meeting = await getMeeting(id);
+    const [detail, access] = await Promise.all([getMeeting(id), getWorkspaceAccess()]);
+    meeting = access.plan === "ENTERPRISE" ? detail : { ...detail, customerConfidence: null };
+    permissions = access.permissions;
   } catch (err) {
     // §3.4 — only a real 404 becomes "does not exist"; other errors (ex: 500)
     // go up to the error boundary instead of masking the failure as absence.
@@ -141,21 +145,21 @@ export default async function MeetingDetailPage({ params }: { params: Promise<{ 
             <>
               <div style={{ fontSize: 14, color: "var(--ink)" }}>A análise desta reunião falhou.</div>
               <p style={{ fontSize: 13, color: "var(--muted)", margin: 0, lineHeight: 1.55 }}>
-                A transcrição foi recebida, mas o processamento não terminou. Você pode reprocessar agora — nada foi perdido.
+                A transcrição foi recebida, mas o processamento não terminou.
               </p>
-              <div>
+              {permissions?.reprocessMeetings && <div>
                 <ReprocessButton meetingId={meeting.id} label="Reprocessar análise" />
-              </div>
+              </div>}
             </>
           ) : (
             <>
               <div style={{ fontSize: 14, color: "var(--ink)" }}>Esta reunião ainda não foi analisada.</div>
               <p style={{ fontSize: 13, color: "var(--muted)", margin: 0, lineHeight: 1.55 }}>
-                A Nora vai processar a transcrição e gerar resumo, decisões e action items. Você pode disparar a análise agora.
+                Resumo, decisões e action items estarão disponíveis após o processamento.
               </p>
-              <div>
+              {permissions?.reprocessMeetings && <div>
                 <ReprocessButton meetingId={meeting.id} label="Analisar agora" />
-              </div>
+              </div>}
             </>
           )}
         </div>
@@ -290,15 +294,15 @@ export default async function MeetingDetailPage({ params }: { params: Promise<{ 
       )}
 
       <div style={{ marginTop: 8 }}>
-        <MeetingProductivitySection meetingId={meeting.id} goal={meeting.goal ?? null} productivity={meeting.productivity ?? null} />
+        <MeetingProductivitySection meetingId={meeting.id} goal={meeting.goal ?? null} productivity={meeting.productivity ?? null} canEdit={permissions?.updateMeetings === true} />
       </div>
 
-      <div style={{ marginTop: 40, paddingTop: 18, borderTop: "1px solid var(--border)" }}>
+      {(permissions?.reprocessMeetings || permissions?.deleteMeetings || permissions?.eraseMeetings) && <div style={{ marginTop: 40, paddingTop: 18, borderTop: "1px solid var(--border)" }}>
         <h2 className="sec-label" style={{ marginBottom: 14 }}>
           Ações
         </h2>
-        <MeetingDangerZone meetingId={meeting.id} title={meeting.title} canReprocess={Boolean(a)} />
-      </div>
+        <MeetingDangerZone meetingId={meeting.id} title={meeting.title} canReprocess={Boolean(a) && permissions?.reprocessMeetings === true} canRemove={permissions?.deleteMeetings} canErase={permissions?.eraseMeetings} />
+      </div>}
 
       <div style={{ marginTop: 40, paddingTop: 18, borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 14, fontSize: 11, color: "var(--muted)" }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>

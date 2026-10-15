@@ -8,6 +8,7 @@ import br.com.nora.api.api.dto.iam.InviteUserRequest;
 import br.com.nora.api.api.security.AuthCookies;
 import br.com.nora.api.api.security.AuthorizationNotRequired;
 import br.com.nora.api.api.security.CurrentUser;
+import br.com.nora.api.api.security.RequiresEnterprise;
 import br.com.nora.api.api.security.RequiresPermission;
 import br.com.nora.api.api.security.RequiresPermission.ResourceType;
 import br.com.nora.api.application.iam.InvitationService;
@@ -62,6 +63,7 @@ public class InvitationController {
     }
 
     @PostMapping("/users/invite")
+    @RequiresEnterprise
     @org.springframework.web.bind.annotation.ResponseStatus(HttpStatus.CREATED)
     @RequiresPermission(action = "iam:user:invite", resource = ResourceType.INVITE)
     public InviteResponse invite(@Valid @RequestBody InviteUserRequest body) {
@@ -111,6 +113,7 @@ public class InvitationController {
     }
 
     @GetMapping("/invites")
+    @RequiresEnterprise
     @RequiresPermission(action = "iam:invite:read", resource = ResourceType.INVITE)
     public InviteListResponse list(
             @RequestParam(name = "status", required = false) InvitationStatus status) {
@@ -123,6 +126,7 @@ public class InvitationController {
     }
 
     @DeleteMapping("/invites/{id}")
+    @RequiresEnterprise
     @org.springframework.web.bind.annotation.ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(
             action = "iam:invite:revoke",

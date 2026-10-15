@@ -65,8 +65,8 @@ public record SttProperties(String defaultLanguage, OpenAi openai, RateLimit rat
      *     provider audio at the wrong speed, which transcribes as gibberish rather than failing
      * @param turnDetection provider VAD mode that segments the stream into utterances. Empty sends
      *     no turn detection at all, which is the DEFAULT and the only value {@link #DEFAULT_MODEL}
-     *     accepts — that model transcribes continuously and emits its own transcription
-     *     delta/completed events, so nothing is left waiting for a commit
+     *     accepts. It emits deltas continuously, but the desktop must commit each audio turn to
+     *     receive its completed transcript.
      * @param sessionTtlSeconds requested credential lifetime. The provider clamps it (10..7200 at
      *     the time of writing) and the value governs how long the secret can OPEN a connection, not
      *     how long an open session lives (ADR 0045 §3)

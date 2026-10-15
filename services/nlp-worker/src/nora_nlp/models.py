@@ -9,7 +9,7 @@ from datetime import date
 from enum import Enum
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 # ---------- Enums aligned to the v1 schemas ----------
 
@@ -254,6 +254,18 @@ class CustomerConfidence(BaseModel):
     objections: list[Objection] = Field(default_factory=list, max_length=20)
     rationale: Annotated[str, Field(min_length=10, max_length=1000)]
 
+    @field_validator("band")
+    @classmethod
+    def band_from_score(cls, value: ConfidenceBand, info: ValidationInfo) -> ConfidenceBand:
+        score = info.data.get("score")
+        if score is None:
+            return value
+        if score < 40:
+            return ConfidenceBand.LOW
+        if score < 70:
+            return ConfidenceBand.MEDIUM
+        return ConfidenceBand.HIGH
+
 
 class BaselineTerm(BaseModel):
     """Term extracted by the TF-IDF baseline (pre-LLM, interpretable).
@@ -370,6 +382,7 @@ class AnalyzeOptions(BaseModel):
 
     include_risks: bool = Field(default=True, alias="includeRisks")
     include_opportunities: bool = Field(default=True, alias="includeOpportunities")
+    include_customer_confidence: bool = Field(default=True, alias="includeCustomerConfidence")
     max_action_items: int = Field(default=20, ge=1, le=50, alias="maxActionItems")
     # The ONLY request field that names a file on disk. `llm_analyzer` passes it straight to
     # `load_prompt`, which builds `prompts/{version}.md` -- so as a free string it selected any

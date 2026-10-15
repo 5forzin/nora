@@ -84,6 +84,21 @@ public class WorkflowDefinitionParser {
         }
     }
 
+    /** Checks persisted feature usage without revalidating old provider parameters. */
+    public boolean requiresEnterprise(String definitionJson) {
+        try {
+            JsonNode nodes = mapper.readTree(definitionJson).path("nodes");
+            for (JsonNode node : nodes) {
+                if ("customer_confidence_below".equals(node.path("type").asText().trim())) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (Exception ex) {
+            throw new WorkflowException.InvalidDefinition("definition is not valid JSON");
+        }
+    }
+
     private List<Node> parseNodes(JsonNode nodesJson) {
         if (!nodesJson.isArray() || nodesJson.isEmpty()) {
             throw new WorkflowException.InvalidDefinition(

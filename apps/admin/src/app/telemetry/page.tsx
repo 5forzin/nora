@@ -19,7 +19,18 @@ interface TelemetrySearch {
  * instead of falling back to the default window.
  */
 function isoDate(value: string | undefined): string | undefined {
-  return value != null && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined;
+  if (value == null || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
+    ? value
+    : undefined;
+}
+
+function exclusiveEndDate(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const date = new Date(`${value}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
 }
 
 function costGroupBy(value: string | undefined): CostGroupBy {
@@ -48,12 +59,14 @@ export default async function TelemetriaPage({
   const params = await searchParams;
   const from = isoDate(params.from);
   const to = isoDate(params.to);
+  // The API window is [from, to); the date picker includes the selected final day.
+  const exclusiveTo = exclusiveEndDate(to);
   const groupBy = costGroupBy(params.groupBy);
 
   const [cost, health, business] = await Promise.all([
-    getCost(from, to, groupBy),
+    getCost(from, exclusiveTo, groupBy),
     getHealth(),
-    getBusiness(from, to),
+    getBusiness(from, exclusiveTo),
   ]);
   const maxCost = Math.max(...cost.rows.map((r) => r.costUsd), 0.0001);
 

@@ -18,7 +18,7 @@ import json
 import logging
 import time
 
-from ..clients.llm import LlmClient
+from ..clients.llm import LlmClient, build_strict_json_schema
 from ..models import LiveAnalyzeRequest, LiveAnalyzeResponse, LiveHighlightsV1
 from ..settings import Settings
 from ..time_budget import LlmBudgetExceededError, TimeBudget
@@ -73,69 +73,7 @@ def _build_previous_highlights_section(
 
 
 def _build_json_schema_for_live() -> dict:
-    return {
-        "type": "object",
-        "properties": {
-            "decisions": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "text": {"type": "string"},
-                        "confidence": {"type": "number"},
-                        "sourceQuote": {"type": "string"},
-                    },
-                    "required": ["text", "confidence", "sourceQuote"],
-                    "additionalProperties": False,
-                },
-            },
-            "nextSteps": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "text": {"type": "string"},
-                        "confidence": {"type": "number"},
-                        "sourceQuote": {"type": "string"},
-                    },
-                    "required": ["text", "confidence", "sourceQuote"],
-                    "additionalProperties": False,
-                },
-            },
-            "observations": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "text": {"type": "string"},
-                        "confidence": {"type": "number"},
-                        "sourceQuote": {"type": "string"},
-                    },
-                    "required": ["text", "confidence", "sourceQuote"],
-                    "additionalProperties": False,
-                },
-            },
-            "tasks": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "title": {"type": "string"},
-                        "assignee": {"type": ["string", "null"]},
-                        "priority": {
-                            "type": "string",
-                            "enum": ["LOW", "MEDIUM", "HIGH"],
-                        },
-                        "sourceQuote": {"type": "string"},
-                    },
-                    "required": ["title", "assignee", "priority", "sourceQuote"],
-                    "additionalProperties": False,
-                },
-            },
-        },
-        "required": ["decisions", "nextSteps", "observations", "tasks"],
-        "additionalProperties": False,
-    }
+    return build_strict_json_schema(LiveHighlightsV1)
 
 
 def analyze(
@@ -167,6 +105,9 @@ def analyze(
     )
 
     json_schema = _build_json_schema_for_live()
+
+    # The fallback receives the identical prompt; only the transport mode changes.
+    system_prompt += "\n\nReturn JSON matching this schema:\n" + json.dumps(json_schema)
 
     try:
         raw_json, tokens_in, tokens_out = client.chat_structured(

@@ -208,9 +208,11 @@ export async function bindService(
   modelId: string,
   enabled: boolean,
   operator: string,
-): Promise<void> {
-  if (USE_MOCKS) return;
-  await platformSend("PUT", `/admin/platform/config/${service}`, operator, { modelId, enabled });
+): Promise<ServiceBinding> {
+  if (USE_MOCKS) return { service, modelId, enabled };
+  const binding = await platformSend<RawBinding>("PUT", `/admin/platform/config/${service}`, operator, { modelId, enabled });
+  if (!binding) throw new Error("A plataforma não retornou o binding salvo.");
+  return { service: binding.service as ServiceKey, modelId: binding.modelId, enabled: binding.enabled };
 }
 
 /** Removes a model from the catalog. DELETE /admin/platform/models/{id}. */
@@ -227,13 +229,15 @@ export async function removeModel(id: string, operator: string): Promise<void> {
  * console. `USE_MOCKS` returns before the call, so this validation runs in the mock mode too —
  * which is exactly the mode in which the missing field went unnoticed for a whole story.
  */
-export async function createModel(input: NewModelInput, operator: string): Promise<void> {
+export async function createModel(input: NewModelInput, operator: string): Promise<LlmModel> {
   const missing = REQUIRED_MODEL_FIELDS.filter((f) => (input[f] ?? "").trim() === "");
   if (missing.length > 0) {
     throw new Error(`Campos obrigatórios em branco: ${missing.join(", ")}.`);
   }
-  if (USE_MOCKS) return;
-  await platformSend("POST", "/admin/platform/models", operator, { ...input, enabled: true });
+  if (USE_MOCKS) return toModel({ ...input, id: crypto.randomUUID(), enabled: true });
+  const model = await platformSend<RawModel>("POST", "/admin/platform/models", operator, { ...input, enabled: true });
+  if (!model) throw new Error("A plataforma não retornou o modelo criado.");
+  return toModel(model);
 }
 
 // ---- real transport (the default; mocks require NORA_ADMIN_USE_MOCKS=true) ----

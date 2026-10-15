@@ -5,6 +5,7 @@ import br.com.nora.api.application.ports.CustomerAccountRepository;
 import br.com.nora.api.application.ports.CustomerConfidenceAssessmentRepository;
 import br.com.nora.api.application.ports.MeetingRepository;
 import br.com.nora.api.application.ports.NlpWorkerClient.CustomerConfidenceCarrier;
+import br.com.nora.api.application.tenant.EnterpriseEntitlementService;
 import br.com.nora.api.domain.customer.ConfidenceTrend;
 import br.com.nora.api.domain.customer.CustomerAccount;
 import br.com.nora.api.domain.customer.CustomerConfidenceAssessment;
@@ -38,14 +39,17 @@ public class CustomerConfidenceService {
     private final CustomerAccountRepository accounts;
     private final CustomerConfidenceAssessmentRepository assessments;
     private final MeetingRepository meetings;
+    private final EnterpriseEntitlementService entitlements;
 
     public CustomerConfidenceService(
             CustomerAccountRepository accounts,
             CustomerConfidenceAssessmentRepository assessments,
-            MeetingRepository meetings) {
+            MeetingRepository meetings,
+            EnterpriseEntitlementService entitlements) {
         this.accounts = accounts;
         this.assessments = assessments;
         this.meetings = meetings;
+        this.entitlements = entitlements;
     }
 
     /**
@@ -58,7 +62,10 @@ public class CustomerConfidenceService {
     @Transactional
     public Optional<CustomerConfidenceAssessment> persist(
             UUID tenantId, UUID meetingId, CustomerConfidenceCarrier carrier) {
-        if (carrier == null || carrier.accountName() == null || carrier.accountName().isBlank()) {
+        if (!entitlements.isEnterprise(tenantId)
+                || carrier == null
+                || carrier.accountName() == null
+                || carrier.accountName().isBlank()) {
             // Internal meeting: worker did not identify a customer. No account/assessment created.
             return Optional.empty();
         }
@@ -93,6 +100,9 @@ public class CustomerConfidenceService {
     /** Retrieves the meeting assessments (at most one per account). Scoped by tenant. */
     @Transactional(readOnly = true)
     public List<CustomerConfidenceAssessment> findByMeetingId(UUID meetingId, UUID tenantId) {
+        if (!entitlements.isEnterprise(tenantId)) {
+            return List.of();
+        }
         meetings.findByIdAndTenant(meetingId, tenantId).orElseThrow(MeetingException.NotFound::new);
         return assessments.findByMeetingId(meetingId, tenantId);
     }
@@ -104,6 +114,9 @@ public class CustomerConfidenceService {
      */
     @Transactional(readOnly = true)
     public List<ConfidenceView> findViewByMeetingId(UUID meetingId, UUID tenantId) {
+        if (!entitlements.isEnterprise(tenantId)) {
+            return List.of();
+        }
         meetings.findByIdAndTenant(meetingId, tenantId).orElseThrow(MeetingException.NotFound::new);
         return assessments.findByMeetingId(meetingId, tenantId).stream()
                 .map(

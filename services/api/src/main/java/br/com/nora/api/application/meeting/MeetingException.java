@@ -9,7 +9,9 @@ public sealed class MeetingException extends RuntimeException
                 MeetingException.FileTooLarge,
                 MeetingException.EmptyTranscript,
                 MeetingException.RateLimited,
-                MeetingException.CannotReprocess {
+                MeetingException.CannotReprocess,
+                MeetingException.UploadConflict,
+                MeetingException.UploadRemoved {
 
     private final String code;
 
@@ -87,6 +89,22 @@ public sealed class MeetingException extends RuntimeException
     public static final class CannotReprocess extends MeetingException {
         public CannotReprocess(String reason) {
             super("CANNOT_REPROCESS", reason);
+        }
+    }
+
+    public static final class UploadConflict extends MeetingException {
+        public UploadConflict() {
+            super(
+                    "UPLOAD_IDEMPOTENCY_CONFLICT",
+                    "This upload key was already used with different content.");
+        }
+    }
+
+    public static final class UploadRemoved extends MeetingException {
+        public UploadRemoved() {
+            super(
+                    "UPLOAD_ALREADY_REMOVED",
+                    "The meeting for this upload was removed and cannot be restored by retrying.");
         }
     }
 }

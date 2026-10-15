@@ -19,6 +19,7 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -71,6 +72,7 @@ class TenantContextHistoryIntegrationTest {
 
     @Autowired TestRestTemplate rest;
     @Autowired ObjectMapper mapper;
+    @Autowired JdbcTemplate jdbc;
 
     @BeforeEach
     void useJdkHttpClient() {
@@ -208,6 +210,10 @@ class TenantContextHistoryIntegrationTest {
         JsonNode signup = postJson("/auth/signup", payload, HttpStatus.CREATED);
         String verify = json(Map.of("token", signup.get("emailVerificationDevToken").asText()));
         postJson("/auth/verify-email", verify, HttpStatus.NO_CONTENT);
+        jdbc.update(
+                "UPDATE tenants SET plan = 'ENTERPRISE' WHERE id = "
+                        + "(SELECT tenant_id FROM users WHERE email = ?)",
+                email);
         String payloadLogin = json(Map.of("email", email, "password", PASSWORD));
         return postJson("/auth/login", payloadLogin, HttpStatus.OK).get("accessToken").asText();
     }

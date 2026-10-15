@@ -1,8 +1,8 @@
 //! Cloud STT over the provider's realtime WebSocket, one connection per track (ADR 0039/0045).
 //!
 //! Replaces the sliding-window re-decode loop of the local engine with real streaming: audio goes
-//! up as it is captured, partials come back as they are produced, and the provider — not us —
-//! decides where an utterance ends.
+//! up as it is captured and partials come back as they are produced. Models without server VAD
+//! need client commits at speech pauses and a final flush before the recording can be saved.
 //!
 //! ============================================================================
 //! THE CLOCK, AND WHY IT COUNTS RECEIVED AUDIO RATHER THAN SENT AUDIO
@@ -19,7 +19,7 @@
 //! through the hole, because the hole is part of the recording.
 //!
 //! To keep that true the reconnect path DRAINS the audio channel instead of letting it back up,
-//! which is also what stops `commands.rs`'s bridge from silently dropping on a full channel.
+//! which also keeps capture from silently dropping on a full channel.
 //!
 //! ============================================================================
 //! WHAT A DROPPED SESSION COSTS, STATED PLAINLY
@@ -35,6 +35,11 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use std::{
+    collections::{HashMap, VecDeque},
+    future::Future,
+    pin::Pin,
+};
 
 use base64::Engine as _;
 use futures_util::{SinkExt, StreamExt};
@@ -63,6 +68,8 @@ const MAX_BACKOFF: Duration = Duration::from_secs(15);
 
 /// Slack of the channel between `audio_capture` and this task. 100 chunks of ~100 ms.
 const AUDIO_QUEUE_CHUNKS: usize = 100;
+const FINALIZE_TIMEOUT: Duration = Duration::from_secs(10);
+const STOP_TIMEOUT: Duration = Duration::from_secs(15);
 
 // ============================================================================
 // Public handle
@@ -72,6 +79,7 @@ pub struct CloudSttHandle {
     session_id: String,
     audio_tx: mpsc::Sender<Vec<i16>>,
     stop_tx: Option<oneshot::Sender<()>>,
+    task: Option<tokio::task::JoinHandle<Result<(), String>>>,
 }
 
 impl Drop for CloudSttHandle {
@@ -94,10 +102,24 @@ impl SttBackend for CloudSttHandle {
         self.audio_tx.clone()
     }
 
-    fn stop(mut self: Box<Self>) {
+    fn stop(mut self: Box<Self>) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
         if let Some(tx) = self.stop_tx.take() {
             let _ = tx.send(());
         }
+        let task = self.task.take();
+        Box::pin(async move {
+            if let Some(mut task) = task {
+                match tokio::time::timeout(STOP_TIMEOUT, &mut task).await {
+                    Ok(result) => result.map_err(|e| format!("Transcription task failed: {e}"))?,
+                    Err(_) => {
+                        task.abort();
+                        Err("Timed out finalizing the transcription.".to_string())
+                    }
+                }
+            } else {
+                Ok(())
+            }
+        })
     }
 }
 
@@ -112,8 +134,9 @@ impl CloudSttHandle {
         app: AppHandle,
         language: String,
         track_label: String,
+        expected_owner: crate::auth_bridge::SessionIdentity,
     ) -> Result<Self, String> {
-        let session = stt_token::fetch_session(&app, &language)
+        let session = stt_token::fetch_session(&app, &language, &expected_owner)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -135,23 +158,25 @@ impl CloudSttHandle {
 
         let task_app = app.clone();
         let task_session_id = session_id.clone();
-        tokio::spawn(async move {
+        let task = tokio::spawn(async move {
             run(
                 task_app,
                 task_session_id,
                 track_label,
                 language,
+                expected_owner,
                 session,
                 audio_rx,
                 stop_rx,
             )
-            .await;
+            .await
         });
 
         Ok(Self {
             session_id,
             audio_tx,
             stop_tx: Some(stop_tx),
+            task: Some(task),
         })
     }
 }
@@ -191,12 +216,16 @@ fn samples_to_ms(samples: u64) -> u64 {
 enum Outcome {
     /// `stop()` was called, or capture closed the channel. Terminal.
     Stopped,
+    FinalizationFailed(String),
     /// The socket died. Reconnectable, with a reason for the user.
     ///
     /// `progressed` says whether this connection had delivered any transcript before dying. It
     /// is what separates a run of failures from a working session that happened to drop — see
     /// [`record_failure`].
-    Lost { reason: String, progressed: bool },
+    Lost {
+        reason: String,
+        progressed: bool,
+    },
 }
 
 /// A connection lost before it ever produced anything.
@@ -228,10 +257,11 @@ async fn run(
     session_id: String,
     track: String,
     language: String,
+    expected_owner: crate::auth_bridge::SessionIdentity,
     first_session: RealtimeSession,
     mut audio_rx: mpsc::Receiver<Vec<i16>>,
     mut stop_rx: oneshot::Receiver<()>,
-) {
+) -> Result<(), String> {
     let clock = TrackClock::default();
     // Lives OUTSIDE the connection loop: this is what makes a reconnection continue the
     // transcript's clock instead of restarting it at zero.
@@ -243,17 +273,19 @@ async fn run(
     loop {
         let session = match pending.take() {
             Some(s) => s,
-            None => match stt_token::fetch_session(&app, &language).await {
+            None => match stt_token::fetch_session(&app, &language, &expected_owner).await {
                 Ok(s) => s,
                 Err(e) => {
                     consecutive_failures = record_failure(consecutive_failures, false);
                     emit_error(&app, &session_id, &track, e.code, &e.message);
                     if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
                         emit_gave_up(&app, &session_id, &track);
-                        return;
+                        return Err(
+                            "Transcription stopped after repeated connection failures.".to_string()
+                        );
                     }
                     if !backoff(&mut audio_rx, &clock, &mut stop_rx, consecutive_failures).await {
-                        return;
+                        return Ok(());
                     }
                     continue;
                 }
@@ -273,7 +305,8 @@ async fn run(
         .await;
 
         match outcome {
-            Outcome::Stopped => return,
+            Outcome::Stopped => return Ok(()),
+            Outcome::FinalizationFailed(reason) => return Err(reason),
             Outcome::Lost { reason, progressed } => {
                 consecutive_failures = record_failure(consecutive_failures, progressed);
                 emit_error(
@@ -289,10 +322,12 @@ async fn run(
                 );
                 if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
                     emit_gave_up(&app, &session_id, &track);
-                    return;
+                    return Err(
+                        "Transcription stopped after repeated connection failures.".to_string()
+                    );
                 }
                 if !backoff(&mut audio_rx, &clock, &mut stop_rx, consecutive_failures).await {
-                    return;
+                    return Ok(());
                 }
             }
         }
@@ -359,6 +394,31 @@ async fn stream_one_session(
         Ok(pair) => pair,
         Err(e) => return lost(format!("handshake failed: {}", e)),
     };
+    stream_connected(
+        socket,
+        session,
+        clock,
+        audio_rx,
+        stop_rx,
+        |event| emit_transcript(app, session_id, track, clock, last_final_end_ms, event),
+        FINALIZE_TIMEOUT,
+    )
+    .await
+}
+
+async fn stream_connected<S, F>(
+    socket: tokio_tungstenite::WebSocketStream<S>,
+    session: &RealtimeSession,
+    clock: &TrackClock,
+    audio_rx: &mut mpsc::Receiver<Vec<i16>>,
+    stop_rx: &mut oneshot::Receiver<()>,
+    mut emit_event: F,
+    finalize_timeout: Duration,
+) -> Outcome
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    F: FnMut(Interpreted),
+{
     let (mut write, mut read) = socket.split();
 
     // Declare what we are actually going to send. The backend already configured the session when
@@ -372,24 +432,63 @@ async fn stream_one_session(
     // Set by the first transcript event this connection delivers. A session that spoke is a
     // session that worked, and `run` uses that to tell one bad night from a run of refusals.
     let mut progressed = false;
+    let mut decoder = TranscriptDecoder::default();
+    let mut turn = AudioTurn::default();
+    let mut manual_commits = true;
+    let mut pending_commits = 0usize;
+    let mut finishing = false;
+    let mut input_finished = false;
+    let deadline = tokio::time::sleep(finalize_timeout);
+    tokio::pin!(deadline);
 
     loop {
+        if input_finished && pending_commits == 0 && !decoder.has_pending() {
+            let _ = write.send(Message::Close(None)).await;
+            return Outcome::Stopped;
+        }
         tokio::select! {
-            _ = &mut *stop_rx => {
+            _ = &mut *stop_rx, if !finishing => {
+                finishing = true;
+                audio_rx.close();
+                deadline.as_mut().reset(tokio::time::Instant::now() + finalize_timeout);
+            }
+            _ = &mut deadline, if finishing => {
+                let message = "Timed out waiting for the final transcript. The last words may be missing.".to_string();
+                emit_event(Interpreted::Failure(message.clone()));
                 let _ = write.send(Message::Close(None)).await;
-                return Outcome::Stopped;
+                return Outcome::FinalizationFailed(message);
             }
             incoming = read.next() => {
                 match incoming {
                     Some(Ok(Message::Text(text))) => {
-                        for event in interpret(&text) {
+                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
+                            match value["type"].as_str().unwrap_or("") {
+                                "session.created" | "session.updated" => {
+                                    if let Some(input) = value.pointer("/session/audio/input") {
+                                        manual_commits = input.get("turn_detection").is_none_or(|v| v.is_null());
+                                    }
+                                }
+                                "input_audio_buffer.committed" if !manual_commits => turn = AudioTurn::default(),
+                                "conversation.item.input_audio_transcription.completed" |
+                                "conversation.item.input_audio_transcription.failed" => {
+                                    pending_commits = pending_commits.saturating_sub(1);
+                                }
+                                _ => {}
+                            }
+                        }
+                        for event in decoder.interpret(&text) {
                             if matches!(event, Interpreted::Partial(_) | Interpreted::Final(_)) {
                                 progressed = true;
                             }
-                            emit_transcript(app, session_id, track, clock, last_final_end_ms, event);
+                            emit_event(event);
                         }
                     }
                     Some(Ok(Message::Close(_))) | None => {
+                        if finishing {
+                            let message = "The provider closed before the final transcript arrived.".to_string();
+                            emit_event(Interpreted::Failure(message.clone()));
+                            return Outcome::FinalizationFailed(message);
+                        }
                         return Outcome::Lost {
                             reason: "the provider closed the connection".to_string(),
                             progressed,
@@ -397,6 +496,9 @@ async fn stream_one_session(
                     }
                     Some(Ok(_)) => {}
                     Some(Err(e)) => {
+                        if finishing {
+                            return Outcome::FinalizationFailed(format!("Transcription connection failed during finalization: {e}"));
+                        }
                         return Outcome::Lost {
                             reason: format!("socket error: {}", e),
                             progressed,
@@ -404,22 +506,53 @@ async fn stream_one_session(
                     }
                 }
             }
-            chunk = audio_rx.recv() => {
+            chunk = audio_rx.recv(), if !input_finished => {
                 match chunk {
+                    Some(samples) if samples.is_empty() => {}
                     Some(samples) => {
                         clock.advance(samples.len());
                         let payload = append_payload(&samples);
                         if let Err(e) = write.send(Message::Text(payload.into())).await {
+                            if finishing {
+                                return Outcome::FinalizationFailed(format!("Could not flush the final audio: {e}"));
+                            }
                             return Outcome::Lost {
                                 reason: format!("could not send audio: {}", e),
                                 progressed,
                             };
                         }
+                        if turn.push(&samples) && manual_commits {
+                            if let Err(e) = write.send(Message::Text(commit_payload().into())).await {
+                                if finishing {
+                                    return Outcome::FinalizationFailed(format!("Could not commit the final audio: {e}"));
+                                }
+                                return Outcome::Lost { reason: format!("could not commit audio: {e}"), progressed };
+                            }
+                            turn = AudioTurn::default();
+                            pending_commits += 1;
+                        }
                     }
-                    // Capture closed the channel: the recording is over.
+                    // Drain queued capture audio, commit even a trailing short turn, then wait for
+                    // completed events. Closing immediately here discards the last spoken words.
                     None => {
-                        let _ = write.send(Message::Close(None)).await;
-                        return Outcome::Stopped;
+                        if !finishing {
+                            finishing = true;
+                            deadline.as_mut().reset(tokio::time::Instant::now() + finalize_timeout);
+                        }
+                        input_finished = true;
+                        if turn.samples > 0 {
+                            let padding = MIN_COMMIT_SAMPLES.saturating_sub(turn.samples);
+                            if padding > 0 {
+                                let _ = write.send(Message::Text(append_payload(&vec![0; padding]).into())).await;
+                            }
+                            if let Err(e) = write.send(Message::Text(commit_payload().into())).await {
+                                let message = format!("Could not finalize the transcription: {e}");
+                                emit_event(Interpreted::Failure(message.clone()));
+                                return Outcome::FinalizationFailed(message);
+                            }
+                            turn = AudioTurn::default();
+                            pending_commits += 1;
+                        }
                     }
                 }
             }
@@ -430,6 +563,40 @@ async fn stream_one_session(
 // ============================================================================
 // Provider protocol (pure, and therefore tested)
 // ============================================================================
+
+const MIN_COMMIT_SAMPLES: usize = TARGET_SAMPLE_RATE as usize / 10;
+const PAUSE_SAMPLES: usize = TARGET_SAMPLE_RATE as usize * 7 / 10;
+const MAX_TURN_SAMPLES: usize = TARGET_SAMPLE_RATE as usize * 15;
+
+#[derive(Default)]
+struct AudioTurn {
+    samples: usize,
+    silence: usize,
+    heard_speech: bool,
+}
+
+impl AudioTurn {
+    fn push(&mut self, samples: &[i16]) -> bool {
+        self.samples += samples.len();
+        // A conservative energy threshold closes ordinary speech pauses. The duration cap also
+        // commits quiet speech and continuous background noise instead of buffering indefinitely.
+        let energy: f64 = samples.iter().map(|s| (*s as f64).powi(2)).sum();
+        if !samples.is_empty() && energy / samples.len() as f64 >= 200.0_f64.powi(2) {
+            self.heard_speech = true;
+            self.silence = 0;
+        } else {
+            self.silence += samples.len();
+        }
+        self.samples >= MAX_TURN_SAMPLES
+            || (self.heard_speech
+                && self.silence >= PAUSE_SAMPLES
+                && self.samples >= MIN_COMMIT_SAMPLES)
+    }
+}
+
+fn commit_payload() -> &'static str {
+    r#"{"type":"input_audio_buffer.commit"}"#
+}
 
 /// What one provider event means to us. Anything not listed here is deliberately ignored — the
 /// realtime protocol emits a great deal that a transcription client has no use for.
@@ -446,10 +613,17 @@ enum Interpreted {
 /// audio half from the side that knows the truth about it, so a stale `nora.stt.openai.sample-rate`
 /// on the server cannot make the provider play our PCM at the wrong speed.
 ///
-/// It deliberately does NOT carry `turn_detection`. Segmentation is a server decision now that
-/// there is no local VAD, and a desktop in the field overriding it would be exactly the kind of
-/// client-side control this migration moved to the server.
+/// It does not override `turn_detection`. The connection reads the effective server setting and
+/// commits locally only when server VAD is off.
 fn session_update_payload(session: &RealtimeSession) -> String {
+    let mut transcription = serde_json::json!({ "model": session.model });
+    if !session.language.is_empty() {
+        if session.model.starts_with("gpt-live-transcribe") {
+            transcription["languages"] = serde_json::json!([session.language]);
+        } else {
+            transcription["language"] = serde_json::json!(session.language);
+        }
+    }
     serde_json::json!({
         "type": "session.update",
         "session": {
@@ -457,7 +631,7 @@ fn session_update_payload(session: &RealtimeSession) -> String {
             "audio": {
                 "input": {
                     "format": { "type": session.audio_format, "rate": TARGET_SAMPLE_RATE },
-                    "transcription": { "model": session.model, "language": session.language },
+                    "transcription": transcription,
                 }
             }
         },
@@ -485,43 +659,91 @@ fn encode_pcm16(samples: &[i16]) -> String {
     base64::engine::general_purpose::STANDARD.encode(&bytes)
 }
 
-/// Reads one provider frame. Returns every transcript event it carries, in order.
-fn interpret(text: &str) -> Vec<Interpreted> {
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(text) else {
-        return Vec::new();
-    };
-    let kind = value.get("type").and_then(|v| v.as_str()).unwrap_or("");
+/// Deltas are incremental, while the UI expects the complete partial for a track. Completions
+/// may arrive out of order, so keep each item until earlier committed items have finished.
+#[derive(Default)]
+struct TranscriptDecoder {
+    partials: HashMap<String, String>,
+    order: VecDeque<String>,
+    completed: HashMap<String, String>,
+}
 
-    match kind {
-        "conversation.item.input_audio_transcription.delta" => {
-            let delta = value.get("delta").and_then(|v| v.as_str()).unwrap_or("");
-            if delta.is_empty() {
-                Vec::new()
-            } else {
-                vec![Interpreted::Partial(delta.to_string())]
+impl TranscriptDecoder {
+    fn has_pending(&self) -> bool {
+        !self.order.is_empty()
+    }
+
+    fn remember(&mut self, id: &str) {
+        if !self.order.iter().any(|existing| existing == id) {
+            self.order.push_back(id.to_string());
+        }
+    }
+
+    fn finish(&mut self, id: &str, text: String) -> Vec<Interpreted> {
+        self.remember(id);
+        self.partials.remove(id);
+        self.completed.insert(id.to_string(), text);
+        let mut events = Vec::new();
+        while let Some(id) = self.order.front() {
+            let Some(text) = self.completed.remove(id) else {
+                break;
+            };
+            self.order.pop_front();
+            if !text.trim().is_empty() {
+                events.push(Interpreted::Final(text.trim().to_string()));
             }
         }
-        "conversation.item.input_audio_transcription.completed" => {
-            let full = value
-                .get("transcript")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            if full.trim().is_empty() {
+        events
+    }
+
+    fn interpret(&mut self, text: &str) -> Vec<Interpreted> {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(text) else {
+            return Vec::new();
+        };
+        let kind = value.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        let id = value
+            .get("item_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("current");
+
+        match kind {
+            "input_audio_buffer.committed" => {
+                self.remember(id);
                 Vec::new()
-            } else {
-                vec![Interpreted::Final(full.trim().to_string())]
             }
+            "conversation.item.input_audio_transcription.delta" => {
+                let delta = value.get("delta").and_then(|v| v.as_str()).unwrap_or("");
+                if delta.is_empty() {
+                    Vec::new()
+                } else {
+                    self.remember(id);
+                    let partial = self.partials.entry(id.to_string()).or_default();
+                    partial.push_str(delta);
+                    vec![Interpreted::Partial(partial.clone())]
+                }
+            }
+            "conversation.item.input_audio_transcription.completed" => {
+                let full = value
+                    .get("transcript")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                self.finish(id, full.to_string())
+            }
+            // The provider's own failure frame. Surfaced rather than swallowed: a session that is
+            // rejecting our audio otherwise looks exactly like a silent room.
+            "error" | "conversation.item.input_audio_transcription.failed" => {
+                let message = value
+                    .pointer("/error/message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("the transcription provider reported an error");
+                let mut events = vec![Interpreted::Failure(message.to_string())];
+                if kind == "conversation.item.input_audio_transcription.failed" {
+                    events.extend(self.finish(id, String::new()));
+                }
+                events
+            }
+            _ => Vec::new(),
         }
-        // The provider's own failure frame. Surfaced rather than swallowed: a session that is
-        // rejecting our audio otherwise looks exactly like a silent room.
-        "error" | "conversation.item.input_audio_transcription.failed" => {
-            let message = value
-                .pointer("/error/message")
-                .and_then(|v| v.as_str())
-                .unwrap_or("the transcription provider reported an error");
-            vec![Interpreted::Failure(message.to_string())]
-        }
-        _ => Vec::new(),
     }
 }
 
@@ -620,6 +842,10 @@ fn emit_gave_up(app: &AppHandle, session_id: &str, track: &str) {
 mod tests {
     use super::*;
 
+    fn interpret(text: &str) -> Vec<Interpreted> {
+        TranscriptDecoder::default().interpret(text)
+    }
+
     #[test]
     fn pcm16_is_encoded_little_endian() {
         // 0x0102 little-endian is 0x02 0x01; a big-endian encoder yields a different string, and
@@ -652,11 +878,210 @@ mod tests {
         assert_eq!(input["format"]["rate"], TARGET_SAMPLE_RATE);
         assert_eq!(input["format"]["type"], "audio/pcm");
         assert_eq!(input["transcription"]["model"], "gpt-live-transcribe");
-        assert_eq!(input["transcription"]["language"], "pt");
+        assert_eq!(
+            input["transcription"]["languages"],
+            serde_json::json!(["pt"])
+        );
+        assert!(input["transcription"].get("language").is_none());
         assert!(
             input.get("turn_detection").is_none(),
             "turn detection belongs to the server that minted the session"
         );
+    }
+
+    #[test]
+    fn legacy_models_keep_the_singular_language() {
+        let mut session = test_session(TARGET_SAMPLE_RATE);
+        session.model = "gpt-4o-mini-transcribe".to_string();
+        let payload: serde_json::Value =
+            serde_json::from_str(&session_update_payload(&session)).unwrap();
+        let transcription = &payload["session"]["audio"]["input"]["transcription"];
+        assert_eq!(transcription["language"], "pt");
+        assert!(transcription.get("languages").is_none());
+    }
+
+    #[test]
+    fn partials_accumulate_per_item_and_completed_turns_keep_audio_order() {
+        let mut decoder = TranscriptDecoder::default();
+        assert_eq!(decoder.interpret(r#"{"type":"conversation.item.input_audio_transcription.delta","item_id":"a","delta":"Good "}"#), vec![Interpreted::Partial("Good ".to_string())]);
+        assert_eq!(decoder.interpret(r#"{"type":"conversation.item.input_audio_transcription.delta","item_id":"a","delta":"morning"}"#), vec![Interpreted::Partial("Good morning".to_string())]);
+        decoder.interpret(r#"{"type":"input_audio_buffer.committed","item_id":"a"}"#);
+        decoder.interpret(r#"{"type":"input_audio_buffer.committed","item_id":"b"}"#);
+        assert!(decoder.interpret(r#"{"type":"conversation.item.input_audio_transcription.completed","item_id":"b","transcript":"Second turn"}"#).is_empty());
+        assert_eq!(decoder.interpret(r#"{"type":"conversation.item.input_audio_transcription.completed","item_id":"a","transcript":"Good morning"}"#), vec![Interpreted::Final("Good morning".to_string()), Interpreted::Final("Second turn".to_string())]);
+        assert!(!decoder.has_pending());
+    }
+
+    #[test]
+    fn silent_completed_items_do_not_block_later_transcripts() {
+        let mut decoder = TranscriptDecoder::default();
+        decoder.interpret(r#"{"type":"input_audio_buffer.committed","item_id":"a"}"#);
+        decoder.interpret(r#"{"type":"input_audio_buffer.committed","item_id":"b"}"#);
+        decoder.interpret(r#"{"type":"conversation.item.input_audio_transcription.completed","item_id":"b","transcript":"Speech"}"#);
+        assert_eq!(decoder.interpret(r#"{"type":"conversation.item.input_audio_transcription.completed","item_id":"a","transcript":""}"#), vec![Interpreted::Final("Speech".to_string())]);
+        assert!(!decoder.has_pending());
+    }
+
+    #[test]
+    fn audio_turns_commit_on_pauses_and_bound_quiet_or_continuous_audio() {
+        let chunk = TARGET_SAMPLE_RATE as usize / 10;
+        let mut turn = AudioTurn::default();
+        assert!(!turn.push(&vec![1_000; chunk]));
+        for _ in 0..6 {
+            assert!(!turn.push(&vec![0; chunk]));
+        }
+        assert!(turn.push(&vec![0; chunk]));
+        for level in [0, 1_000] {
+            let mut turn = AudioTurn::default();
+            for _ in 0..149 {
+                assert!(!turn.push(&vec![level; chunk]));
+            }
+            assert!(turn.push(&vec![level; chunk]));
+        }
+    }
+
+    #[tokio::test]
+    async fn stop_drains_audio_commits_and_waits_for_the_final_transcript() {
+        use tokio_tungstenite::{tungstenite::protocol::Role, WebSocketStream};
+        let (client_io, server_io) = tokio::io::duplex(65_536);
+        let client = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
+        let mut server = WebSocketStream::from_raw_socket(server_io, Role::Server, None).await;
+        let provider = tokio::spawn(async move {
+            let mut audio_bytes = 0;
+            while let Some(Ok(Message::Text(text))) = server.next().await {
+                let frame: serde_json::Value = serde_json::from_str(&text).unwrap();
+                match frame["type"].as_str().unwrap() {
+                    "input_audio_buffer.append" => {
+                        let decoded = base64::engine::general_purpose::STANDARD
+                            .decode(frame["audio"].as_str().unwrap())
+                            .unwrap();
+                        assert!(!decoded.is_empty(), "empty PCM must not reach the provider");
+                        audio_bytes += decoded.len();
+                    }
+                    "input_audio_buffer.commit" => {
+                        assert_eq!(audio_bytes, MIN_COMMIT_SAMPLES * 2);
+                        server
+                            .send(Message::Text(
+                                r#"{"type":"input_audio_buffer.committed","item_id":"last"}"#
+                                    .into(),
+                            ))
+                            .await
+                            .unwrap();
+                        tokio::time::sleep(Duration::from_millis(20)).await;
+                        server.send(Message::Text(r#"{"type":"conversation.item.input_audio_transcription.completed","item_id":"last","transcript":"Final words"}"#.into())).await.unwrap();
+                        return;
+                    }
+                    _ => {}
+                }
+            }
+            panic!("socket closed before the buffered audio was committed");
+        });
+        let (audio_tx, mut audio_rx) = mpsc::channel(10);
+        audio_tx.send(Vec::new()).await.unwrap();
+        audio_tx
+            .send(vec![1_000; MIN_COMMIT_SAMPLES / 2])
+            .await
+            .unwrap();
+        audio_tx.send(Vec::new()).await.unwrap();
+        let (stop_tx, mut stop_rx) = oneshot::channel();
+        stop_tx.send(()).unwrap();
+        let mut events = Vec::new();
+        let outcome = stream_connected(
+            client,
+            &test_session(TARGET_SAMPLE_RATE),
+            &TrackClock::default(),
+            &mut audio_rx,
+            &mut stop_rx,
+            |event| events.push(event),
+            Duration::from_secs(1),
+        )
+        .await;
+        assert!(matches!(outcome, Outcome::Stopped));
+        assert_eq!(events, vec![Interpreted::Final("Final words".to_string())]);
+        provider.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn empty_audio_chunks_do_not_append_or_commit_a_turn() {
+        use tokio_tungstenite::{tungstenite::protocol::Role, WebSocketStream};
+        let (client_io, server_io) = tokio::io::duplex(65_536);
+        let client = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
+        let mut server = WebSocketStream::from_raw_socket(server_io, Role::Server, None).await;
+        let provider = tokio::spawn(async move {
+            let mut frame_types = Vec::new();
+            while let Some(Ok(frame)) = server.next().await {
+                match frame {
+                    Message::Text(text) => {
+                        let frame: serde_json::Value = serde_json::from_str(&text).unwrap();
+                        frame_types.push(frame["type"].as_str().unwrap().to_string());
+                    }
+                    Message::Close(_) => break,
+                    _ => {}
+                }
+            }
+            frame_types
+        });
+        let (audio_tx, mut audio_rx) = mpsc::channel(10);
+        audio_tx.send(Vec::new()).await.unwrap();
+        audio_tx.send(Vec::new()).await.unwrap();
+        drop(audio_tx);
+        let (_stop_tx, mut stop_rx) = oneshot::channel();
+        let clock = TrackClock::default();
+        let mut events = Vec::new();
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(1),
+            stream_connected(
+                client,
+                &test_session(TARGET_SAMPLE_RATE),
+                &clock,
+                &mut audio_rx,
+                &mut stop_rx,
+                |event| events.push(event),
+                Duration::from_millis(25),
+            ),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(outcome, Outcome::Stopped));
+        assert_eq!(clock.now_ms(), 0);
+        assert!(events.is_empty());
+        assert_eq!(provider.await.unwrap(), vec!["session.update"]);
+    }
+
+    #[tokio::test]
+    async fn stop_has_a_deadline_when_the_provider_never_finishes() {
+        use tokio_tungstenite::{tungstenite::protocol::Role, WebSocketStream};
+        let (client_io, server_io) = tokio::io::duplex(65_536);
+        let client = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
+        let _server = WebSocketStream::from_raw_socket(server_io, Role::Server, None).await;
+        let (audio_tx, mut audio_rx) = mpsc::channel(10);
+        audio_tx
+            .send(vec![1_000; MIN_COMMIT_SAMPLES])
+            .await
+            .unwrap();
+        let (stop_tx, mut stop_rx) = oneshot::channel();
+        stop_tx.send(()).unwrap();
+        let mut events = Vec::new();
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(1),
+            stream_connected(
+                client,
+                &test_session(TARGET_SAMPLE_RATE),
+                &TrackClock::default(),
+                &mut audio_rx,
+                &mut stop_rx,
+                |event| events.push(event),
+                Duration::from_millis(25),
+            ),
+        )
+        .await
+        .unwrap();
+        assert!(
+            matches!(outcome, Outcome::FinalizationFailed(message) if message.contains("Timed out"))
+        );
+        assert!(events.iter().any(
+            |event| matches!(event, Interpreted::Failure(message) if message.contains("Timed out"))
+        ));
     }
 
     #[test]

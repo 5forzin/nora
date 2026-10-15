@@ -66,6 +66,8 @@ public interface IamRepository {
 
     void detachPolicyFromGroup(UUID policyId, UUID groupId, UUID tenantId);
 
+    List<UUID> listGroupPolicyIds(UUID groupId, UUID tenantId);
+
     void attachPolicyToUser(UUID policyId, UUID userId, UUID tenantId, UUID attachedBy);
 
     void detachPolicyFromUser(UUID policyId, UUID userId, UUID tenantId);

@@ -26,6 +26,7 @@ import br.com.nora.api.application.identity.AuthService.RequestPasswordResetComm
 import br.com.nora.api.application.identity.AuthService.RequestPasswordResetResult;
 import br.com.nora.api.application.identity.AuthService.SignupCommand;
 import br.com.nora.api.application.identity.AuthService.SignupResult;
+import br.com.nora.api.application.tenant.EnterpriseEntitlementService;
 import br.com.nora.api.domain.identity.User;
 import br.com.nora.api.infrastructure.security.AuthRateLimiter;
 import br.com.nora.api.infrastructure.security.JjwtJwtIssuer.AuthenticatedPrincipal;
@@ -69,12 +70,17 @@ public class AuthController {
     private final AuthService authService;
     private final AuthCookies cookies;
     private final AuthRateLimiter rateLimiter;
+    private final EnterpriseEntitlementService entitlements;
 
     public AuthController(
-            AuthService authService, AuthCookies cookies, AuthRateLimiter rateLimiter) {
+            AuthService authService,
+            AuthCookies cookies,
+            AuthRateLimiter rateLimiter,
+            EnterpriseEntitlementService entitlements) {
         this.authService = authService;
         this.cookies = cookies;
         this.rateLimiter = rateLimiter;
+        this.entitlements = entitlements;
     }
 
     /**
@@ -231,13 +237,7 @@ public class AuthController {
     public MeResponse me() {
         AuthenticatedPrincipal principal = CurrentUser.require();
         User user = authService.me(principal.userId());
-        return new MeResponse(
-                user.id(),
-                user.tenantId(),
-                user.email().value(),
-                user.displayName(),
-                user.isEmailVerified(),
-                user.createdAt());
+        return MeResponse.from(user, entitlements.workspaceAccess(user.id(), user.tenantId()));
     }
 
     /**

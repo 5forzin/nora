@@ -5,21 +5,18 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
- * The static {@code tools/list} catalogue: five read-only tools over meetings, tasks and Customer
- * Confidence (ADR 0041 §4).
+ * Read-only tool definitions: meetings and tasks for Core, plus Customer Confidence for Enterprise.
  *
  * <p><b>Everything in this file is read by a language model, so nothing here is operational.</b>
  * Tool names and descriptions land verbatim in an external agent's context window. They therefore
  * say what a tool returns and nothing else: no instruction about when to call it, no phrasing that
  * reads as a directive, and above all no tenant data — not a workspace name, not a user, not a
- * count. The catalogue is identical for every caller of every tenant, which is what makes it safe
- * to be constant text.
+ * count. Definitions are constant; the current workspace plan selects which ones are advertised.
  *
  * <p><b>The catalogue is not an authorization statement.</b> Listing a tool says the server
  * implements it, never that this caller may use it. Every tool re-derives that on invocation
- * through {@code AuthorizationService}, so a principal with no {@code meeting:read} sees the same
- * five tools and gets refused by all of them. Filtering the list by permission was considered and
- * rejected: it would have put an authorization decision in a cached, client-side artefact.
+ * through {@code AuthorizationService}. Enterprise tools also recheck the workspace plan. Discovery
+ * is not filtered by individual IAM grants and never substitutes for these checks.
  */
 public final class McpToolCatalog {
 
@@ -38,12 +35,18 @@ public final class McpToolCatalog {
 
     /** The five tool definitions, in the shape {@code tools/list} returns them. */
     public static ArrayNode tools() {
+        return tools(true);
+    }
+
+    public static ArrayNode tools(boolean enterprise) {
         ArrayNode tools = F.arrayNode();
         tools.add(listMeetings());
         tools.add(getMeeting());
         tools.add(searchMeetings());
         tools.add(listTasks());
-        tools.add(getCustomerConfidence());
+        if (enterprise) {
+            tools.add(getCustomerConfidence());
+        }
         return tools;
     }
 

@@ -327,6 +327,7 @@ class AuthorizationCoverageIntegrationTest {
         calls.post("/iam/groups", json(Map.of("name", "G")));
         calls.delete("/iam/groups/" + id);
         calls.get("/iam/groups/" + id + "/members");
+        calls.get("/iam/groups/" + id + "/policies");
         calls.post("/iam/groups/" + id + "/members/" + id, null);
         calls.delete("/iam/groups/" + id + "/members/" + id);
         calls.get("/iam/policies");
@@ -832,6 +833,10 @@ class AuthorizationCoverageIntegrationTest {
         JsonNode signup = postJson("/auth/signup", payload, HttpStatus.CREATED);
         String verify = json(Map.of("token", signup.get("emailVerificationDevToken").asText()));
         postJson("/auth/verify-email", verify, HttpStatus.NO_CONTENT);
+        jdbc.update(
+                "UPDATE tenants SET plan = 'ENTERPRISE' WHERE id = "
+                        + "(SELECT tenant_id FROM users WHERE email = ?)",
+                email);
         return login(email);
     }
 

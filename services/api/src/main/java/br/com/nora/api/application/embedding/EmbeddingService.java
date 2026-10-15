@@ -77,7 +77,13 @@ public class EmbeddingService {
         }
         try {
             float[] v = embedBilled(usageService, tenantId, text);
-            repo.upsert(meetingId, tenantId, client.modelId(), v, text.length());
+            // PostgreSQL char_length counts Unicode code points, not Java UTF-16 code units.
+            repo.upsert(
+                    meetingId,
+                    tenantId,
+                    client.modelId(),
+                    v,
+                    text.codePointCount(0, text.length()));
             return true;
         } catch (RuntimeException ex) {
             LOG.warn(

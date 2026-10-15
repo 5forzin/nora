@@ -116,7 +116,7 @@ class McpServerIntegrationTest {
     /* ================================= tools ================================== */
 
     @Test
-    void toolsList_carriesTheFiveReadOnlyToolsOfTheFirstCut() throws Exception {
+    void toolsList_carriesCoreReadOnlyToolsWithoutEnterpriseConfidence() throws Exception {
         String mcp = mintToken(signupAndLogin("mcp-tools@nora.dev", "Tools"), "desktop");
 
         JsonNode result = rpcResult(mcp, "tools/list", null);
@@ -125,11 +125,7 @@ class McpServerIntegrationTest {
         result.get("tools").forEach(tool -> names.add(tool.get("name").asText()));
         assertThat(names)
                 .containsExactlyInAnyOrder(
-                        "list_meetings",
-                        "get_meeting",
-                        "search_meetings",
-                        "list_tasks",
-                        "get_customer_confidence");
+                        "list_meetings", "get_meeting", "search_meetings", "list_tasks");
     }
 
     /**

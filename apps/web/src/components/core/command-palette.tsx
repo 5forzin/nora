@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiRequestError, searchMeetings } from "@/lib/api/client";
+import { useWorkspaceAccess } from "@/components/enterprise/workspace-provider";
 import { errorCopy } from "@/lib/strings";
 
 type CommandItem = {
@@ -23,20 +24,25 @@ type CommandItem = {
   sub?: string;
   icon: "plus" | "chat" | "people" | "tasks" | "trends" | "usage" | "flow" | "gear" | "shield";
   href: Route;
+  capability?: "viewExecutiveOverview" | "manageUsers" | "manageAccess" | "readCompanyContext";
+  permission?: "createMeetings" | "readMeetings" | "readTasks" | "readFlows";
 };
 
 type ResolvedItem = { href: Route };
 
 const COMMANDS: CommandItem[] = [
-  { kind: "cmd", label: "Nova reunião", sub: "N", icon: "plus", href: "/meetings/upload" as Route },
-  { kind: "cmd", label: "Nova sessão de chat", icon: "chat", href: "/chat" as Route },
-  { kind: "cmd", label: "Pessoas — quem aparece nas reuniões", icon: "people", href: "/people" as Route },
-  { kind: "cmd", label: "Ver action items", icon: "tasks", href: "/tasks" as Route },
-  { kind: "cmd", label: "Tendências — temas e carga de tarefas", icon: "trends", href: "/trends" as Route },
-  { kind: "cmd", label: "Consumo — reuniões, chamadas de IA e custo estimado", icon: "usage", href: "/usage" as Route },
-  { kind: "cmd", label: "Fluxos", icon: "flow", href: "/flows" as Route },
+  { kind: "cmd", label: "Nova reunião", sub: "N", icon: "plus", href: "/meetings/upload" as Route, permission: "createMeetings" },
+  { kind: "cmd", label: "Visão executiva — decisões, riscos e pendências", icon: "trends", href: "/enterprise" as Route, capability: "viewExecutiveOverview" },
+  { kind: "cmd", label: "Nova sessão de chat", icon: "chat", href: "/chat" as Route, permission: "readMeetings" },
+  { kind: "cmd", label: "Pessoas — quem aparece nas reuniões", icon: "people", href: "/people" as Route, permission: "readMeetings" },
+  { kind: "cmd", label: "Ver action items", icon: "tasks", href: "/tasks" as Route, permission: "readTasks" },
+  { kind: "cmd", label: "Tendências — temas e carga de tarefas", icon: "trends", href: "/trends" as Route, permission: "readMeetings" },
+  { kind: "cmd", label: "Consumo — reuniões, chamadas de IA e custo estimado", icon: "usage", href: "/usage" as Route, permission: "readMeetings" },
+  { kind: "cmd", label: "Fluxos", icon: "flow", href: "/flows" as Route, permission: "readFlows" },
   { kind: "cmd", label: "Abrir configurações", icon: "gear", href: "/settings" as Route },
-  { kind: "cmd", label: "IAM — usuários, grupos e policies", icon: "shield", href: "/settings/iam" as Route },
+  { kind: "cmd", label: "Usuários Enterprise", icon: "people", href: "/enterprise/users" as Route, capability: "manageUsers" },
+  { kind: "cmd", label: "Acessos — grupos e policies", icon: "shield", href: "/enterprise/access" as Route, capability: "manageAccess" },
+  { kind: "cmd", label: "Empresa — contexto e produtos", icon: "gear", href: "/enterprise/company" as Route, capability: "readCompanyContext" },
   { kind: "cmd", label: "Credenciais MCP", sub: "clientes externos", icon: "shield", href: "/settings/mcp" as Route },
 ];
 
@@ -138,6 +144,12 @@ type MeetingHit = { id: string; title: string; summarySnippet?: string; startedA
 
 export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
+  const { access } = useWorkspaceAccess();
+  const canReadMeetings = access?.permissions?.readMeetings === true;
+  const commands = COMMANDS.filter((command) =>
+    (!command.capability || (access?.plan === "ENTERPRISE" && access.capabilities[command.capability])) &&
+    (!command.permission || access?.permissions?.[command.permission] === true),
+  );
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
   const [meetings, setMeetings] = useState<MeetingHit[]>([]);
@@ -167,7 +179,10 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   // Debounced semantic search. Empty query → shows recent meetings
   // (searchMeetings with empty q returns the recent ones from the backend).
   useEffect(() => {
-    if (!open) return;
+    if (!open || !canReadMeetings) {
+      setMeetings([]);
+      return;
+    }
     let alive = true;
     const handle = setTimeout(async () => {
       try {
@@ -192,10 +207,10 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       alive = false;
       clearTimeout(handle);
     };
-  }, [query, open]);
+  }, [query, open, canReadMeetings]);
 
   const q = query.trim().toLowerCase();
-  const cmds = COMMANDS.filter((c) => !q || c.label.toLowerCase().includes(q));
+  const cmds = commands.filter((c) => !q || c.label.toLowerCase().includes(q));
 
   // Flattened list in visual order, for keyboard navigation.
   const items: ResolvedItem[] = [

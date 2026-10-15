@@ -14,8 +14,9 @@ public interface EmbeddingRepository {
 
     /**
      * Backfill candidates of one tenant: meetings that already carry an analysed summary but whose
-     * vector is missing or was produced by a different model. Newest first, and capped by the
-     * limit, because the caller pays the provider once per row returned.
+     * vector is missing, was produced by a different model, or used the old truncated summary.
+     * Newest first, and capped by the limit, because the caller pays the provider once per row
+     * returned.
      */
     List<PendingIndex> findPendingIndex(UUID tenantId, String modelId, int limit);
 
@@ -25,8 +26,8 @@ public interface EmbeddingRepository {
     record StoredEmbedding(UUID meetingId, float[] vector) {}
 
     /**
-     * One backfill candidate. {@code text} is the persisted summary snippet — the same PII-safe
-     * input the live indexing path uses, never the raw transcript (ADR 0012).
+     * One backfill candidate. {@code text} is the persisted full analysis summary — the same
+     * PII-safe input the live indexing path uses, never the raw transcript (ADR 0012).
      */
     record PendingIndex(UUID meetingId, String text) {}
 }

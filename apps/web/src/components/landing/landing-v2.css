@@ -392,7 +392,7 @@
   overflow: hidden;
 }
 .nora-landing .hero-scroll-hint-arrow::after {
-  content: "";
+  content: '';
   position: absolute;
   top: -22px;
   left: 0;
@@ -607,7 +607,7 @@
   justify-content: space-between;
 }
 .nora-landing .fa-pii-text {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
   font-size: 12px;
   line-height: 1.7;
   color: var(--ink);
@@ -618,13 +618,13 @@
   border-radius: 3px;
   animation: piiCycle 8s ease-in-out infinite;
 }
-.nora-landing .pii-span[data-kind="person"] {
+.nora-landing .pii-span[data-kind='person'] {
   animation-delay: 0s;
 }
-.nora-landing .pii-span[data-kind="cpf"] {
+.nora-landing .pii-span[data-kind='cpf'] {
   animation-delay: 0.5s;
 }
-.nora-landing .pii-span[data-kind="email"] {
+.nora-landing .pii-span[data-kind='email'] {
   animation-delay: 1s;
 }
 @keyframes piiCycle {
@@ -661,16 +661,16 @@
   color: var(--accent-ink);
   font-weight: 500;
 }
-.nora-landing .pii-span[data-kind="person"] .pii-mask,
-.nora-landing .pii-span[data-kind="person"] .pii-orig {
+.nora-landing .pii-span[data-kind='person'] .pii-mask,
+.nora-landing .pii-span[data-kind='person'] .pii-orig {
   animation-delay: 0s;
 }
-.nora-landing .pii-span[data-kind="cpf"] .pii-mask,
-.nora-landing .pii-span[data-kind="cpf"] .pii-orig {
+.nora-landing .pii-span[data-kind='cpf'] .pii-mask,
+.nora-landing .pii-span[data-kind='cpf'] .pii-orig {
   animation-delay: 0.5s;
 }
-.nora-landing .pii-span[data-kind="email"] .pii-mask,
-.nora-landing .pii-span[data-kind="email"] .pii-orig {
+.nora-landing .pii-span[data-kind='email'] .pii-mask,
+.nora-landing .pii-span[data-kind='email'] .pii-orig {
   animation-delay: 1s;
 }
 @keyframes piiOrig {
@@ -1093,7 +1093,7 @@
   font-size: 11px;
   line-height: 1.5;
   color: var(--ink);
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
   margin-top: auto;
 }
 .nora-landing .fa-rec-typing {
@@ -1176,7 +1176,7 @@
   z-index: 3;
 }
 .nora-landing .slang-tip::after {
-  content: "";
+  content: '';
   position: absolute;
   top: 100%;
   left: 50%;
@@ -1297,7 +1297,7 @@
   z-index: 2;
 }
 .nora-landing .spot-tag::after {
-  content: "";
+  content: '';
   position: absolute;
   top: 100%;
   left: 50%;
@@ -1453,19 +1453,6 @@
   box-shadow: 0 18px 50px -24px var(--accent-glow);
   position: relative;
 }
-.nora-landing .pricing-card.highlighted::before {
-  content: "Recomendado";
-  position: absolute;
-  top: -10px;
-  right: 22px;
-  background: var(--accent);
-  color: white;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
 .nora-landing .pricing-head .badge {
   display: inline-block;
   font-size: 10.5px;
@@ -1496,6 +1483,7 @@
 }
 .nora-landing .pricing-price {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 8px;
   padding: 18px 0;
@@ -1618,7 +1606,7 @@
 }
 .nora-landing .cta::before,
 .nora-landing .cta::after {
-  content: "";
+  content: '';
   position: absolute;
   border-radius: 50%;
   background: radial-gradient(circle, var(--accent) 0%, transparent 60%);

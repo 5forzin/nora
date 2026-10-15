@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Route } from "next";
+import { requireWorkspacePermission } from "@/lib/enterprise/require-permission";
 
 import { listParticipants } from "@/lib/api/client";
 import type { ParticipantIdentity } from "@/lib/api/types";
@@ -131,6 +132,8 @@ function PersonCard({ p }: { p: ParticipantIdentity }) {
 }
 
 export default async function PeoplePage() {
+  const access = await requireWorkspacePermission('readMeetings');
+  const canCreate = access.permissions.createMeetings === true;
   let items: ParticipantIdentity[] = [];
   let errorMessage: string | null = null;
   try {
@@ -212,15 +215,15 @@ export default async function PeoplePage() {
               {copy.emptyTitle}
             </h2>
             <p style={{ fontSize: 13.5, color: "var(--muted)", margin: 0, lineHeight: 1.55 }}>
-              {copy.emptyBody}
+              {canCreate ? copy.emptyBody : 'Os participantes aparecem a partir das reuniões disponíveis.'}
             </p>
           </div>
-          <Link
+          {canCreate && <Link
             href={"/meetings/upload" as Route}
             style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 16px", background: "var(--ink)", color: "var(--canvas)", borderRadius: 9, fontSize: 13, fontWeight: 500 }}
           >
             {copy.emptyUploadCta}
-          </Link>
+          </Link>}
         </div>
       )}
     </div>

@@ -27,14 +27,22 @@ Provider-agnostic LLM client, based on the official `openai` SDK with a pluggabl
 - `LlmClient.__init__(settings)` — validates `LLM_API_KEY` and configures the SDK.
 - `LlmClient.chat_structured(...)` — `response_format=json_schema` (strict). Returns `(json_str, tokens_in, tokens_out)`.
 - `LlmClient.chat_json(...)` — `response_format=json_object` fallback for providers that do not support a strict schema.
-- `build_json_schema_for_analysis()` — generates the JSON Schema of `MeetingAnalysisV1`.
+- `build_strict_json_schema(model)` — derives provider constraints from the Pydantic response
+  model, including collection, text and numeric bounds. All object keys are required; nullable
+  fields remain nullable. `build_json_schema_for_analysis()` excludes the worker's TF-IDF
+  `baselineTerms` and documents the occurrence-based participant placeholders (at most 30).
 
 ### `services/llm_analyzer.py`
 Complete pipeline:
 1. Loads the prompt from `prompts/meeting-analysis-v1.md` (`## SYSTEM` and `## USER` sections).
 2. Injects `tenant_context_json`, `meeting_id`, `language`, `transcript` into the `{{...}}` placeholders.
-3. Tries `chat_structured` (JSON Schema); if it fails, falls back to `chat_json`.
+3. Tries `chat_structured` (JSON Schema); if it fails, falls back to `chat_json`. Both calls carry
+   the same schema in the system prompt, so JSON mode retains the contract instructions. This
+   also applies to live highlights. Invalid provider output still fails validation; no
+   collections or text are truncated to make a response pass.
 4. Validates the response with `MeetingAnalysisV1.model_validate()`.
+   Absolute task deadlines must also appear in both the source quote and transcript.
+   Unsupported dates become null; relative deadlines retain their original quote.
 5. Returns `AnalyzeResponse` with metadata (tokens, time, `modelVersion = f"{provider}-{model}"`).
 
 ### `services/pii_ner.py`

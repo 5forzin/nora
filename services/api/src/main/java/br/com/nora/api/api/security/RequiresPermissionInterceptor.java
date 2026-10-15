@@ -2,6 +2,7 @@ package br.com.nora.api.api.security;
 
 import br.com.nora.api.application.iam.AuthorizationService;
 import br.com.nora.api.application.iam.IamException;
+import br.com.nora.api.application.tenant.EnterpriseEntitlementService;
 import br.com.nora.api.infrastructure.security.JjwtJwtIssuer.AuthenticatedPrincipal;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -46,12 +47,15 @@ public class RequiresPermissionInterceptor implements HandlerInterceptor {
     private static final String OWN_HANDLER_PACKAGE = "br.com.nora.api.";
 
     private final AuthorizationService authz;
+    private final EnterpriseEntitlementService entitlements;
 
     // @Lazy: resolving the AuthorizationService is deferred to the 1st use (a request with
     // @RequiresPermission). Without it, @WebMvcTest slices (which do not load @Service) would fail
     // creating this interceptor at context load. In real runtime the bean is always present.
-    public RequiresPermissionInterceptor(@Lazy AuthorizationService authz) {
+    public RequiresPermissionInterceptor(
+            @Lazy AuthorizationService authz, @Lazy EnterpriseEntitlementService entitlements) {
         this.authz = authz;
+        this.entitlements = entitlements;
     }
 
     @Override
@@ -59,6 +63,10 @@ public class RequiresPermissionInterceptor implements HandlerInterceptor {
             HttpServletRequest request, HttpServletResponse response, Object handler) {
         if (!(handler instanceof HandlerMethod hm)) {
             return true;
+        }
+        if (hm.hasMethodAnnotation(RequiresEnterprise.class)
+                || hm.getBeanType().isAnnotationPresent(RequiresEnterprise.class)) {
+            entitlements.requireEnterprise(CurrentUser.require().tenantId());
         }
         RequiresPermission ann = findPermission(hm);
         if (ann == null) {

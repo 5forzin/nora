@@ -3,6 +3,7 @@ package br.com.nora.api.application.workflow;
 import br.com.nora.api.application.ports.Clock;
 import br.com.nora.api.application.ports.WorkflowExecutionRepository;
 import br.com.nora.api.application.ports.WorkflowRepository;
+import br.com.nora.api.application.tenant.EnterpriseEntitlementService;
 import br.com.nora.api.application.workflow.WorkflowDefinition.Node;
 import br.com.nora.api.domain.event.ActionItemCreatedEvent;
 import br.com.nora.api.domain.event.MeetingAnalysisCompletedEvent;
@@ -48,6 +49,7 @@ public class WorkflowEngine {
     private final WorkflowContextFactory contextFactory;
     private final ObjectMapper mapper;
     private final Clock clock;
+    private final EnterpriseEntitlementService entitlements;
 
     public WorkflowEngine(
             WorkflowRepository workflows,
@@ -57,7 +59,8 @@ public class WorkflowEngine {
             ActionRegistry actions,
             WorkflowContextFactory contextFactory,
             ObjectMapper mapper,
-            Clock clock) {
+            Clock clock,
+            EnterpriseEntitlementService entitlements) {
         this.workflows = workflows;
         this.executions = executions;
         this.parser = parser;
@@ -66,6 +69,7 @@ public class WorkflowEngine {
         this.contextFactory = contextFactory;
         this.mapper = mapper;
         this.clock = clock;
+        this.entitlements = entitlements;
     }
 
     /** Entry point of the anchor trigger: meeting analysis completed (post-commit). */
@@ -207,6 +211,10 @@ public class WorkflowEngine {
         try {
             WorkflowDefinition definition =
                     parser.parse(workflow.definitionJson(), actions.types());
+            if (definition.nodes().stream()
+                    .anyMatch(n -> "customer_confidence_below".equals(n.type()))) {
+                entitlements.requireEnterprise(workflow.tenantId());
+            }
             Node trigger = definition.triggerNode();
             log.info(
                     trigger.id(),

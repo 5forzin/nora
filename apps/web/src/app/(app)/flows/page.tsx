@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 
 import { ApiRequestError, listWorkflows, type WorkflowResponse } from "@/lib/api/client";
 import { strings } from "@/lib/strings";
+import { useWorkspaceAccess } from "@/components/enterprise/workspace-provider";
 
 import { blockMeta } from "./catalog";
 import { relativeTime } from "./relative-time";
@@ -104,6 +105,13 @@ function FlowCard({ flow }: { flow: WorkflowResponse }) {
 }
 
 export default function FlowsPage() {
+  const { access, loading } = useWorkspaceAccess();
+  if (loading) return <div className="page" role="status">Carregando acesso…</div>;
+  if (!access?.permissions?.readFlows) return <div className="page"><h1 className="h1">Fluxos</h1><p className="lede">Você não tem permissão para consultar os fluxos deste workspace.</p></div>;
+  return <FlowList canManage={access.permissions.manageFlows === true} />;
+}
+
+function FlowList({ canManage }: { canManage: boolean }) {
   const [flows, setFlows] = useState<WorkflowResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -147,12 +155,12 @@ export default function FlowsPage() {
             {copy.lede}
           </p>
         </div>
-        <Link href={"/flows/new" as Route} className="btn btn-primary" style={{ flexShrink: 0 }}>
+        {canManage && <Link href={"/flows/new" as Route} className="btn btn-primary" style={{ flexShrink: 0 }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
             <path d="M12 5v14M5 12h14" />
           </svg>
           {copy.newFlow}
-        </Link>
+        </Link>}
       </header>
 
       {error && (
@@ -206,13 +214,13 @@ export default function FlowsPage() {
             >
               {copy.emptyTitle}
             </h2>
-            <p style={{ fontSize: 13.5, color: "var(--muted)", margin: 0, lineHeight: 1.55 }}>
+            {canManage && <p style={{ fontSize: 13.5, color: "var(--muted)", margin: 0, lineHeight: 1.55 }}>
               {copy.emptyBody}
-            </p>
+            </p>}
           </div>
-          <Link href={"/flows/new" as Route} className="btn btn-primary">
+          {canManage && <Link href={"/flows/new" as Route} className="btn btn-primary">
             {copy.emptyCta}
-          </Link>
+          </Link>}
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 14 }}>

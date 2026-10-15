@@ -14,6 +14,7 @@ import br.com.nora.api.api.dto.iam.SimulatePolicyRequest;
 import br.com.nora.api.api.dto.iam.SimulatePolicyResponse;
 import br.com.nora.api.api.dto.iam.UpdatePolicyRequest;
 import br.com.nora.api.api.security.CurrentUser;
+import br.com.nora.api.api.security.RequiresEnterprise;
 import br.com.nora.api.api.security.RequiresPermission;
 import br.com.nora.api.api.security.RequiresPermission.ResourceType;
 import br.com.nora.api.application.iam.IamException;
@@ -64,6 +65,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/iam")
+@RequiresEnterprise
 public class IamController {
 
     private final IamService iam;
@@ -105,6 +107,13 @@ public class IamController {
     public List<UUID> listGroupMembers(@PathVariable("id") UUID id) {
         AuthenticatedPrincipal p = CurrentUser.require();
         return iam.listGroupMembers(p.tenantId(), id);
+    }
+
+    @GetMapping("/groups/{id}/policies")
+    @RequiresPermission(action = "iam:policy:read", resource = ResourceType.IAM)
+    public List<UUID> listGroupPolicyIds(@PathVariable("id") UUID id) {
+        AuthenticatedPrincipal p = CurrentUser.require();
+        return iam.listGroupPolicyIds(p.tenantId(), p.userId(), id);
     }
 
     @PostMapping("/groups/{id}/members/{userId}")

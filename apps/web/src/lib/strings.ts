@@ -24,6 +24,9 @@
 export const LOCALE = "pt-BR";
 
 export const strings = {
+  tasks: {
+    exportChanged: "A lista mudou durante a exportação. Tente novamente.",
+  },
   flows: {
     /** Visual role of a node on the canvas (trigger / condition / action). */
     kinds: {
@@ -69,6 +72,11 @@ export const strings = {
       },
       triggerAlreadyOnCanvas: "O fluxo já tem um gatilho — só pode haver um por fluxo.",
       clickToAdd: "Clique para adicionar ao canvas",
+      integrationsFailed: "Falha ao verificar as integrações.",
+      integrationsLoading: "Verificando integrações…",
+      noConnections: "Nenhuma conta conectada. E-mail e webhooks continuam disponíveis.",
+      connectAccount: "Conectar uma conta",
+      retry: "Tentar de novo",
     },
 
     /** Action-item priority as shown in the `priority_equals` condition summary. */

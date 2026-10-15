@@ -519,6 +519,18 @@ describe('listIamUsers', () => {
   });
 });
 
+describe('listGroupPolicies', () => {
+  it('reads the actual policy IDs attached to the selected group', async () => {
+    const policyIds = ['policy-reader', 'policy-company'];
+    fetchMock.mockResolvedValue(respond(200, { body: policyIds }));
+    const { listGroupPolicies } = await loadClient();
+
+    await expect(listGroupPolicies('group 1')).resolves.toEqual(policyIds);
+    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE}/iam/groups/group%201/policies`);
+    expect(initOf(0).credentials).toBe('include');
+  });
+});
+
 describe('listParticipants', () => {
   it('reads the people endpoint, which is on the meetings controller', async () => {
     fetchMock.mockResolvedValue(respond(200, { body: { items: [] } }));

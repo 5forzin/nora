@@ -141,15 +141,22 @@ def test_the_json_fallback_sends_the_shielded_prompt(MockClient) -> None:
         app.dependency_overrides.pop(get_settings, None)
     assert resp.status_code == 200, resp.text
 
-    instance.chat_structured.assert_called_once()
-    instance.chat_json.assert_called_once()
+    structured_calls = instance.chat_structured.call_args_list
+    fallback_calls = instance.chat_json.call_args_list
+    assert [call.kwargs["schema_name"] for call in structured_calls] == [
+        "meeting_analysis",
+        "meeting_summary_verification",
+    ]
+    assert len(fallback_calls) == 2
     _assert_clean(_prompts_seen(instance), "/analyze")
 
     # The fallback must reuse the prompt, not rebuild it. Equality is the strongest form of
     # "it cannot have been derived from the raw request a second time".
-    structured = instance.chat_structured.call_args.kwargs["user_prompt"]
-    fallback = instance.chat_json.call_args.kwargs["user_prompt"]
-    assert structured == fallback
+    for structured, fallback in zip(structured_calls, fallback_calls, strict=True):
+        for prompt in ("system_prompt", "user_prompt"):
+            assert structured.kwargs[prompt] == fallback.kwargs[prompt]
+    verification = json.loads(structured_calls[1].kwargs["user_prompt"])
+    assert verification["transcript"] in structured_calls[0].kwargs["user_prompt"]
 
 
 @patch("nora_nlp.services.live_analyzer.LlmClient")

@@ -140,6 +140,30 @@ class InvitationServiceTest {
     // ---------- inviteUser ----------
 
     @Test
+    void coreCannotCreateInvitesAndDowngradeInvalidatesPendingAcceptance() {
+        service.inviteUser(tenantId, invitedBy, "blocked@acme.com", Set.of(groupId), 7);
+        String rawToken = lastRawToken();
+        Tenant current = tenants.byId(tenantId);
+        tenants.save(
+                new Tenant(
+                        current.id(),
+                        current.name(),
+                        current.slug(),
+                        current.status(),
+                        Tenant.Plan.FREE,
+                        current.allowedEmailDomain(),
+                        current.createdAt(),
+                        fixedNow));
+        assertThatThrownBy(
+                        () -> service.inviteUser(tenantId, invitedBy, "new@acme.com", Set.of(), 7))
+                .isInstanceOf(TenantException.EnterpriseRequired.class);
+        assertThatThrownBy(
+                        () -> service.acceptInvite(rawToken, "Blocked member", "StrongPassword123"))
+                .isInstanceOf(TenantException.EnterpriseRequired.class);
+        assertThat(users.findByEmail(Email.of("blocked@acme.com"))).isEmpty();
+    }
+
+    @Test
     void invite_succeeds_persistsPending_sendsEmail_auditsEvent() {
         IamInvitation inv =
                 service.inviteUser(tenantId, invitedBy, "carlos@acme.com", Set.of(groupId), 7);
@@ -878,6 +902,11 @@ class InvitationServiceTest {
         @Override
         public void attachPolicyToGroup(
                 UUID policyId, UUID groupId, UUID tenantId, UUID attachedBy) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public List<UUID> listGroupPolicyIds(UUID groupId, UUID tenantId) {
             throw new UnsupportedOperationException();
         }
 

@@ -22,6 +22,7 @@
 //!
 //! No file under `apps/desktop/src/` had to change because of this swap either.
 
+use std::{future::Future, pin::Pin};
 use tokio::sync::mpsc;
 
 /// Sample rate, in Hz, that every capture path resamples to and every backend receives.
@@ -127,9 +128,8 @@ pub fn speaker_id_for_track(track: &str) -> Option<String> {
 /// Live handle of a transcription session of ONE track.
 ///
 /// Object-safe on purpose: `commands.rs` keeps `Vec<Box<dyn SttBackend>>` in the
-/// Tauri state, one entry per track. Synchronous methods so as not to drag in
-/// `async-trait` (the only async point is `start`, which lives in the concrete
-/// factory).
+/// Tauri state, one entry per track. Stop waits for the provider's final transcript
+/// before the UI can save the meeting.
 pub trait SttBackend: Send {
     /// Id of that track's session. Used only in log/diagnostics.
     fn session_id(&self) -> &str;
@@ -138,13 +138,10 @@ pub trait SttBackend: Send {
     /// [`TARGET_SAMPLE_RATE`].
     ///
     /// The caller uses `try_send` and DROPS the sample when full: real time is
-    /// worth more than completeness. See `commands.rs`.
+    /// worth more than completeness. See `audio_capture.rs`.
     fn audio_tx(&self) -> mpsc::Sender<Vec<i16>>;
 
-    /// Ends the session. Consumes the handle (`Box<Self>`) to prevent use after
-    /// the stop. The backend does a final flush before dying, so there MAY be
-    /// one last `transcript` event after this call.
-    fn stop(self: Box<Self>);
+    fn stop(self: Box<Self>) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
 }
 
 #[cfg(test)]

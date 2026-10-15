@@ -1,4 +1,5 @@
 import type { Route } from "next";
+import { requireWorkspacePermission } from "@/lib/enterprise/require-permission";
 import Link from "next/link";
 
 import { getUsage } from "@/lib/api/client";
@@ -213,6 +214,7 @@ export default async function UsagePage({
   searchParams: Promise<{ granularity?: string; from?: string; to?: string }>;
 }) {
   const sp = await searchParams;
+  const access = await requireWorkspacePermission('readMeetings');
   const granularity: TrendsGranularity = isGranularity(sp.granularity) ? sp.granularity : "MONTH";
 
   let data: UsageResponse | null = null;
@@ -236,7 +238,7 @@ export default async function UsagePage({
         {data && <UsageExportMenu data={data} />}
       </header>
 
-      <UsageFilters granularity={granularity} from={sp.from} to={sp.to} />
+      <UsageFilters granularity={granularity} from={sp.from} to={sp.to} timezone={data?.timezone} />
 
       {errorMessage && (
         <div className="notice" style={{ marginTop: 16 }}>
@@ -247,9 +249,9 @@ export default async function UsagePage({
       {data && data.dataState === "NO_DATA" && (
         <NotEnoughData
           title="Ainda não há dado."
-          body="Nenhuma reunião sua e nenhuma chamada de IA no período selecionado. Isto não é atividade igual a zero: é ausência de registro. Ajuste o período ou envie uma transcrição — a partir da primeira análise este painel passa a mostrar consumo."
-          ctaHref={"/meetings/upload" as Route}
-          ctaLabel="Fazer upload"
+          body="Nenhuma reunião ou chamada de IA registrada no período selecionado. Ajuste o período para consultar o consumo."
+          ctaHref={(access.permissions.createMeetings ? '/meetings/upload' : '/dashboard') as Route}
+          ctaLabel={access.permissions.createMeetings ? 'Fazer upload' : 'Ver reuniões'}
         />
       )}
 

@@ -12,6 +12,7 @@ import pathlib
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from nora_nlp.clients.llm import LlmClient as _Real
 from nora_nlp.models import AnalyzeRequest
@@ -50,6 +51,26 @@ def _make_request(
         transcript=transcript,
         tenantContext=tenant_ctx,
     )
+
+
+def _analysis_calls(client: MagicMock, *, fallback: bool = False) -> list:
+    if fallback:
+        return [
+            call
+            for call in client.chat_json.call_args_list
+            if "Return JSON matching this schema:\n" in call.kwargs["system_prompt"]
+        ]
+    return [
+        call
+        for call in client.chat_structured.call_args_list
+        if call.kwargs["schema_name"] == "meeting_analysis"
+    ]
+
+
+def _last_analysis_call(client: MagicMock, *, fallback: bool = False):
+    calls = _analysis_calls(client, fallback=fallback)
+    assert calls, "The provider did not receive a meeting analysis request"
+    return calls[-1]
 
 
 _FAKE_LLM_RESPONSE = {
@@ -145,8 +166,8 @@ def test_analyze_returns_valid_response(MockClient):
     assert response.participants[0].name == "Carlos"
     assert response.participants[0].mention_count == 8
 
-    assert response.metadata.tokens_input == 1500
-    assert response.metadata.tokens_output == 800
+    assert response.metadata.tokens_input == 3000
+    assert response.metadata.tokens_output == 1600
     # The contract is that the count handed in (from the transcript stage) is carried and
     # ADDED to whatever the tenant context itself contributes. Asserting the literal 3 also
     # asserted, incidentally, that this fixture yields no context redactions — which stopped
@@ -173,7 +194,7 @@ def test_analyze_injects_tenant_context_in_prompt(MockClient):
     settings = _make_settings()
     analyze(req, settings)
 
-    call_args = mock_instance.chat_structured.call_args
+    call_args = _last_analysis_call(mock_instance)
     user_prompt = call_args.kwargs["user_prompt"]
 
     assert "ACME" in user_prompt or "acme" in user_prompt.lower()
@@ -194,7 +215,10 @@ def test_analyze_uses_low_temperature(MockClient):
     settings = _make_settings()
     analyze(req, settings)
 
-    mock_instance.chat_structured.assert_called_once()
+    assert len(_analysis_calls(mock_instance)) == 1
+    assert [
+        call.kwargs["schema_name"] for call in mock_instance.chat_structured.call_args_list
+    ] == ["meeting_analysis", "meeting_summary_verification"]
     sig = inspect.signature(_Real.chat_structured)
     # Default temperature param is None (delegates to settings.llm_temperature).
     # Settings default is 0.2 — assert it's reasonably low.
@@ -219,7 +243,12 @@ def test_analyze_falls_back_to_json_mode(MockClient):
     response = analyze(req, settings)
 
     assert response.meeting_id == "test-meeting-001"
-    mock_instance.chat_json.assert_called_once()
+    assert len(_analysis_calls(mock_instance, fallback=True)) == 1
+    fallback_call = _last_analysis_call(mock_instance, fallback=True)
+    structured_call = _last_analysis_call(mock_instance)
+    for prompt in ("system_prompt", "user_prompt"):
+        assert fallback_call.kwargs[prompt] == structured_call.kwargs[prompt]
+    assert mock_instance.chat_json.call_count == 2
 
 
 @patch("nora_nlp.services.llm_analyzer.LlmClient")
@@ -257,7 +286,7 @@ def test_analyze_sanitizes_pii_in_tenant_context_glossary(MockClient):
 
     analyze(req, _make_settings())
 
-    user_prompt = mock_instance.chat_structured.call_args.kwargs["user_prompt"]
+    user_prompt = _last_analysis_call(mock_instance).kwargs["user_prompt"]
     assert "111.444.777-35" not in user_prompt
     assert "Joao da Silva" not in user_prompt
     assert "[[CPF_1]]" in user_prompt or "[[PERSON_NAME_1]]" in user_prompt
@@ -311,7 +340,7 @@ def test_analyze_sanitizes_pii_in_every_tenant_context_free_text_field(MockClien
     response = analyze(req, settings)
 
     # Asserted on the payload actually handed to the provider, not on an intermediate.
-    user_prompt = mock_instance.chat_structured.call_args.kwargs["user_prompt"]
+    user_prompt = _last_analysis_call(mock_instance).kwargs["user_prompt"]
     for raw in (
         "Mariana Cardoso",
         "Ricardo Almeida",
@@ -466,7 +495,7 @@ def test_the_prompt_does_not_contradict_itself_about_the_tenants_own_name(MockCl
     )
 
     analyze(req, _make_settings())
-    user_prompt = mock_instance.chat_structured.call_args.kwargs["user_prompt"]
+    user_prompt = _last_analysis_call(mock_instance).kwargs["user_prompt"]
 
     # The context block is the JSON object; isolate it so the transcript cannot satisfy this.
     start = user_prompt.index('"companyName"')
@@ -487,7 +516,7 @@ def test_the_prompt_does_not_contradict_itself_about_the_tenants_own_name(MockCl
         tenantContext=tenant_ctx_with_person,
     )
     analyze(req2, _make_settings())
-    prompt2 = mock_instance.chat_structured.call_args.kwargs["user_prompt"]
+    prompt2 = _last_analysis_call(mock_instance).kwargs["user_prompt"]
     assert "Mariana Cardoso" not in prompt2, (
         "a person pasted into the tenant context reached the provider -- the terms are not "
         "supposed to weaken the shield, only to stop it eating the trade name"
@@ -529,14 +558,16 @@ def test_a_relative_due_date_does_not_destroy_the_analysis(MockClient):
             "assignee": "Carla",
             "dueDate": "2026-09-01",
             "priority": "HIGH",
-            "sourceQuote": "Preciso levar ao comite financeiro na proxima terca.",
+            "sourceQuote": "Preciso levar ao comite financeiro em 2026-09-01.",
         },
     ]
     mock_instance = MagicMock()
     mock_instance.chat_structured.return_value = (json.dumps(payload), 1500, 800)
     MockClient.return_value = mock_instance
 
-    response = analyze(_make_request(), _make_settings())
+    req = _make_request()
+    req.transcript = "\n".join(action["sourceQuote"] for action in payload["actionItems"])
+    response = analyze(req, _make_settings())
 
     # The analysis survived, which is the whole point.
     assert response.summary.startswith("## Objetivo")
@@ -562,17 +593,69 @@ def test_the_schema_sent_to_the_provider_states_the_date_format():
     """The two copies of the analysis schema must not drift on `dueDate` again.
 
     `docs/api/llm-schemas/meeting-analysis-v1.schema.json` constrains it with
-    `"format": "date"`; `build_json_schema_for_analysis` is a hand-maintained duplicate that
-    had silently lost the constraint. `format` is outside the strict structured-output
-    subset, so the constraint travels as a description -- but it has to travel.
+    `"format": "date"`; the generated schema preserves it and describes when to use null.
     """
     from nora_nlp.clients.llm import build_json_schema_for_analysis
 
-    due = build_json_schema_for_analysis()["properties"]["actionItems"]["items"]["properties"][
-        "dueDate"
-    ]
+    due = build_json_schema_for_analysis()["$defs"]["ActionItem"]["properties"]["dueDate"]
     described = due.get("description", "")
     assert "YYYY-MM-DD" in described, (
         f"the schema handed to the model does not say what a dueDate looks like; got {due!r}"
     )
     assert "null" in described, "the schema does not tell the model when to give up and use null"
+
+
+@pytest.mark.parametrize("fallback", [False, True])
+@patch("nora_nlp.services.llm_analyzer.LlmClient")
+def test_analyze_keeps_participant_limit_without_truncation(MockClient, fallback):
+    payload = json.loads(json.dumps(_FAKE_LLM_RESPONSE))
+    payload["participants"] = [
+        {"name": f"[[PERSON_NAME_{i}]]", "role": None, "mentionCount": 1} for i in range(1, 31)
+    ]
+    client = MockClient.return_value
+    if fallback:
+        client.chat_structured.side_effect = RuntimeError("Strict output unsupported")
+    response_method = client.chat_json if fallback else client.chat_structured
+    response_method.return_value = (json.dumps(payload), 100, 50)
+    response = analyze(_make_request(), _make_settings())
+    assert len(response.participants) == 30
+    assert response.participants[-1].name == "[[PERSON_NAME_30]]"
+    if fallback:
+        prompt = _last_analysis_call(client, fallback=True).kwargs["system_prompt"]
+        schema = json.loads(prompt.split("Return JSON matching this schema:\n", 1)[1])
+    else:
+        schema = _last_analysis_call(client).kwargs["json_schema"]
+    assert schema["properties"]["participants"]["maxItems"] == 30
+    assert "not distinct people" in schema["properties"]["participants"]["description"]
+
+    payload["participants"].append({"name": "[[PERSON_NAME_31]]", "role": None, "mentionCount": 1})
+    response_method.return_value = (json.dumps(payload), 100, 50)
+    with pytest.raises(ValidationError, match="participants"):
+        analyze(_make_request(), _make_settings())
+
+
+@pytest.mark.parametrize(
+    ("quote", "transcript", "expected"),
+    [
+        ("O prazo e sexta-feira.", "O prazo e sexta-feira.", None),
+        ("O prazo e 2023-10-06.", "O prazo e sexta-feira.", None),
+        ("O prazo e sexta-feira.", "A reuniao ocorreu em 2023-10-06.", None),
+        ("O prazo e 6 de outubro de 2023.", "O prazo e 6 de outubro de 2023.", "2023-10-06"),
+    ],
+)
+@patch("nora_nlp.services.llm_analyzer.LlmClient")
+def test_generated_absolute_deadlines_require_source_evidence(
+    MockClient, quote, transcript, expected
+):
+    payload = json.loads(json.dumps(_FAKE_LLM_RESPONSE))
+    payload["actionItems"][0].update(dueDate="2023-10-06", sourceQuote=quote)
+    MockClient.return_value.chat_structured.return_value = (json.dumps(payload), 100, 50)
+    req = _make_request()
+    req.transcript = transcript
+
+    result = analyze(req, _make_settings())
+
+    action = result.action_items[0]
+    assert (action.due_date.isoformat() if action.due_date else None) == expected
+    assert action.source_quote == quote
+    assert result.summary == payload["summary"]

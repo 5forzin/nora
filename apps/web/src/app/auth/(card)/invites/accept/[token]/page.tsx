@@ -7,7 +7,7 @@
  *  1. User clicks a link sent by e-mail: /auth/invites/accept/{token}
  *  2. Form asks for displayName (optional) + password + confirmation.
  *  3. POST /iam/invites/{token}/accept — backend creates the user and returns LoginResponse.
- *  4. Frontend persists the session via setSession() and redirects to /dashboard.
+ *  4. Frontend persists the session and opens the authorized workspace destination.
  *
  * Notes:
  *  - The `token` in the URL is the credential. We never log, show or expose it
@@ -21,6 +21,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { ApiRequestError, acceptInvite } from '@/lib/api/client';
 import { setSession } from '@/lib/auth';
+import { workspaceDestination } from '@/lib/enterprise/navigation';
 import { PASSWORD_MIN, PASSWORD_MAX } from '@/lib/password-policy';
 
 const DISPLAY_NAME_MAX = 120;
@@ -36,7 +37,7 @@ function validatePassword(raw: string): string | null {
     else if (/[0-9]/.test(c)) hasDigit = true;
     if (hasLetter && hasDigit) break;
   }
-  if (!hasLetter || !hasDigit) return 'A senha deve conter letras e numeros.';
+  if (!hasLetter || !hasDigit) return 'A senha deve conter letras e números.';
   return null;
 }
 
@@ -46,13 +47,13 @@ function mapAcceptError(err: unknown): string {
   }
   switch (err.status) {
     case 404:
-      return 'Convite nao encontrado ou link invalido.';
+      return 'Convite não encontrado ou link inválido.';
     case 409:
-      return 'Este convite ja foi aceito.';
+      return 'Este convite já foi aceito.';
     case 410:
       return 'Convite expirou. Solicite um novo ao administrador.';
     case 422:
-      return err.payload?.message ?? 'Dados invalidos.';
+      return err.payload?.message ?? 'Dados inválidos.';
     case 403:
       return 'Acesso negado.';
     default:
@@ -76,13 +77,13 @@ export default function AcceptInvitePage() {
     setError(null);
 
     if (!token) {
-      setError('Convite nao encontrado ou link invalido.');
+      setError('Convite não encontrado ou link inválido.');
       return;
     }
 
     const trimmedName = displayName.trim();
     if (trimmedName.length > DISPLAY_NAME_MAX) {
-      setError(`O nome deve ter no maximo ${DISPLAY_NAME_MAX} caracteres.`);
+      setError(`O nome deve ter no máximo ${DISPLAY_NAME_MAX} caracteres.`);
       return;
     }
 
@@ -92,7 +93,7 @@ export default function AcceptInvitePage() {
       return;
     }
     if (password !== passwordConfirm) {
-      setError('As senhas nao coincidem.');
+      setError('As senhas não coincidem.');
       return;
     }
 
@@ -111,7 +112,7 @@ export default function AcceptInvitePage() {
         },
         resp.expiresInSeconds,
       );
-      router.push('/dashboard');
+      router.push(await workspaceDestination());
       router.refresh();
     } catch (err) {
       setError(mapAcceptError(err));
@@ -124,7 +125,7 @@ export default function AcceptInvitePage() {
     <form onSubmit={onSubmit} className="space-y-4" noValidate>
       <div className="space-y-1">
         <h2 className="text-lg font-medium text-slate-800">Aceitar convite</h2>
-        <p className="text-sm text-slate-500">Crie sua senha para acessar o tenant.</p>
+        <p className="text-sm text-slate-500">Crie sua senha para entrar no workspace da equipe.</p>
       </div>
 
       <div className="space-y-1.5">
@@ -161,7 +162,7 @@ export default function AcceptInvitePage() {
           disabled={loading}
           autoComplete="new-password"
           className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-          placeholder="Min 10 caracteres, com letras e numeros"
+          placeholder={`Mínimo ${PASSWORD_MIN} caracteres, com letras e números`}
         />
       </div>
 

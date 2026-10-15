@@ -52,6 +52,7 @@ import Link from "next/link";
 import type { Route } from "next";
 import { ApiRequestError, getMeeting, listWorkflows, splitPreview, uploadMeeting } from "@/lib/api/client";
 import type { ProcessingStatus, SplitSegment } from "@/lib/api/types";
+import { useWorkspaceAccess } from "@/components/enterprise/workspace-provider";
 
 type Format = "TXT" | "VTT" | "SRT";
 
@@ -159,6 +160,15 @@ function fmtFileSize(bytes: number): string {
 }
 
 export default function UploadMeetingPage() {
+  const { access, loading } = useWorkspaceAccess();
+  if (loading) return <div className="page" role="status">Carregando acesso…</div>;
+  if (!access?.permissions?.createMeetings) {
+    return <div className="page"><h1 className="h1">Nova reunião</h1><p className="lede" style={{ marginTop: 12 }}>Você não tem permissão para enviar reuniões neste workspace.</p><Link href="/dashboard" className="btn btn-ghost" style={{ marginTop: 20 }}>Voltar às reuniões</Link></div>;
+  }
+  return <UploadMeetingForm canReadFlows={access.permissions.readFlows === true} canManageFlows={access.permissions.manageFlows === true} />;
+}
+
+function UploadMeetingForm({ canReadFlows, canManageFlows }: { canReadFlows: boolean; canManageFlows: boolean }) {
   const router = useRouter();
 
   // Form state
@@ -330,7 +340,18 @@ export default function UploadMeetingPage() {
     splitSubmittingRef.current = true;
     setSplitSubmitting(true);
 
-    const text = await singleTxtFile.text();
+    let text: string;
+    try {
+      text = await singleTxtFile.text();
+    } catch {
+      if (!splitSubmittingRef.current) return;
+      splitSubmittingRef.current = false;
+      setSplitSubmitting(false);
+      setSplitSegments(null);
+      setFormError("Não foi possível ler o arquivo. Selecione-o novamente e tente de novo.");
+      setPhase("form");
+      return;
+    }
     // Cancelled during the read (user clicked "Voltar")? Abort with no upload.
     if (!splitSubmittingRef.current) return;
 
@@ -484,6 +505,7 @@ export default function UploadMeetingPage() {
       try {
         const meeting = await getMeeting(meetingId!);
         if (cancelled) return;
+        setPollingError(null);
         setPollingStatus(meeting.processingStatus);
         if (meeting.processingStatus === "COMPLETED") {
           setPhase("completed");
@@ -518,17 +540,19 @@ export default function UploadMeetingPage() {
     };
   }, [phase, meetingId]);
 
-  // Flows notification hint in the post-send card: a single fetch per send
-  // (guard via ref so it does not refetch on each phase transition). Failure is
+  // Flows notification hint in the post-send card: a single fetch per send.
+  // Phase and per-file progress updates must not cancel that request. Failure is
   // tolerated — the hint simply does not appear. Applies to single (post-POST)
   // and to the batch (from the submit — flows do not change during the send).
   const [flowsHint, setFlowsHint] = useState<FlowsHint>("loading");
-  const flowsHintFetchedRef = useRef(false);
+  const postUpload = batchItems !== null || (meetingId !== null &&
+    phase !== "form" && phase !== "uploading" && phase !== "split-loading" && phase !== "split-confirm");
   useEffect(() => {
-    const postUploadSingle = phase !== "form" && phase !== "uploading" && phase !== "split-loading" && phase !== "split-confirm" && meetingId !== null;
-    if (!postUploadSingle && batchItems === null) return;
-    if (flowsHintFetchedRef.current) return;
-    flowsHintFetchedRef.current = true;
+    if (!postUpload) return;
+    if (!canReadFlows) {
+      setFlowsHint('unavailable');
+      return;
+    }
     let cancelled = false;
     listWorkflows()
       .then((flows) => {
@@ -536,7 +560,7 @@ export default function UploadMeetingPage() {
         const hasAnalysisFlow = flows.some(
           (f) => f.active && ANALYSIS_TRIGGERS.includes(f.triggerType),
         );
-        setFlowsHint(hasAnalysisFlow ? "has-flows" : "no-flows");
+        setFlowsHint(hasAnalysisFlow ? "has-flows" : canManageFlows ? "no-flows" : "unavailable");
       })
       .catch(() => {
         if (!cancelled) setFlowsHint("unavailable");
@@ -544,7 +568,7 @@ export default function UploadMeetingPage() {
     return () => {
       cancelled = true;
     };
-  }, [phase, meetingId, batchItems]);
+  }, [postUpload, canReadFlows, canManageFlows]);
 
   /** Back to a CLEAN form — "Enviar outra transcrição" / "Enviar mais" starts from zero. */
   function resetToForm() {
@@ -554,7 +578,6 @@ export default function UploadMeetingPage() {
     setPollingError(null);
     pollCountRef.current = 0;
     setFlowsHint("loading");
-    flowsHintFetchedRef.current = false;
     setBatchItems(null);
     setFiles([]);
     setTitle("");

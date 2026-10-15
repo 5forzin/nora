@@ -6,6 +6,7 @@ import br.com.nora.api.api.dto.tenant.TenantDomainUpdateResponse;
 import br.com.nora.api.api.dto.tenant.TenantNameUpdateRequest;
 import br.com.nora.api.api.dto.tenant.TenantResponse;
 import br.com.nora.api.api.security.CurrentUser;
+import br.com.nora.api.api.security.RequiresEnterprise;
 import br.com.nora.api.api.security.RequiresPermission;
 import br.com.nora.api.api.security.RequiresPermission.ResourceType;
 import br.com.nora.api.application.tenant.TenantService;
@@ -62,6 +63,7 @@ public class TenantController {
     }
 
     @GetMapping("/domain")
+    @RequiresEnterprise
     @RequiresPermission(action = "tenant:domain:read", resource = ResourceType.TENANT)
     public TenantDomainResponse getDomain() {
         AuthenticatedPrincipal p = CurrentUser.require();
@@ -69,6 +71,7 @@ public class TenantController {
     }
 
     @PutMapping("/domain")
+    @RequiresEnterprise
     @RequiresPermission(action = "tenant:domain:write", resource = ResourceType.TENANT)
     public TenantDomainUpdateResponse updateDomain(
             @Valid @RequestBody TenantDomainUpdateRequest body) {

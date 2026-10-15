@@ -7,6 +7,8 @@ import br.com.nora.api.api.security.AuthorizationNotRequired;
 import br.com.nora.api.api.security.CurrentUser;
 import br.com.nora.api.application.iam.IamException;
 import br.com.nora.api.application.meeting.MeetingException;
+import br.com.nora.api.application.tenant.EnterpriseEntitlementService;
+import br.com.nora.api.application.tenant.TenantException;
 import br.com.nora.api.infrastructure.security.JjwtJwtIssuer.AuthenticatedPrincipal;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -71,10 +73,15 @@ public class McpController {
 
     private final McpToolInvoker tools;
     private final ObjectMapper objectMapper;
+    private final EnterpriseEntitlementService entitlements;
 
-    public McpController(McpToolInvoker tools, ObjectMapper objectMapper) {
+    public McpController(
+            McpToolInvoker tools,
+            ObjectMapper objectMapper,
+            EnterpriseEntitlementService entitlements) {
         this.tools = tools;
         this.objectMapper = objectMapper;
+        this.entitlements = entitlements;
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -146,8 +153,8 @@ public class McpController {
         }
 
         ObjectNode capabilities = F.objectNode();
-        // Tools only, and `listChanged` is absent rather than false: the catalogue is a constant,
-        // so there is no notification this server could ever send about it.
+        // Tools only. This stateless transport has no server notifications; clients rediscover
+        // the current plan's catalogue through tools/list.
         capabilities.set("tools", F.objectNode());
 
         ObjectNode serverInfo = F.objectNode();
@@ -177,9 +184,11 @@ public class McpController {
 
     /* =================================== tools =================================== */
 
-    private static ObjectNode toolsList() {
+    private ObjectNode toolsList() {
         ObjectNode result = F.objectNode();
-        result.set("tools", McpToolCatalog.tools());
+        result.set(
+                "tools",
+                McpToolCatalog.tools(entitlements.isEnterprise(CurrentUser.require().tenantId())));
         return result;
     }
 
@@ -198,6 +207,8 @@ public class McpController {
             return errorEnvelope(id, McpProtocol.INVALID_PARAMS, ex.getMessage(), null);
         } catch (McpToolInvoker.ToolArgumentException ex) {
             return resultEnvelope(id, toolFailure(ex.getMessage()));
+        } catch (TenantException.EnterpriseRequired ex) {
+            return resultEnvelope(id, toolFailure("This tool requires an Enterprise workspace."));
         } catch (IamException ex) {
             // A policy denial is something the caller can act on (ask for access, try another
             // resource), so it belongs in the tool-result channel, not in the protocol one. The

@@ -215,11 +215,8 @@ nora:
       # 400; `gpt-live-transcribe` + null -> 200. `gpt-4o-transcribe` accepts `server_vad`, but the
       # model is what ADR 0045 fixes in the session contract, so the VAD default is what gives way.
       #
-      # Nothing is lost by it: `gpt-live-transcribe` transcribes CONTINUOUSLY, which is why it has
-      # no use for turn detection, and the desktop consumes
-      # `conversation.item.input_audio_transcription.delta`/`.completed` (stt_cloud.rs) — events
-      # this model emits on its own. It already ignores `input_audio_buffer.speech_started`, the
-      # VAD event, so no commit signal is being waited on.
+      # Deltas stream continuously, but a completed transcript requires input_audio_buffer.commit.
+      # The desktop commits on speech pauses and flushes the final turn before stopping.
       #
       # Set it back to `server_vad` ONLY together with a model that accepts it.
       turn-detection: ${NORA_STT_TURN_DETECTION:}

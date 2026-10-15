@@ -401,6 +401,10 @@ class IamPermissionBoundaryIntegrationTest {
         JsonNode signup = postJson("/auth/signup", payload, HttpStatus.CREATED);
         String verify = json(Map.of("token", signup.get("emailVerificationDevToken").asText()));
         postJson("/auth/verify-email", verify, HttpStatus.NO_CONTENT);
+        jdbc.update(
+                "UPDATE tenants SET plan = 'ENTERPRISE' WHERE id = "
+                        + "(SELECT tenant_id FROM users WHERE email = ?)",
+                email);
         return login(email);
     }
 

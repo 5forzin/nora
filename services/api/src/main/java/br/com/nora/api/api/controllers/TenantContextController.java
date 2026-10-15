@@ -6,6 +6,7 @@ import br.com.nora.api.api.dto.tenant.TenantContextVersionDetailResponse;
 import br.com.nora.api.api.dto.tenant.TenantContextVersionDto;
 import br.com.nora.api.api.dto.tenant.TenantContextVersionListResponse;
 import br.com.nora.api.api.security.CurrentUser;
+import br.com.nora.api.api.security.RequiresEnterprise;
 import br.com.nora.api.api.security.RequiresPermission;
 import br.com.nora.api.api.security.RequiresPermission.ResourceType;
 import br.com.nora.api.application.tenant.TenantContextException;
@@ -40,6 +41,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/tenant/context")
+@RequiresEnterprise
 public class TenantContextController {
 
     private final TenantContextService service;

@@ -4,11 +4,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { Route } from "next";
 import { useEffect, useState } from "react";
 import type { TrendsGranularity } from "@/lib/api/client";
+import { reportingDateInput, reportingDateRange } from "@/lib/trends/date-range";
 
 interface Props {
   granularity: TrendsGranularity;
   from?: string;
   to?: string;
+  timezone?: string;
 }
 
 /**
@@ -16,26 +18,35 @@ interface Props {
  * Component refetch — with the default flipped: consumption is read per month, so `MONTH` is the
  * state with no query parameter and `WEEK` is the one that writes it.
  */
-export default function UsageFilters({ granularity, from, to }: Props) {
+export default function UsageFilters({ granularity, from, to, timezone }: Props) {
   const router = useRouter();
   const params = useSearchParams();
   const [unit, setUnit] = useState<TrendsGranularity>(granularity);
-  const [start, setStart] = useState(from?.slice(0, 10) ?? "");
-  const [end, setEnd] = useState(to?.slice(0, 10) ?? "");
+  const [start, setStart] = useState(reportingDateInput(from, timezone));
+  const [end, setEnd] = useState(reportingDateInput(to, timezone, true));
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const raw = params.get("granularity");
     setUnit(raw === "WEEK" ? "WEEK" : "MONTH");
-    setStart((params.get("from") ?? "").slice(0, 10));
-    setEnd((params.get("to") ?? "").slice(0, 10));
-  }, [params]);
+    setStart(reportingDateInput(params.get("from"), timezone));
+    setEnd(reportingDateInput(params.get("to"), timezone, true));
+    setError(null);
+  }, [params, timezone]);
 
   function apply(e?: React.FormEvent) {
     e?.preventDefault();
     const qs = new URLSearchParams();
     if (unit === "WEEK") qs.set("granularity", "WEEK");
-    if (start) qs.set("from", `${start}T00:00:00Z`);
-    if (end) qs.set("to", `${end}T23:59:59Z`);
+    try {
+      const range = reportingDateRange(start, end, timezone);
+      if (range.from) qs.set("from", range.from);
+      if (range.to) qs.set("to", range.to);
+    } catch {
+      setError(timezone ? "Informe datas válidas e um fim igual ou posterior ao início." : "O fuso do relatório não está disponível. Recarregue a página antes de filtrar por data.");
+      return;
+    }
+    setError(null);
     const q = qs.toString();
     router.push((q ? `/usage?${q}` : "/usage") as Route);
   }
@@ -44,6 +55,7 @@ export default function UsageFilters({ granularity, from, to }: Props) {
     setUnit("MONTH");
     setStart("");
     setEnd("");
+    setError(null);
     router.push("/usage" as Route);
   }
 
@@ -82,6 +94,7 @@ export default function UsageFilters({ granularity, from, to }: Props) {
           Limpar
         </button>
       )}
+      {error && <div role="alert" className="notice notice--danger" style={{ flexBasis: "100%" }}>{error}</div>}
     </form>
   );
 }

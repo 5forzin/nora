@@ -178,14 +178,18 @@ public class AuthorizationService {
      * an empty page.
      */
     public void requireAnyAllow(UUID userId, UUID tenantId, String action, String resource) {
+        if (!hasAnyAllow(userId, tenantId, action, resource)) {
+            throw IamException.forbidden(action);
+        }
+    }
+
+    public boolean hasAnyAllow(UUID userId, UUID tenantId, String action, String resource) {
         if (users.isRoot(userId, tenantId)) {
-            return;
+            return true;
         }
         List<PolicyStatement> stmts = iam.collectStatementsForUser(userId, tenantId);
         List<PolicyStatement> boundary = boundaryStatements(userId, tenantId);
-        if (!PolicyEvaluator.hasAnyAllow(stmts, boundary, action, resource)) {
-            throw IamException.forbidden(action);
-        }
+        return PolicyEvaluator.hasAnyAllow(stmts, boundary, action, resource);
     }
 
     /**

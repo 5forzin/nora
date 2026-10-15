@@ -3,7 +3,8 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { PROTECTED_PREFIXES, config } from "./middleware";
+import { NextRequest } from "next/server";
+import { PROTECTED_PREFIXES, config, middleware } from "./middleware";
 
 /**
  * The middleware is real access control, and its two lists are a hand-maintained copy of a
@@ -34,6 +35,14 @@ function appRouteSegments(): string[] {
 
 describe("middleware covers every app route", () => {
   const segments = appRouteSegments();
+
+  it("preserves the protected destination query through login", () => {
+    const response = middleware(new NextRequest('https://nora.systems/chat?s=existing'));
+    const location = new URL(response.headers.get('location')!);
+    expect(location.pathname).toBe('/auth/login');
+    expect(location.searchParams.get('next')).toBe('/chat?s=existing');
+    expect(location.searchParams.has('s')).toBe(false);
+  });
 
   it("finds the app route group at all", () => {
     // Guards against the whole suite passing vacuously if the directory is ever moved: an empty

@@ -3,11 +3,12 @@
 import type { Route } from "next";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
 
 import { NoraLogo } from "@/components/brand/nora-logo";
 import { ApiRequestError, login, resendVerificationEmail, signup } from "@/lib/api/client";
-import { setSession } from "@/lib/auth";
+import { clearLocalSession, getCurrentUser, setSession, sharedRefresh } from "@/lib/auth";
+import { workspaceDestination } from "@/lib/enterprise/navigation";
 import { PASSWORD_MIN } from "@/lib/password-policy";
 
 import "./auth.css";
@@ -36,7 +37,7 @@ const TRANSCRIPT_LINES: TLine[] = [
     t: 0,
     speaker: "Camila",
     time: "14:30",
-    text: "O DPO levantou três regras adicionais de PII pra fechar com a TOTVS.",
+    text: "A equipe definiu os critérios para aprovar o piloto.",
     tag: { kind: "decision", label: "Decisão" },
   },
   {
@@ -50,14 +51,14 @@ const TRANSCRIPT_LINES: TLine[] = [
     t: 7,
     speaker: "Bruno",
     time: "14:33",
-    text: "Conector Protheus pode ser read-only no MVP.",
+    text: "A primeira etapa do projeto será somente de leitura.",
     tag: { kind: "decision", label: "Decisão" },
   },
   {
     t: 10.5,
     speaker: "Camila",
     time: "14:34",
-    text: "Camila Rodrigues pediu retenção máxima de 30 dias.",
+    text: "Camila Rodrigues vai revisar os requisitos com a equipe.",
     tag: { kind: "pii", label: "PII · nome" },
   },
   {
@@ -116,7 +117,7 @@ function TranscriptionAnimation() {
       </div>
       <div className="transcript-badge">
         <span className="transcript-dot" />
-        <span>Nora analisando…</span>
+        <span>Exemplo ilustrativo</span>
       </div>
     </div>
   );
@@ -149,7 +150,7 @@ function LeftPanel() {
         {/* Only the privacy section exists as a page; Termos and Status pointed at
             documents that were never written. */}
         <div className="links">
-          <Link href="/#privacidade">Privacidade · LGPD</Link>
+          <Link href="/#privacidade">Privacidade</Link>
         </div>
       </div>
     </div>
@@ -240,6 +241,25 @@ function LoginForm({ onSwitchToSignup, next }: { onSwitchToSignup: () => void; n
   const [resending, setResending] = useState(false);
   const [resentNote, setResentNote] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!getCurrentUser()) return;
+    let cancelled = false;
+    setBusy(true);
+    void sharedRefresh().then(async (result) => {
+      if (cancelled) return;
+      if (result.ok) {
+        const destination = await workspaceDestination(next);
+        if (cancelled) return;
+        router.replace(destination);
+        router.refresh();
+      } else {
+        if (result.status === 401) clearLocalSession();
+        setBusy(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [next, router]);
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     setErr(null);
@@ -252,7 +272,7 @@ function LoginForm({ onSwitchToSignup, next }: { onSwitchToSignup: () => void; n
         { userId: r.userId, tenantId: r.tenantId, email: r.email, displayName: r.displayName },
         r.expiresInSeconds,
       );
-      router.replace(next);
+      router.replace(await workspaceDestination(next));
       router.refresh();
     } catch (e2) {
       if (e2 instanceof ApiRequestError) {
@@ -351,10 +371,10 @@ function LoginForm({ onSwitchToSignup, next }: { onSwitchToSignup: () => void; n
         </div>
 
         <div className="field">
-          <label className="field-label" htmlFor="login-pw">
-            <span>Senha</span>
+          <div className="field-label">
+            <label htmlFor="login-pw">Senha</label>
             <Link href="/auth/password/reset/request">Esqueci minha senha</Link>
-          </label>
+          </div>
           <div className="field-input-wrap">
             <input
               id="login-pw"
@@ -538,13 +558,13 @@ function SignupForm({
         {step.id === "email" && (
           <>
             <h2>Crie sua conta Nora.</h2>
-            <p>Grátis pra sempre. Sem cartão.</p>
+            <p>Comece com um workspace Core.</p>
           </>
         )}
         {step.id === "password" && (
           <>
             <h2>Escolha uma senha forte.</h2>
-            <p>Mínimo 8 caracteres. Recomendamos número + símbolo.</p>
+            <p>Mínimo {PASSWORD_MIN} caracteres, com letras e números.</p>
           </>
         )}
         {step.id === "workspace" && (
