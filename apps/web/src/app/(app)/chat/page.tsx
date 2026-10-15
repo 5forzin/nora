@@ -50,6 +50,11 @@ interface Msg {
   interrupted?: boolean;
 }
 
+interface ChatTurn {
+  sessionId: string | null;
+  controller: AbortController | null;
+}
+
 /**
  * A refusal for budget reasons, kept apart from every other failure.
  *
@@ -96,6 +101,7 @@ function ChatRoom() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState(false);
   const [title, setTitle] = useState("Nova sessão");
   const [loading, setLoading] = useState(false);
   /**
@@ -109,14 +115,28 @@ function ChatRoom() {
   // Persisted session. Lives in a ref so it is available inside `send` without
   // recreating the callback; the state only mirrors it for the UI/URL.
   const sessionIdRef = useRef<string | null>(sessionParam);
-  const abortRef = useRef<AbortController | null>(null);
+  const locallyCreatedSessionRef = useRef<string | null>(null);
+  // Lock before the first await, including submissions in the same render.
+  const inFlightRef = useRef<ChatTurn | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   // Hydrates the session when opened via ?s={id}.
   useEffect(() => {
+    if (sessionParam && locallyCreatedSessionRef.current === sessionParam) {
+      locallyCreatedSessionRef.current = null;
+      return;
+    }
+    const previousTurn = inFlightRef.current;
+    inFlightRef.current = null;
+    previousTurn?.controller?.abort();
+    locallyCreatedSessionRef.current = null;
+    setPending(false);
+    setBusy(false);
     sessionIdRef.current = sessionParam;
     if (!sessionParam) {
+      setLoading(false);
+      setPersistenceOff(false);
       setMessages([]);
       setTitle("Nova sessão");
       return;
@@ -146,6 +166,12 @@ function ChatRoom() {
     };
   }, [sessionParam]);
 
+  useEffect(() => () => {
+    const turn = inFlightRef.current;
+    inFlightRef.current = null;
+    turn?.controller?.abort();
+  }, []);
+
   // Seeds the composer from `?q=` and takes the parameter out of the URL, so a reload does not
   // overwrite whatever the user has typed since. Capped at the same 280 chars the auth screen
   // shows, and only on a fresh conversation — landing on `?s=` means they came back to a session.
@@ -169,18 +195,24 @@ function ChatRoom() {
     ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
   }, [input]);
 
+  useEffect(() => {
+    if (!pending && !loading) taRef.current?.focus();
+  }, [pending, loading]);
+
   // Persists a message in the current session without breaking the flow if the back-end fails.
   // `index` is the position the message takes in the session's history, and it is what the
   // reasoning is filed under — the backend message has no field for it.
   const persist = useCallback(
-    async (role: Role, content: string, index: number, reasoning?: string) => {
-      const id = sessionIdRef.current;
+    async (turn: ChatTurn, role: Role, content: string, index: number, reasoning?: string) => {
+      if (inFlightRef.current !== turn) return;
+      const id = turn.sessionId;
       if (!id) {
         setPersistenceOff(true);
         return;
       }
       try {
         await appendChatMessage(id, { role, content });
+        if (inFlightRef.current !== turn) return;
         if (role === "assistant") rememberReasoning(id, index, content, reasoning ?? "");
         // Live sidebar: the title (derived from the 1st message), the snippet and
         // the ordering by updatedAt change on every persisted message.
@@ -188,20 +220,21 @@ function ChatRoom() {
       } catch {
         // Still best-effort — the conversation must not stop because the history did — but the
         // failure is now visible in the topbar instead of being swallowed here.
-        setPersistenceOff(true);
+        if (inFlightRef.current === turn) setPersistenceOff(true);
       }
     },
     [],
   );
 
   const run = useCallback(
-    async (history: Msg[]) => {
+    async (turn: ChatTurn, history: Msg[]) => {
+      if (inFlightRef.current !== turn) return;
       setBusy(true);
       // assistant bubble we keep filling in as the stream arrives.
       setMessages([...history, { role: "assistant", content: "" }]);
 
       const controller = new AbortController();
-      abortRef.current = controller;
+      turn.controller = controller;
       // Where this answer lands in the persisted history — the reasoning is filed under it.
       const answerIndex = history.length;
       const stream = { reasoning: "", content: "" };
@@ -214,6 +247,7 @@ function ChatRoom() {
         // permanent error bubble in a tab that stayed "signed in" as far as the middleware was
         // concerned, and only F5 recovered it.
         const res = await streamChat({ messages: history }, controller.signal);
+        if (inFlightRef.current !== turn) return;
 
         if (!res.ok || !res.body) {
           const err = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
@@ -237,6 +271,7 @@ function ChatRoom() {
         const frames = createChatFrameDecoder();
         for (;;) {
           const { done, value } = await reader.read();
+          if (inFlightRef.current !== turn) return;
           if (done) {
             applyChatFrames(stream, frames.flush());
             break;
@@ -263,17 +298,17 @@ function ChatRoom() {
           failure = `Não consegui responder agora (${reason}).`;
         }
       } finally {
-        abortRef.current = null;
-        setBusy(false);
-        taRef.current?.focus();
+        turn.controller = null;
+        if (inFlightRef.current === turn) setBusy(false);
       }
+      if (inFlightRef.current !== turn) return;
 
       // A failed answer is persisted like any other. It used to `return` before the persist, so
       // the saved history showed the question with nothing after it — indistinguishable from a
       // conversation still in progress.
       if (failure !== null) {
         setMessages([...history, { role: "assistant", content: failure, interrupted: true }]);
-        await persist("assistant", failure, answerIndex);
+        await persist(turn, "assistant", failure, answerIndex);
         return;
       }
 
@@ -288,7 +323,7 @@ function ChatRoom() {
           },
         ]);
         if (stream.content.trim()) {
-          await persist("assistant", stream.content, answerIndex, stream.reasoning);
+          await persist(turn, "assistant", stream.content, answerIndex, stream.reasoning);
         }
         return;
       }
@@ -302,7 +337,7 @@ function ChatRoom() {
           reasoning: stream.reasoning || undefined,
         },
       ]);
-      await persist("assistant", finalText, answerIndex, stream.reasoning);
+      await persist(turn, "assistant", finalText, answerIndex, stream.reasoning);
     },
     [persist],
   );
@@ -310,42 +345,56 @@ function ChatRoom() {
   const send = useCallback(
     async (text: string) => {
       const content = text.trim();
-      if (!content || busy || loading) return;
+      if (!content || inFlightRef.current || loading) return;
+      const turn: ChatTurn = { sessionId: sessionIdRef.current, controller: null };
+      inFlightRef.current = turn;
+      setPending(true);
 
-      // Creates the session on the 1st message of a new conversation and reflects it in the URL.
-      if (!sessionIdRef.current) {
-        try {
-          const created = await createChatSession();
-          sessionIdRef.current = created.id;
-          setTitle(created.title?.trim() || "Nova sessão");
-          // New session shows up in the sidebar right away, without a full reload.
-          notifySessionsChanged();
-          router.replace(`/chat?s=${encodeURIComponent(created.id)}` as Route, {
-            scroll: false,
-          });
-          setPersistenceOff(false);
-        } catch {
-          // The conversation goes on in memory in this tab — but it says so now. Silently
-          // running unsaved meant the sidebar never showed the session and a reload took the
-          // whole conversation with it, with nothing on screen having hinted at either.
-          setPersistenceOff(true);
+      try {
+        // Creates the session on the 1st message of a new conversation and reflects it in the URL.
+        if (!turn.sessionId) {
+          try {
+            const created = await createChatSession();
+            if (inFlightRef.current !== turn) return;
+            turn.sessionId = created.id;
+            sessionIdRef.current = created.id;
+            locallyCreatedSessionRef.current = created.id;
+            setTitle(created.title?.trim() || "Nova sessão");
+            // New session shows up in the sidebar right away, without a full reload.
+            notifySessionsChanged();
+            router.replace(`/chat?s=${encodeURIComponent(created.id)}` as Route, {
+              scroll: false,
+            });
+            setPersistenceOff(false);
+          } catch {
+            if (inFlightRef.current !== turn) return;
+            // The conversation goes on in memory in this tab — but it says so now. Silently
+            // running unsaved meant the sidebar never showed the session and a reload took the
+            // whole conversation with it, with nothing on screen having hinted at either.
+            setPersistenceOff(true);
+          }
+        }
+
+        const userIndex = messages.length;
+        const next: Msg[] = [...messages, { role: "user", content }];
+        setMessages(next);
+        setInput("");
+        await persist(turn, "user", content, userIndex);
+        await run(turn, next);
+      } finally {
+        if (inFlightRef.current === turn) {
+          inFlightRef.current = null;
+          setPending(false);
         }
       }
-
-      const userIndex = messages.length;
-      const next: Msg[] = [...messages, { role: "user", content }];
-      setMessages(next);
-      setInput("");
-      await persist("user", content, userIndex);
-      await run(next);
     },
-    [busy, loading, messages, persist, run, router],
+    [loading, messages, persist, run, router],
   );
 
   // Resends from the user's last question (after an error or interruption).
   const retry = useCallback(
-    (assistantIndex: number) => {
-      if (busy) return;
+    async (assistantIndex: number) => {
+      if (inFlightRef.current || loading) return;
       let question = "";
       for (let j = assistantIndex - 1; j >= 0; j--) {
         if (messages[j].role === "user") {
@@ -353,18 +402,30 @@ function ChatRoom() {
           break;
         }
       }
+      if (!question) return;
+      const turn: ChatTurn = { sessionId: sessionIdRef.current, controller: null };
+      inFlightRef.current = turn;
+      setPending(true);
       const history = messages.slice(0, assistantIndex);
       setMessages(history);
-      if (question) void run(history);
+      try {
+        await run(turn, history);
+      } finally {
+        if (inFlightRef.current === turn) {
+          inFlightRef.current = null;
+          setPending(false);
+        }
+      }
     },
-    [busy, messages, run],
+    [loading, messages, run],
   );
 
   function stop() {
-    abortRef.current?.abort();
+    inFlightRef.current?.controller?.abort();
   }
 
   function startNew() {
+    if (inFlightRef.current) return;
     if (sessionIdRef.current || sessionParam) {
       router.push("/chat" as Route);
       return;
@@ -378,7 +439,7 @@ function ChatRoom() {
   const hasInput = input.trim().length > 0;
 
   return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--canvas)" }}>
+    <div aria-busy={pending} style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--canvas)" }}>
       <div
         style={{
           display: "flex",
@@ -408,7 +469,7 @@ function ChatRoom() {
           )}
         </div>
         {!empty && (
-          <button type="button" className="btn btn-ghost btn-sm" onClick={startNew}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={startNew} disabled={pending}>
             {sessionParam ? "Nova sessão" : "Limpar"}
           </button>
         )}
@@ -461,6 +522,7 @@ function ChatRoom() {
                   key={s}
                   type="button"
                   onClick={() => void send(s)}
+                  disabled={pending || loading}
                   style={{
                     fontFamily: "var(--sans)",
                     fontSize: 12.5,
@@ -487,7 +549,7 @@ function ChatRoom() {
             role="log"
             aria-live="polite"
             aria-relevant="additions text"
-            aria-busy={busy}
+            aria-busy={pending}
             aria-label="Conversa com a Nora"
             style={{ maxWidth: 720, margin: "0 auto", padding: "32px 24px 160px", display: "flex", flexDirection: "column", gap: 22 }}
           >
@@ -496,7 +558,8 @@ function ChatRoom() {
                 key={i}
                 msg={m}
                 streaming={busy && i === messages.length - 1 && m.role === "assistant"}
-                onRetry={m.interrupted ? () => retry(i) : undefined}
+                onRetry={m.interrupted ? () => void retry(i) : undefined}
+                retryDisabled={pending || loading}
               />
             ))}
           </div>
@@ -534,6 +597,7 @@ function ChatRoom() {
             id="chat-input"
             aria-label="Pergunte qualquer coisa para a Nora"
             value={input}
+            disabled={loading || (pending && !busy)}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
@@ -558,7 +622,7 @@ function ChatRoom() {
             }}
           />
           <SendButton
-            active={hasInput}
+            active={hasInput && !pending && !loading}
             busy={busy}
             onClick={() => (busy ? stop() : void send(input))}
           />
@@ -590,10 +654,12 @@ function ChatBubble({
   msg,
   streaming,
   onRetry,
+  retryDisabled,
 }: {
   msg: Msg;
   streaming: boolean;
   onRetry?: () => void;
+  retryDisabled?: boolean;
 }) {
   const isUser = msg.role === "user";
   if (isUser) {
@@ -623,6 +689,7 @@ function ChatBubble({
           <button
             type="button"
             onClick={onRetry}
+            disabled={retryDisabled}
             style={{
               display: "inline-flex",
               alignItems: "center",
