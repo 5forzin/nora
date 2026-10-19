@@ -165,12 +165,12 @@ public class McpTokenService {
      * instead of at the next revocation.
      *
      * <p><b>The last-used stamp cannot refuse a valid credential.</b> This method runs in the
-     * filter of every MCP request, and it writes: {@code markUsed} is the only mutation on the
-     * authentication path. It used to propagate, so a write that failed for any reason — a full
-     * disk, a lock timeout, a pool exhausted by something else entirely — answered 401 on a token
-     * that was live, which reads to the client as a revoked credential. The stamp is operational
-     * information about a credential; the answer to "is this credential valid" is the contract.
-     * When they disagree the contract wins, and the failure is logged rather than returned.
+     * filter of every MCP request, and it writes usage metadata only. It used to propagate, so a
+     * write that failed for any reason — a full disk, a lock timeout, a pool exhausted by something
+     * else entirely — answered 401 on a token that was live, which reads to the client as a revoked
+     * credential. The stamp is operational information about a credential; the answer to "is this
+     * credential valid" is the contract. When they disagree the contract wins, and the failure is
+     * logged rather than returned.
      *
      * <p>{@code readOnly} describes THIS method: the two lookups — the token and its owner — are
      * the decision, and they now read one consistent snapshot instead of two independent ones. The
@@ -206,10 +206,9 @@ public class McpTokenService {
     private void stampLastUsed(McpToken token, Instant now) {
         try {
             stampTransaction.executeWithoutResult(
-                    status -> {
-                        token.markUsed(now);
-                        tokens.save(token);
-                    });
+                    status ->
+                            tokens.updateLastUsedAt(
+                                    token.id(), token.tenantId(), token.userId(), now));
         } catch (RuntimeException ex) {
             LOG.warn(
                     "Could not stamp last-used on MCP token id={} tenant={} cause={}",

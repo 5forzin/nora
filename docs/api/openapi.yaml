@@ -13,8 +13,8 @@ info:
     endpoint, the inbound MCP server and its tokens, and the operator control plane.
 
     ## Scope of this document
-    Every route the 21 controllers under
-    `services/api/src/main/java/br/com/nora/api/api/controllers/` expose is described here, and
+    Every route exposed by the controllers under
+    `services/api/src/main/java/br/com/nora/api/api/controllers/` is described here, and
     nothing else is. `scripts/check-openapi-coverage.sh` enforces that in both directions in CI:
     a route added to a controller and not to this file fails the build, and so does an operation
     left in this file after its handler was deleted. The file is written by hand — springdoc is on
@@ -49,6 +49,11 @@ info:
 
     The `accessToken` field remains present in the login JSON body for compatibility with legacy
     clients; new clients should rely on the cookies.
+
+    Cookie-authenticated writes and billed `GET`/`HEAD /meetings/search` require the
+    `X-XSRF-TOKEN` header returned by `GET /auth/csrf`, together with its HttpOnly `XSRF-TOKEN`
+    cookie. Form and URL parameters are not accepted. Bearer clients without authentication
+    cookies do not require CSRF tokens. A missing or mismatched token returns `403`.
 
     ## IAM Authorization (ADR 0007)
     There are NO fixed roles. Authorization is based on **IAM policies** (AWS-style) evaluated by
@@ -262,6 +267,26 @@ paths:
             Set-Cookie:
               description: Clearing cookies (`Max-Age=0`).
               schema: { type: string }
+
+  /auth/csrf:
+    get:
+      tags: [Auth]
+      security: []
+      summary: Initializes the browser CSRF token
+      description: |
+        Sets the HttpOnly `XSRF-TOKEN` cookie using the authentication cookie domain and Secure
+        settings. Returns the corresponding request header value. The response uses `no-store`.
+      responses:
+        '200':
+          description: CSRF token ready
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, headerName]
+                properties:
+                  token: { type: string }
+                  headerName: { type: string, const: X-XSRF-TOKEN }
 
   /auth/me:
     get:

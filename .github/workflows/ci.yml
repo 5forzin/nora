@@ -1110,6 +1110,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: MCP diagnostic privacy tests
+        run: node --test scripts/mcp-conformance.test.mjs
 
       # `docker compose config` FAILS on `${VAR:?message}` when the variable does not exist —
       # and the compose uses that pattern on purpose on 9 variables (POSTGRES_ADMIN_PASSWORD,

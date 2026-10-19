@@ -2,6 +2,7 @@ package br.com.nora.api.infrastructure.persistence.identity;
 
 import br.com.nora.api.application.ports.McpTokenRepository;
 import br.com.nora.api.domain.identity.McpToken;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -41,6 +42,12 @@ public class McpTokenRepositoryAdapter implements McpTokenRepository {
                                                 token.revokedAt(),
                                                 token.lastUsedAt()));
         return toDomain(jpa.save(entity));
+    }
+
+    @Override
+    @Transactional
+    public void updateLastUsedAt(UUID id, UUID tenantId, UUID userId, Instant usedAt) {
+        jpa.updateLastUsedAt(id, tenantId, userId, usedAt);
     }
 
     @Override

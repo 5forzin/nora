@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -383,7 +384,20 @@ class RefreshFlowIntegrationTest {
     private ResponseEntity<String> postWithCookies(String path, List<String> cookies) {
         HttpHeaders headers = new HttpHeaders();
         if (!cookies.isEmpty()) {
-            headers.add(HttpHeaders.COOKIE, String.join("; ", cookies));
+            HttpHeaders bootstrapHeaders = new HttpHeaders();
+            bootstrapHeaders.add(HttpHeaders.COOKIE, String.join("; ", cookies));
+            ResponseEntity<Map> bootstrap =
+                    rest.exchange(
+                            "/auth/csrf",
+                            HttpMethod.GET,
+                            new HttpEntity<>(bootstrapHeaders),
+                            Map.class);
+            assertThat(bootstrap.getStatusCode()).isEqualTo(HttpStatus.OK);
+            List<String> requestCookies = new ArrayList<>(cookies);
+            requestCookies.add(
+                    "XSRF-TOKEN=" + extractCookieValue(setCookieHeaders(bootstrap), "XSRF-TOKEN"));
+            headers.add(HttpHeaders.COOKIE, String.join("; ", requestCookies));
+            headers.add("X-XSRF-TOKEN", (String) bootstrap.getBody().get("token"));
         }
         HttpEntity<String> entity = new HttpEntity<>("", headers);
         return rest.exchange(path, HttpMethod.POST, entity, String.class);

@@ -60,6 +60,7 @@ import meetingDetailFixture from '@/fixtures/meeting-detail-response.json';
 import { handleSessionExpired, sharedRefresh } from '@/lib/auth';
 import { redactPii } from '@/lib/pii/redact';
 import { errorCopy } from '@/lib/strings';
+import { apiRequestHeaders } from './csrf';
 
 // Default must be 'false' in prod. It used to be 'true' → if the build forgot to
 // set NEXT_PUBLIC_USE_MOCKS, prod served hardcoded fixtures. Now any build that
@@ -67,30 +68,6 @@ import { errorCopy } from '@/lib/strings';
 // misconfigured — preferable to serving garbage).
 const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === 'true';
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
-
-/**
- * In Server Components / Route Handlers, `fetch` does NOT propagate the browser's
- * httpOnly cookies automatically. Without this, any RSC fetch (dashboard,
- * meeting detail) goes without auth → 401 → notFound() → 404 visible to the user.
- *
- * This helper detects SSR (typeof window === 'undefined') and uses `next/headers`
- * dynamically to attach the `Cookie` header. On the client it returns {} (the browser
- * sends them automatically with `credentials: 'include'`).
- */
-async function serverCookieHeader(): Promise<Record<string, string>> {
-  if (typeof window !== 'undefined') return {};
-  try {
-    // Dynamic import avoids loading next/headers into client bundles.
-    const { cookies } = await import('next/headers');
-    const all = (await cookies()).getAll();
-    if (all.length === 0) return {};
-    const cookieStr = all.map((c) => `${c.name}=${c.value}`).join('; ');
-    return { Cookie: cookieStr };
-  } catch {
-    // Outside a request context (build, scripts) — no cookies.
-    return {};
-  }
-}
 
 export class ApiRequestError extends Error {
   readonly status: number;
@@ -127,12 +104,10 @@ async function performRefresh(): Promise<boolean> {
 }
 
 async function request<T>(path: string, init?: RequestOptions): Promise<T> {
-  const cookieHeader = await serverCookieHeader();
-  const headers: Record<string, string> = {
+  const headers = await apiRequestHeaders(API_BASE_URL, path, init?.method, {
     Accept: 'application/json',
-    ...cookieHeader,
     ...((init?.headers as Record<string, string>) ?? {}),
-  };
+  });
   if (init?.body && !(init.body instanceof FormData) && !headers['Content-Type']) {
     headers['Content-Type'] = 'application/json';
   }
@@ -1104,10 +1079,10 @@ export async function streamChat(
   body: { messages: { role: 'user' | 'assistant'; content: string }[] },
   signal?: AbortSignal,
 ): Promise<Response> {
-  const call = () =>
+  const call = async () =>
     fetch('/api/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await apiRequestHeaders(API_BASE_URL, '/api/chat', 'POST', { 'Content-Type': 'application/json' }),
       body: JSON.stringify(body),
       credentials: 'include',
       cache: 'no-store',

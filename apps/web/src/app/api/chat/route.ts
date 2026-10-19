@@ -22,6 +22,7 @@
  * declared in ADR 0033.
  */
 import { cookies } from "next/headers";
+import { timingSafeEqual } from "node:crypto";
 
 import { openAiSseToNdjson, type StreamUsage } from "@/lib/chat/sse-to-ndjson";
 import { createMeetingSourceLinkTransform } from "@/lib/chat/source-links";
@@ -533,8 +534,17 @@ export async function POST(req: Request): Promise<Response> {
   // fetch to the provider with the server key. The middleware does not cover /api/* either (the
   // matcher lists pages only), so this route gates itself: session first, then the per-principal
   // request budget and the input size caps below, all of them before the provider is contacted.
-  const cookieHeader = (await cookies())
-    .getAll()
+  const incomingCookies = (await cookies()).getAll();
+  const csrfCookie = incomingCookies.find((cookie) => cookie.name === 'XSRF-TOKEN')?.value;
+  const csrfHeader = req.headers.get('X-XSRF-TOKEN');
+  if (!csrfCookie || !csrfHeader || Buffer.byteLength(csrfCookie) !== Buffer.byteLength(csrfHeader)
+    || !timingSafeEqual(Buffer.from(csrfCookie), Buffer.from(csrfHeader))) {
+    return new Response(JSON.stringify({ error: "Sessão inválida. Atualize a página e tente novamente." }), {
+      status: 403,
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    });
+  }
+  const cookieHeader = incomingCookies
     .map((c) => `${c.name}=${c.value}`)
     .join("; ");
 

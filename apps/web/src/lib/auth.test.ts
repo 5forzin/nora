@@ -11,7 +11,9 @@ beforeEach(async () => {
   vi.resetModules();
   sessionStorage.clear();
   document.cookie = 'nora_user=; Path=/; Max-Age=0';
-  vi.stubGlobal('fetch', fetchMock);
+  vi.stubGlobal('fetch', (url: string, options: RequestInit) => url.endsWith('/auth/csrf')
+    ? Promise.resolve(new Response(JSON.stringify({ token: 'csrf-session', headerName: 'X-XSRF-TOKEN' })))
+    : fetchMock(url, options));
   fetchMock.mockReset().mockResolvedValue(new Response(JSON.stringify({ expiresInSeconds: 900 }), { status: 200 }));
   auth = await import('./auth');
 });
@@ -58,9 +60,13 @@ describe('session renewal', () => {
     const a = auth.sharedRefresh();
     const b = auth.sharedRefresh();
     expect(a).toBe(b);
+    await vi.advanceTimersByTimeAsync(0);
     expect(fetchMock).toHaveBeenCalledOnce();
     resolve(new Response(JSON.stringify({ expiresInSeconds: 900 }), { status: 200 }));
     expect((await a).ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith('https://api.test.invalid/auth/refresh', expect.objectContaining({
+      headers: { 'X-XSRF-TOKEN': 'csrf-session' }, credentials: 'include',
+    }));
   });
 
   it('serializes refresh across documents when Web Locks are available', async () => {
@@ -91,5 +97,12 @@ describe('session renewal', () => {
     expect(sessionStorage.getItem('nora:refresh-at')).toBeNull();
     await vi.advanceTimersByTimeAsync(900_000);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('binds logout to the current CSRF cookie', async () => {
+    await auth.clearSession();
+    expect(fetchMock).toHaveBeenCalledWith('https://api.test.invalid/auth/logout', expect.objectContaining({
+      headers: { 'X-XSRF-TOKEN': 'csrf-session' }, credentials: 'include', method: 'POST',
+    }));
   });
 });
