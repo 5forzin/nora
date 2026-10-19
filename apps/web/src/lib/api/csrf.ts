@@ -1,3 +1,5 @@
+import { strings } from '@/lib/strings';
+
 const CSRF_COOKIE = 'XSRF-TOKEN';
 const CSRF_HEADER = 'X-XSRF-TOKEN';
 const BOOTSTRAP_TIMEOUT_MS = 6_000;
@@ -31,11 +33,11 @@ async function bootstrap(apiBaseUrl: string, cookies: string, timeoutMs: number)
     redirect: 'error',
     signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!response.ok) throw new Error('Não foi possível validar a sessão. Tente novamente.');
+  if (!response.ok) throw new Error(strings.auth.sessionValidationFailed);
   const csrf = await response.json() as Partial<CsrfToken>;
   if (csrf.headerName !== CSRF_HEADER || typeof csrf.token !== 'string'
     || !csrf.token || /[\r\n;]/.test(csrf.token)) {
-    throw new Error('Não foi possível validar a sessão. Tente novamente.');
+    throw new Error(strings.auth.sessionValidationFailed);
   }
   const setCookies = response.headers.getSetCookie?.() ?? [response.headers.get('set-cookie') ?? ''];
   const cookie = setCookies.map((value) => value.split(';')[0])
@@ -83,7 +85,7 @@ export async function apiRequestHeaders(
       } else {
         const { csrf, cookie } = await bootstrap(apiBaseUrl, cookies, timeoutMs);
         if (cookie !== `${CSRF_COOKIE}=${csrf.token}`) {
-          throw new Error('Não foi possível validar a sessão. Tente novamente.');
+          throw new Error(strings.auth.sessionValidationFailed);
         }
         headers.set('Cookie', `${cookies}; ${cookie}`);
         headers.set(CSRF_HEADER, csrf.token);

@@ -24,6 +24,9 @@
 export const LOCALE = "pt-BR";
 
 export const strings = {
+  auth: {
+    sessionValidationFailed: "Não foi possível validar a sessão. Tente novamente.",
+  },
   tasks: {
     exportChanged: "A lista mudou durante a exportação. Tente novamente.",
   },
