@@ -13,6 +13,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.authentication.session.NullAuthenticatedSessionStrategy;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -83,6 +84,10 @@ public class SecurityConfig {
                 .csrf(
                         csrf ->
                                 csrf.csrfTokenRepository(csrfTokens)
+                                        // JWT authentication runs on every request and does not
+                                        // start a session.
+                                        .sessionAuthenticationStrategy(
+                                                new NullAuthenticatedSessionStrategy())
                                         .csrfTokenRequestHandler(
                                                 new HeaderCsrfTokenRequestHandler())
                                         .requireCsrfProtectionMatcher(
@@ -99,7 +104,11 @@ public class SecurityConfig {
                 .exceptionHandling(
                         e ->
                                 e.authenticationEntryPoint(
-                                        new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+                                                new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
+                                        .accessDeniedHandler(
+                                                (request, response, denied) ->
+                                                        response.setStatus(
+                                                                HttpStatus.FORBIDDEN.value())))
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
