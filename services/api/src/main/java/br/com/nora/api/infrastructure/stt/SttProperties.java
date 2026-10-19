@@ -6,11 +6,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /**
  * Realtime STT configuration (ADR 0039, ADR 0045). Replaces the deleted {@code nora.speech} block.
  *
- * <p>There is no {@code provider} switch here, and that absence is deliberate. {@code
- * nora.speech.provider} existed to keep a rollback lever between two live vendors; there is one
- * realtime STT provider and nothing to roll back to, so a one-value switch would be a mechanism
- * that decides nothing — the same reasoning that collapses {@code SttBackendKind} on the desktop
- * side (ADR 0045 §5).
+ * <p>Shared language/rate limits and the existing OpenAI settings. Google settings bind separately
+ * through {@link GoogleSttProperties}; {@code nora.stt.provider} selects the broker.
  *
  * <p>Every nested block has a defensive default because a null one would surface as a 500 on the
  * session endpoint instead of the {@code STT_NOT_CONFIGURED} the contract promises.

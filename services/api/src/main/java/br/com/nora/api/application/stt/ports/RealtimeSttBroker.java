@@ -20,7 +20,7 @@ public interface RealtimeSttBroker {
     /**
      * Creates one transcription session with the provider and returns only its client secret.
      *
-     * @param language BCP-47 primary subtag, already normalised by the application layer
+     * @param language provider language hint, already normalized by the application layer
      * @throws br.com.nora.api.application.stt.SttException when the provider is not configured or
      *     refuses
      */

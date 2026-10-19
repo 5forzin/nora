@@ -23,7 +23,7 @@ import java.time.Instant;
  *     endpoint is a configuration change rather than a desktop release
  * @param provider provider id, for telemetry and for the client's error messages
  * @param model the transcription model the session was created with
- * @param language BCP-47 primary subtag actually sent to the provider
+ * @param language normalized provider language hint; Google retains regional BCP-47 subtags
  * @param audioFormat provider media type of the PCM the client will stream
  * @param sampleRate sample rate, in Hz, the provider expects and the capture pipeline targets
  */

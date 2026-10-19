@@ -51,6 +51,8 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::stt::{speaker_id_for_track, SttBackend, TranscriptEvent, TARGET_SAMPLE_RATE};
 use crate::stt_token::{self, RealtimeSession};
 
+mod google;
+
 /// Consecutive failed connection attempts before the track gives up for good.
 ///
 /// Bounded on purpose. An unbounded retry against a provider that is refusing us is a loop that
@@ -70,6 +72,7 @@ const MAX_BACKOFF: Duration = Duration::from_secs(15);
 const AUDIO_QUEUE_CHUNKS: usize = 100;
 const FINALIZE_TIMEOUT: Duration = Duration::from_secs(10);
 const STOP_TIMEOUT: Duration = Duration::from_secs(15);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 
 // ============================================================================
 // Public handle
@@ -80,6 +83,7 @@ pub struct CloudSttHandle {
     audio_tx: mpsc::Sender<Vec<i16>>,
     stop_tx: Option<oneshot::Sender<()>>,
     task: Option<tokio::task::JoinHandle<Result<(), String>>>,
+    stop_timeout: Duration,
 }
 
 impl Drop for CloudSttHandle {
@@ -107,9 +111,10 @@ impl SttBackend for CloudSttHandle {
             let _ = tx.send(());
         }
         let task = self.task.take();
+        let stop_timeout = self.stop_timeout;
         Box::pin(async move {
             if let Some(mut task) = task {
-                match tokio::time::timeout(STOP_TIMEOUT, &mut task).await {
+                match tokio::time::timeout(stop_timeout, &mut task).await {
                     Ok(result) => result.map_err(|e| format!("Transcription task failed: {e}"))?,
                     Err(_) => {
                         task.abort();
@@ -140,7 +145,9 @@ impl CloudSttHandle {
             .await
             .map_err(|e| e.to_string())?;
 
-        if session.sample_rate != TARGET_SAMPLE_RATE {
+        connection_request(&session).map_err(str::to_string)?;
+
+        if session.provider == "openai" && session.sample_rate != TARGET_SAMPLE_RATE {
             // Not fatal: what we actually stream is declared to the provider on connect, so the
             // truth is preserved either way. It IS worth shouting about, because the two numbers
             // drifting apart is a misconfiguration whose only other symptom is a transcript that
@@ -153,6 +160,11 @@ impl CloudSttHandle {
         }
 
         let session_id = uuid::Uuid::new_v4().to_string();
+        let stop_timeout = if session.provider == "google" {
+            Duration::from_secs(25)
+        } else {
+            STOP_TIMEOUT
+        };
         let (audio_tx, audio_rx) = mpsc::channel::<Vec<i16>>(AUDIO_QUEUE_CHUNKS);
         let (stop_tx, stop_rx) = oneshot::channel::<()>();
 
@@ -177,6 +189,7 @@ impl CloudSttHandle {
             audio_tx,
             stop_tx: Some(stop_tx),
             task: Some(task),
+            stop_timeout,
         })
     }
 }
@@ -374,26 +387,35 @@ async fn stream_one_session(
     audio_rx: &mut mpsc::Receiver<Vec<i16>>,
     stop_rx: &mut oneshot::Receiver<()>,
 ) -> Outcome {
-    // The URL comes from our own backend over TLS, but a scheme check costs one line and stops a
-    // misconfigured server from talking this client into a cleartext socket.
-    if !session.websocket_url.starts_with("wss://") {
-        return lost("endpoint is not wss");
-    }
-
-    let mut request = match session.websocket_url.as_str().into_client_request() {
+    let request = match connection_request(session) {
         Ok(r) => r,
-        Err(e) => return lost(format!("invalid endpoint: {}", e)),
+        Err(message) => return lost(message),
     };
-    let bearer = match format!("Bearer {}", session.client_secret).parse() {
-        Ok(v) => v,
-        Err(_) => return lost("credential is not a valid header value"),
-    };
-    request.headers_mut().insert("Authorization", bearer);
 
-    let (socket, _) = match tokio_tungstenite::connect_async(request).await {
-        Ok(pair) => pair,
-        Err(e) => return lost(format!("handshake failed: {}", e)),
+    let (socket, _) = match tokio::time::timeout(
+        CONNECT_TIMEOUT,
+        tokio_tungstenite::connect_async(request),
+    )
+    .await
+    {
+        Ok(Ok(pair)) => pair,
+        // Transport errors may carry the request URI or headers. Only the failure class is safe.
+        Ok(Err(_)) => return lost("provider handshake failed"),
+        Err(_) => return lost("provider handshake timed out"),
     };
+    if session.provider == "google" {
+        return google::stream_connected(
+            socket,
+            session,
+            clock,
+            audio_rx,
+            stop_rx,
+            |event| emit_transcript(app, session_id, track, clock, last_final_end_ms, event),
+            FINALIZE_TIMEOUT,
+            google::INACTIVITY_TIMEOUT,
+        )
+        .await;
+    }
     stream_connected(
         socket,
         session,
@@ -404,6 +426,43 @@ async fn stream_one_session(
         FINALIZE_TIMEOUT,
     )
     .await
+}
+
+fn connection_request(
+    session: &RealtimeSession,
+) -> Result<tokio_tungstenite::tungstenite::http::Request<()>, &'static str> {
+    let endpoint =
+        url::Url::parse(&session.websocket_url).map_err(|_| "invalid provider endpoint")?;
+    if endpoint.scheme() != "wss"
+        || !endpoint.username().is_empty()
+        || endpoint.password().is_some()
+    {
+        return Err("provider endpoint must use wss without embedded credentials");
+    }
+    let scheme = match session.provider.as_str() {
+        "openai" => "Bearer",
+        "google" => {
+            if endpoint.query().is_some() || endpoint.fragment().is_some() {
+                return Err("Google endpoint must not contain a query or fragment");
+            }
+            if session.sample_rate != google::SAMPLE_RATE || session.audio_format != "audio/pcm" {
+                return Err("Google transcription requires mono PCM16 at 16000 Hz");
+            }
+            "Token"
+        }
+        _ => return Err("unsupported transcription provider"),
+    };
+    let mut request = session
+        .websocket_url
+        .as_str()
+        .into_client_request()
+        .map_err(|_| "invalid provider endpoint")?;
+    let mut authorization = format!("{scheme} {}", session.client_secret)
+        .parse::<tokio_tungstenite::tungstenite::http::HeaderValue>()
+        .map_err(|_| "credential is not a valid header value")?;
+    authorization.set_sensitive(true);
+    request.headers_mut().insert("Authorization", authorization);
+    Ok(request)
 }
 
 async fn stream_connected<S, F>(
@@ -1211,5 +1270,40 @@ mod tests {
             audio_format: "audio/pcm".to_string(),
             sample_rate,
         }
+    }
+
+    #[test]
+    fn provider_authentication_uses_sensitive_headers_without_query_credentials() {
+        let openai = test_session(TARGET_SAMPLE_RATE);
+        let request = connection_request(&openai).unwrap();
+        assert_eq!(request.headers()["Authorization"], "Bearer ek_test");
+        assert!(request.headers()["Authorization"].is_sensitive());
+
+        let mut google = test_session(16_000);
+        google.provider = "google".to_string();
+        let request = connection_request(&google).unwrap();
+        assert_eq!(request.headers()["Authorization"], "Token ek_test");
+        assert!(request.headers()["Authorization"].is_sensitive());
+        assert!(request.uri().query().is_none());
+        assert!(!format!("{request:?}").contains("ek_test"));
+
+        google.websocket_url.push_str("?access_token=secret");
+        assert!(connection_request(&google).is_err());
+    }
+
+    #[test]
+    fn unsupported_providers_and_mismatched_google_audio_fail_before_connecting() {
+        let mut session = test_session(TARGET_SAMPLE_RATE);
+        session.provider = "unknown".to_string();
+        assert_eq!(
+            connection_request(&session).unwrap_err(),
+            "unsupported transcription provider"
+        );
+        session.provider = "google".to_string();
+        assert!(connection_request(&session).is_err());
+        session.sample_rate = 16_000;
+        assert!(connection_request(&session).is_ok());
+        session.audio_format = "audio/wav".to_string();
+        assert!(connection_request(&session).is_err());
     }
 }

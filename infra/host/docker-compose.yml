@@ -394,6 +394,15 @@ services:
       # application.yml declares for this property, silently disabling STT on a host that has a
       # perfectly good OPENAI_API_KEY.
       NORA_STT_OPENAI_API_KEY:
+      NORA_STT_PROVIDER: ${NORA_STT_PROVIDER:-openai}
+      NORA_STT_DEFAULT_LANGUAGE: ${NORA_STT_DEFAULT_LANGUAGE:-pt-BR}
+      NORA_STT_GOOGLE_API_KEY:
+      NORA_STT_GOOGLE_BASE_URL: ${NORA_STT_GOOGLE_BASE_URL:-https://generativelanguage.googleapis.com/v1beta}
+      NORA_STT_GOOGLE_REALTIME_URL: ${NORA_STT_GOOGLE_REALTIME_URL:-wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained}
+      NORA_STT_GOOGLE_MODEL: ${NORA_STT_GOOGLE_MODEL:-gemini-3.5-transcribe-live}
+      NORA_STT_GOOGLE_NEW_SESSION_TTL_SECONDS: ${NORA_STT_GOOGLE_NEW_SESSION_TTL_SECONDS:-600}
+      NORA_STT_GOOGLE_SESSION_TTL_SECONDS: ${NORA_STT_GOOGLE_SESSION_TTL_SECONDS:-1800}
+      NORA_STT_GOOGLE_REQUEST_TIMEOUT_MS: ${NORA_STT_GOOGLE_REQUEST_TIMEOUT_MS:-5000}
       NORA_STT_MODEL: ${NORA_STT_MODEL:-gpt-live-transcribe}
       NORA_STT_SESSIONS_PER_MINUTE: ${NORA_STT_SESSIONS_PER_MINUTE:-12}
 

@@ -72,7 +72,7 @@ impl std::fmt::Debug for RealtimeSession {
         f.debug_struct("RealtimeSession")
             .field("client_secret", &"<redacted>")
             .field("expires_at", &self.expires_at)
-            .field("websocket_url", &self.websocket_url)
+            .field("websocket_url", &self.safe_endpoint())
             .field("provider", &self.provider)
             .field("model", &self.model)
             .field("language", &self.language)
@@ -83,6 +83,17 @@ impl std::fmt::Debug for RealtimeSession {
 }
 
 impl RealtimeSession {
+    fn safe_endpoint(&self) -> String {
+        let Ok(mut endpoint) = url::Url::parse(&self.websocket_url) else {
+            return "<invalid>".to_string();
+        };
+        endpoint.set_query(None);
+        endpoint.set_fragment(None);
+        let _ = endpoint.set_username("");
+        let _ = endpoint.set_password(None);
+        endpoint.to_string()
+    }
+
     /// Seconds left before the credential can no longer open a connection, minus the slack.
     /// `None` when `expires_at` does not parse — unknown, not expired.
     pub fn usable_seconds(&self) -> Option<i64> {
@@ -308,6 +319,18 @@ mod tests {
             printed
         );
         assert!(printed.contains("<redacted>"));
+    }
+
+    #[test]
+    fn debug_redacts_credentials_embedded_in_an_endpoint() {
+        let mut session = session("2099-01-01T00:00:00Z");
+        session.websocket_url = "wss://username:password@provider.example/realtime?access_token=query_secret#fragment_secret".to_string();
+        let printed = format!("{session:?}");
+        for secret in ["username", "password", "query_secret", "fragment_secret"] {
+            assert!(!printed.contains(secret));
+        }
+        session.websocket_url = "invalid query_secret".to_string();
+        assert!(!format!("{session:?}").contains("query_secret"));
     }
 
     #[test]

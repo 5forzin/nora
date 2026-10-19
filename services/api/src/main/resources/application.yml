@@ -189,7 +189,16 @@ nora:
     # Consequence that must not be softened anywhere it is summarised: with an ephemeral credential
     # the audio never crosses NORA's infrastructure, so the usage rows this endpoint writes count
     # SESSIONS ISSUED, not minutes transcribed. The operator console must label them as estimates.
-    default-language: ${NORA_STT_DEFAULT_LANGUAGE:pt}
+    provider: ${NORA_STT_PROVIDER:openai}
+    default-language: ${NORA_STT_DEFAULT_LANGUAGE:pt-BR}
+    google:
+      api-key: ${NORA_STT_GOOGLE_API_KEY:${GEMINI_API_KEY:}}
+      base-url: ${NORA_STT_GOOGLE_BASE_URL:https://generativelanguage.googleapis.com/v1beta}
+      realtime-url: ${NORA_STT_GOOGLE_REALTIME_URL:wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained}
+      model: ${NORA_STT_GOOGLE_MODEL:gemini-3.5-transcribe-live}
+      new-session-ttl-seconds: ${NORA_STT_GOOGLE_NEW_SESSION_TTL_SECONDS:600}
+      session-ttl-seconds: ${NORA_STT_GOOGLE_SESSION_TTL_SECONDS:1800}
+      request-timeout-ms: ${NORA_STT_GOOGLE_REQUEST_TIMEOUT_MS:5000}
     openai:
       # Falls back to the shared OPENAI_API_KEY so a dev environment needs one variable, not two.
       # Empty = STT disabled: the endpoint answers 503 STT_NOT_CONFIGURED, which is visible, instead
@@ -201,9 +210,8 @@ nora:
       realtime-url: ${NORA_STT_REALTIME_URL:wss://api.openai.com/v1/realtime?intent=transcription}
       model: ${NORA_STT_MODEL:gpt-live-transcribe}
       audio-format: ${NORA_STT_AUDIO_FORMAT:audio/pcm}
-      # MUST match `TARGET_SAMPLE_RATE` in apps/desktop/src-tauri/src/stt.rs. A mismatch does not
-      # fail anywhere — it plays the audio to the provider at the wrong speed and transcribes as
-      # gibberish.
+      # OpenAI must match the desktop's 24000 Hz capture; its adapter does not resample.
+      # The Google adapter separately converts capture audio to 16000 Hz.
       sample-rate: ${NORA_STT_SAMPLE_RATE:24000}
       # EMPTY, and that is the working value — not a disabled feature.
       #
