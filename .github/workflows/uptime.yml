@@ -22,6 +22,8 @@
 #   * One vantage point, one request. It cannot distinguish "the site is down" from "GitHub's
 #     egress cannot reach Cloudflare right now", which is why a single failure only comments and
 #     the issue stays open for a human to read rather than paging anyone.
+#   * When repository Issues are disabled, the report stays in the run summary and an
+#     unsuccessful probe fails the workflow instead of attempting an issue notification.
 #
 # It is still worth more than the Grafana rules for this one failure, because it is outside.
 name: uptime
@@ -83,12 +85,33 @@ jobs:
             echo "REPORT_EOF"
           } >> "$GITHUB_OUTPUT"
 
-          # Never fail the step: a red X on a schedule is a notification nobody configured.
-          # The issue below is the notification.
+          {
+            echo "## Availability"
+            printf '%s\n' "$report"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Defer failure until the report has been recorded and notification is attempted.
           exit 0
 
+      - name: Check whether repository Issues are enabled
+        id: issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          enabled=$(gh api "repos/$GH_REPO" --jq '.has_issues')
+          case "$enabled" in
+            true|false) echo "enabled=$enabled" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::Could not determine whether repository Issues are enabled."; exit 1 ;;
+          esac
+          if [ "$enabled" = "false" ]; then
+            echo "::warning::Repository Issues are disabled; availability is reported in this run."
+            printf '\nIssue notifications are disabled in this repository.\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Open or update the outage issue
-        if: steps.probe.outputs.failed == '1'
+        if: steps.probe.outputs.failed == '1' && steps.issues.outputs.enabled == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -123,7 +146,7 @@ jobs:
           fi
 
       - name: Close the outage issue once it answers again
-        if: steps.probe.outputs.failed == '0'
+        if: steps.probe.outputs.failed == '0' && steps.issues.outputs.enabled == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -146,3 +169,9 @@ jobs:
             gh issue comment "$NUM" --body "Answering again as of $(date -u '+%Y-%m-%d %H:%M:%SZ'). Run: $RUN_URL"
             gh issue close "$NUM"
           fi
+
+      - name: Fail an outage when issue notifications are disabled
+        if: steps.probe.outputs.failed == '1' && steps.issues.outputs.enabled == 'false'
+        run: |
+          echo "::error::A public endpoint is unavailable. See the availability report in the run summary."
+          exit 1
