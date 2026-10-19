@@ -80,7 +80,8 @@ chrono = { version = "0.4", features = ["serde"] }
 # no producer and no consumer left — the login form that wrote the tokens went with the local UI
 # in PR #465. Both went in audit #15, and the dependency with them: an application that does not
 # store secrets should not link the API that stores them.
-tauri-plugin-updater = "2"
+# v2 updates use signed .exe/.msi installers, so the legacy v1 ZIP extractor is unnecessary.
+tauri-plugin-updater = { version = "2", default-features = false, features = ["rustls-tls"] }
 tauri-plugin-process = "2"
 
 # One target section, because there is one target. The Linux section here used to pull in
