@@ -826,13 +826,8 @@ jobs:
       # A signing regression is not platform-specific anyway: it comes from the key or from
       # the config, and both were always shared across the matrix.
       #
-      # `choco` is preinstalled on windows-latest and ships minisign; `shell: bash` is
-      # explicit because the rest of the script is bash and Windows runners default to pwsh.
-      # HONEST LIMIT: this port has not been exercised. `desktop-bundle` does not run on
-      # `pull_request` (see the `if:` on the job), so the first push to main that touches
-      # desktop code is what proves it. If choco ever stops carrying the package, replace
-      # the install with a pinned, checksum-verified download the way `supply-chain` does
-      # for cargo-deny — do not drop the step.
+      # Download the official Windows binary with a pinned checksum, as supply-chain does
+      # for cargo-deny. Chocolatey's minisign feed returned 503/504 and left no verifier.
       #
       # This does NOT verify `tauri-action`, which is what `desktop-release.yml` uses to create
       # the release and publish `latest.json`. That action runs on a `desktop-v*` tag and on no
@@ -840,15 +835,23 @@ jobs:
       - name: Verify the updater signatures against the shipped public key
         working-directory: apps/desktop
         shell: bash
+        env:
+          MINISIGN_VERSION: '0.12'
+          MINISIGN_SHA256: '37b600344e20c19314b2e82813db2bfdcc408b77b876f7727889dbd46d539479'
         run: |
           set -euo pipefail
-          choco install minisign -y --no-progress
 
           # Scratch files go in a RELATIVE directory, not /tmp. Git Bash rewrites
           # POSIX-looking arguments into Windows paths before handing them to a native
           # .exe, and minisign.exe is native — a relative path sidesteps that translation
           # entirely instead of relying on it.
           mkdir -p .sigcheck
+          curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors -o .sigcheck/minisign.zip \
+            "https://github.com/jedisct1/minisign/releases/download/${MINISIGN_VERSION}/minisign-${MINISIGN_VERSION}-win64.zip"
+          echo "${MINISIGN_SHA256}  .sigcheck/minisign.zip" | sha256sum -c -
+          unzip -q .sigcheck/minisign.zip -d .sigcheck
+          minisign=.sigcheck/minisign-win64/x86_64/minisign.exe
+
           # Native jq emits CRLF on Windows; GNU base64 rejects carriage returns.
           jq -r '.plugins.updater.pubkey' src-tauri/tauri.conf.json | tr -d '\r\n' | base64 -d > .sigcheck/nora.pub
           head -1 .sigcheck/nora.pub | grep -q 'minisign public key' || {
@@ -875,7 +878,7 @@ jobs:
             else
               cp "$sig" .sigcheck/sig
             fi
-            minisign -V -p .sigcheck/nora.pub -x .sigcheck/sig -m "$artifact"
+            "$minisign" -V -p .sigcheck/nora.pub -x .sigcheck/sig -m "$artifact"
             echo "verified $(basename "$artifact")"
           done
 
