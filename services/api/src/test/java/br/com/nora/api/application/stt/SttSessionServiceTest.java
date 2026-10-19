@@ -80,6 +80,7 @@ class SttSessionServiceTest {
         String lastLanguage;
         int calls;
         RuntimeException failure;
+        String provider = "openai";
 
         @Override
         public RealtimeSttSession openSession(String language) {
@@ -92,21 +93,21 @@ class SttSessionServiceTest {
                     "ek_secret",
                     Instant.parse("2026-08-17T12:00:00Z"),
                     "wss://provider.example/realtime",
-                    "openai",
-                    "gpt-live-transcribe",
+                    provider(),
+                    model(),
                     language,
                     "audio/pcm",
-                    24_000);
+                    "google".equals(provider) ? 16_000 : 24_000);
         }
 
         @Override
         public String provider() {
-            return "openai";
+            return provider;
         }
 
         @Override
         public String model() {
-            return "gpt-live-transcribe";
+            return "google".equals(provider) ? "gemini-3.5-transcribe-live" : "gpt-live-transcribe";
         }
     }
 
@@ -134,6 +135,47 @@ class SttSessionServiceTest {
 
         service.openSession(USER, TENANT, "123");
         assertThat(broker.lastLanguage).isEqualTo("pt");
+    }
+
+    @Test
+    void googleRetainsCanonicalRegionalAndScriptHints() {
+        StubBroker broker = new StubBroker();
+        broker.provider = "google";
+        SttSessionService service = service(broker, props(10), new RecordingUsageRecorder());
+        for (String language : List.of("pt-BR", "zh-Hant-TW", "fr-CA")) {
+            service.openSession(USER, TENANT, language);
+            assertThat(broker.lastLanguage).isEqualTo(language);
+        }
+        service.openSession(USER, TENANT, "en_US");
+        assertThat(broker.lastLanguage).isEqualTo("en-US");
+    }
+
+    @Test
+    void eachProviderNormalizesTheConfiguredFallback() {
+        StubBroker broker = new StubBroker();
+        SttProperties config = new SttProperties("pt-BR", null, null);
+        SttSessionService service = service(broker, config, new RecordingUsageRecorder());
+        service.openSession(USER, TENANT, "123");
+        assertThat(broker.lastLanguage).isEqualTo("pt");
+        broker.provider = "google";
+        service.openSession(USER, TENANT, "123");
+        assertThat(broker.lastLanguage).isEqualTo("pt-BR");
+        service.openSession(USER, TENANT, null);
+        assertThat(broker.lastLanguage).isEqualTo("pt-BR");
+    }
+
+    @Test
+    void googleIssuanceUsesItsOwnTelemetryIdentity() {
+        RecordingUsageRecorder usage = new RecordingUsageRecorder();
+        StubBroker broker = new StubBroker();
+        broker.provider = "google";
+        service(broker, props(10), usage).openSession(USER, TENANT, "pt-BR");
+        assertThat(usage.calls).hasSize(1);
+        assertThat(usage.calls.getFirst().provider()).isEqualTo("google");
+        assertThat(usage.calls.getFirst().model()).isEqualTo("gemini-3.5-transcribe-live");
+        assertThat(usage.calls.getFirst().promptTokens()).isZero();
+        assertThat(usage.calls.getFirst().completionTokens()).isZero();
+        assertThat(usage.calls.getFirst().costUsdHint()).isNull();
     }
 
     /**

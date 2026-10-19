@@ -18,10 +18,9 @@ import java.time.Instant;
  * @param websocketUrl provider endpoint to connect to, resolved server-side
  * @param provider provider id, for the client's error messages
  * @param model transcription model the session was created with
- * @param language primary language subtag actually sent to the provider
+ * @param language normalized provider language hint; Google retains regional BCP-47 subtags
  * @param audioFormat provider media type of the PCM to stream
- * @param sampleRate sample rate in Hz the client must send; it matches the capture pipeline's
- *     target
+ * @param sampleRate sample rate in Hz the client must match in its streamed PCM audio
  */
 public record SttSessionResponse(
         String clientSecret,

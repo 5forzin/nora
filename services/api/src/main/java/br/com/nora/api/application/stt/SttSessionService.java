@@ -4,6 +4,7 @@ import br.com.nora.api.application.platform.UsageRecorder;
 import br.com.nora.api.application.stt.ports.RealtimeSttBroker;
 import br.com.nora.api.infrastructure.stt.SttProperties;
 import br.com.nora.api.infrastructure.stt.SttRateLimiter;
+import java.util.IllformedLocaleException;
 import java.util.Locale;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -83,28 +84,36 @@ public class SttSessionService {
     }
 
     /**
-     * The desktop speaks BCP-47 ({@code pt-BR}); the provider's transcription config takes an
-     * ISO-639-1 primary subtag. Sending the full tag through has been accepted silently by
-     * providers before and then ignored, which reads as "language hint did nothing" rather than as
-     * an error, so the narrowing happens here and once.
+     * Google accepts regional BCP-47 hints; OpenAI retains its primary-language contract.
      *
      * <p>An unusable value degrades to the configured default instead of failing the request: a
      * recording that starts with the wrong language hint is recoverable, one that does not start is
      * not.
      */
     private String normaliseLanguage(String requested) {
+        boolean regional = "google".equals(broker.provider());
         String candidate =
                 (requested == null || requested.isBlank()) ? props.defaultLanguage() : requested;
-        String primary = candidate.trim().toLowerCase(Locale.ROOT).split("[-_]", 2)[0];
-        boolean usable =
-                primary.length() >= 2
-                        && primary.length() <= 3
-                        && primary.chars().allMatch(Character::isLetter);
-        if (!usable) {
-            LOG.warn("STT session: unusable language {} — falling back to the default", requested);
-            return props.defaultLanguage();
+        String normalised = languageTag(candidate, regional);
+        if (normalised != null) {
+            return normalised;
         }
-        return primary;
+        LOG.warn("STT session: unusable language hint; using the configured default");
+        String fallback = languageTag(props.defaultLanguage(), regional);
+        return fallback != null ? fallback : (regional ? "pt-BR" : "pt");
+    }
+
+    private static String languageTag(String candidate, boolean regional) {
+        try {
+            Locale locale =
+                    new Locale.Builder().setLanguageTag(candidate.trim().replace('_', '-')).build();
+            if (!locale.getLanguage().matches("[a-z]{2,3}")) {
+                return null;
+            }
+            return regional ? locale.toLanguageTag() : locale.getLanguage();
+        } catch (IllformedLocaleException e) {
+            return null;
+        }
     }
 
     private static Integer elapsedMs(long startedAtNanos) {

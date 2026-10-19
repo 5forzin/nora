@@ -110,6 +110,7 @@ repository does not have.
 | [0052](0052-core-enterprise-capability-boundary.md) | Enforce the Core and Enterprise capability boundary | accepted (partially supersedes 0038; tenant isolation and shared chat/RAG remain available to every plan) |
 | [0053](0053-structured-import-and-commercial-evidence.md) | Structured transcript import and evidence-backed commercial fields | accepted (extends 0052; preserves analysis privacy and declared participant identity) |
 | [0054](0054-transcript-quality-and-live-director-flow.md) | Measurable transcript quality, live director workflow and bounded provider comparison | accepted (extends 0053; preserves plan and privacy boundaries) |
+| [0055](0055-google-live-transcription.md) | Google Live transcription behind the existing session broker | accepted (supersedes the single-provider and capture/wire-rate assumptions in 0045) |
 
 Superseded portions do not invalidate a record's surviving decisions. Read the successor named
 in the status column before applying an older scope or infrastructure statement.

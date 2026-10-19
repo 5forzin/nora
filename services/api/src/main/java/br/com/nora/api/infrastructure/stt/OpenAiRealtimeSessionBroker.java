@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
@@ -34,11 +35,10 @@ import org.springframework.stereotype.Component;
  * <p>Uses {@code java.net.http.HttpClient} rather than {@code WebClient}, following {@code
  * HttpEmbeddingClient}: one blocking call on a request thread, with an explicit timeout.
  *
- * <p>There is no {@code @ConditionalOnProperty} here, unlike the Azure broker this is modelled on.
- * That annotation existed to switch between two live vendors; there is one, and a conditional with
- * a single value is a mechanism that decides nothing.
+ * <p>OpenAI remains the default provider for existing deployments and native clients.
  */
 @Component
+@ConditionalOnProperty(name = "nora.stt.provider", havingValue = "openai", matchIfMissing = true)
 public class OpenAiRealtimeSessionBroker implements RealtimeSttBroker {
 
     private static final Logger LOG = LoggerFactory.getLogger(OpenAiRealtimeSessionBroker.class);

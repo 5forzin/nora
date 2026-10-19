@@ -79,6 +79,11 @@ ADR *decided*, and point at the backlog for what is *built*.
 
 ## Stack
 
+Google Live transcription is defined by [ADR 0055](docs/adr/0055-google-live-transcription.md).
+`NORA_STT_PROVIDER` selects the server broker; Desktop 0.2.7 adds the Google protocol. Capture
+and the recording clock remain at 24 kHz; the Google adapter streams converted 16 kHz PCM.
+Provider keys stay on the server, and session-issuance telemetry remains an estimate.
+
 Every row below was read out of the file named beside it. Change the manifest, change this table.
 
 | Component | Version | Verify in |

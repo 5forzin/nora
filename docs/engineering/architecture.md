@@ -768,7 +768,7 @@ rediscovered: the **first** trigger in `CATALOG` is the one `/flows/new` drops o
 and the catalog must not drift from what the engine can actually run, because a block the backend
 rejects is a flow the user cannot save.
 
-## §14. Live transcription: cloud STT behind an ephemeral session token (ADR 0039, ADR 0045)
+## §14. Live transcription: cloud STT behind an ephemeral session token (ADR 0039, ADR 0045, ADR 0055)
 
 This is a delivered path. It is written here rather than only in the ADRs because the decision has
 an architectural consequence — where the audio goes — that belongs beside the rest of the flows.
@@ -779,12 +779,20 @@ The desktop streams to the provider's realtime API. `apps/desktop/src-tauri/src/
 fetches a short-lived session credential from `POST /stt/sessions`; `stt_cloud.rs` opens one
 WebSocket per track behind the `SttBackend` trait in `stt.rs`. On the server,
 `SttController` → `SttSessionService` → `RealtimeSttBroker` (port) →
-`OpenAiRealtimeSessionBroker` (adapter) is the only code that reads the provider key.
+the selected OpenAI or Google broker (adapter) is the only code that reads the provider key.
 
 The provider payload uses `languages` for `gpt-live-transcribe` and `language` for legacy models.
 The desktop accumulates deltas per item, commits audio after speech pauses (or 15 seconds), and
 waits for completed events before `stop_recording` returns. Finalization is bounded to 10 seconds;
 an unfinished provider response is reported as an STT error.
+
+With `NORA_STT_PROVIDER=google`, the broker mints a single-use token constrained to
+`gemini-3.5-transcribe-live`, text-only output and the input language. The Desktop connects to
+Google's constrained WebSocket endpoint with an ephemeral `Authorization: Token` header,
+waits for setup acknowledgment, and streams 16 kHz PCM converted from its 24 kHz capture.
+Interim input transcription replaces the preview; final input transcription commits an
+utterance. Stop drains queued audio before `audioStreamEnd` and finalization. The existing
+OpenAI adapter remains the default for compatibility. See ADR 0055 for the provider boundary.
 
 The on-device engine is gone: `stt_local.rs`, `whisper_model.rs`, `whisper-rs`, `sha2`, the whole
 Cargo `[features]` section, the `NORA_STT_BACKEND` selector and the `plugins.nora.whisperModel`
@@ -799,21 +807,21 @@ ADR 0035, and ADR 0039 supersedes it.
 
 ### What ADR 0039 decided and ADR 0045 built
 
-Transcription is a call to OpenAI's real-time transcription API, and the desktop talks to the
+Transcription uses the configured provider's real-time API, and the desktop talks to the
 provider **directly**:
 
 ```
                        1. POST /stt/sessions
                           (authenticated, tenant-scoped)
   ┌──────────────┐  ───────────────────────────────▶  ┌──────────────┐
-  │   Desktop    │                                    │  NORA API    │  OpenAI key
+  │   Desktop    │                                    │  NORA API    │  provider key
   │  (Tauri/Rust)│  ◀───────────────────────────────  │  (Spring)    │  lives here,
   └──────┬───────┘     2. short-lived client secret   └──────────────┘  never leaves
          │                (one session, minutes)
          │  3. audio over WebSocket, direct
          ▼
   ┌──────────────┐
-  │   OpenAI     │      NORA's infrastructure is NOT on this path
+  │   Provider   │      NORA's infrastructure is NOT on this path
   └──────┬───────┘
          │  4. partial / final text
          ▼
@@ -878,7 +886,7 @@ is a different privacy statement and needs its own decision.
 The debts ADR 0039 accepts, in one place: offline transcription is gone (no network, no
 transcription); NORA pays per minute again; a WebSocket streaming client in Rust is new code with a
 new failure surface, including reconnection and mid-meeting credential expiry — a failure class the
-local engine had eliminated; and an OpenAI outage now stops a meeting, where before only a NORA
+local engine had eliminated; and a transcription-provider outage stops a meeting, where before only a NORA
 outage did. In exchange the 190 MB first-run model download and the 4-core/8 GB floor disappear, and
 one heavyweight native dependency leaves the desktop build.
 
@@ -896,10 +904,9 @@ ADR 0039 left four things open, and ADR 0045 closed them:
 - **Attribution is recorded as zeros.** `UsageRecorder.recordExternal` is called with `service =
   "stt"`, the caller's tenant, zero tokens and a null cost hint, with a test asserting exactly
   that. It counts sessions issued; it cannot count minutes NORA never carried.
-- **The capture pipeline targets 24 kHz** through the single constant `stt::TARGET_SAMPLE_RATE`,
-  which is what the provider's session takes. It must match `nora.stt.openai.sample-rate` on the
-  API; a mismatch fails nowhere and transcribes as nonsense, so the constant is unit-asserted, the
-  client warns on divergence, and the client declares the rate it actually sends on every connect.
+- **The capture pipeline targets 24 kHz** through `stt::TARGET_SAMPLE_RATE`. OpenAI receives
+  that rate. The Google adapter converts to 16 kHz without changing the recording clock;
+  its wire format and sample rate must match the server's session metadata (ADR 0055).
 
 ## §15. End-to-end flow "login → upload → analysis → result"
 

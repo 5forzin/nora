@@ -3999,8 +3999,8 @@ components:
         language:
           type: string
           description: |
-            BCP-47 tag as the desktop knows it. Narrowed to the ISO-639-1 primary subtag before it
-            reaches the provider. Absent or unusable falls back to `nora.stt.default-language`.
+            BCP-47 tag as the desktop knows it. Google preserves the regional tag; OpenAI uses
+            the primary language subtag. Absent or unusable falls back to `nora.stt.default-language`.
           example: pt-BR
     SttSessionResponse:
       type: object
@@ -4011,7 +4011,7 @@ components:
           description: |
             Short-lived credential presented to the provider over the WebSocket. Treat it as a
             secret: it is not renewable, it is scoped to one session, and it must not be persisted.
-          example: ek_68af296e8e408191a1120ab6383263c2
+          example: auth_tokens/example
         expiresAt:
           type: string
           format: date-time
@@ -4022,21 +4022,20 @@ components:
           type: string
           description: Provider endpoint to connect to. Resolved server-side so a provider endpoint
             move does not need a desktop release.
-          example: wss://api.openai.com/v1/realtime?intent=transcription
-        provider: { type: string, example: openai }
-        model: { type: string, example: gpt-live-transcribe }
+          example: wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained
+        provider: { type: string, enum: [openai, google], example: google }
+        model: { type: string, example: gemini-3.5-transcribe-live }
         language:
           type: string
-          description: Primary language subtag actually sent to the provider.
-          example: pt
+          description: Language hint sent to the selected provider.
+          example: pt-BR
         audioFormat: { type: string, example: audio/pcm }
         sampleRate:
           type: integer
           description: |
-            Sample rate in Hz the client must stream. It matches the desktop capture pipeline's
-            target (`TARGET_SAMPLE_RATE`); a mismatch does not fail anywhere, it just transcribes
-            as gibberish.
-          example: 24000
+            Sample rate in Hz the client must stream. The Desktop captures at 24000 Hz and
+            converts to 16000 Hz for Google; OpenAI receives the original 24000 Hz stream.
+          example: 16000
     McpJsonRpcRequest:
       type: object
       description: |
