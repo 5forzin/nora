@@ -1,6 +1,7 @@
 package br.com.nora.api.application.ports;
 
 import br.com.nora.api.domain.identity.McpToken;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -18,6 +19,9 @@ import java.util.UUID;
 public interface McpTokenRepository {
 
     McpToken save(McpToken token);
+
+    /** Updates only usage metadata; a stale authentication snapshot must never undo revocation. */
+    void updateLastUsedAt(UUID id, UUID tenantId, UUID userId, Instant usedAt);
 
     /** Lookup by hash for the edge exchange. Returns revoked and expired tokens too. */
     Optional<McpToken> findByTokenHash(String tokenHash);

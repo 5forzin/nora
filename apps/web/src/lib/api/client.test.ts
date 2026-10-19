@@ -14,7 +14,7 @@
  * `skipAuth`. Which wrapper is used is an implementation detail of the test; the assertion is
  * always about `request`.
  *
- * jsdom, not node, and that is load-bearing. `serverCookieHeader` branches on
+ * jsdom, not node, and that is load-bearing. `apiRequestHeaders` branches on
  * `typeof window !== 'undefined'`: with a window it returns `{}` immediately, which is the
  * browser path this file describes. Without one it dynamically imports `next/headers` and
  * relies on falling into a `catch` — a different code path, reached by accident, that would
@@ -67,9 +67,14 @@ function respond(
 }
 
 const fetchMock = vi.fn<(url: string, init: RequestInit) => Promise<unknown>>();
+const csrfFetchMock = vi.fn();
 
 beforeEach(() => {
-  vi.stubGlobal('fetch', fetchMock);
+  csrfFetchMock.mockReset().mockImplementation(async () => new Response(JSON.stringify({
+    token: 'csrf-current-session', headerName: 'X-XSRF-TOKEN',
+  })));
+  vi.stubGlobal('fetch', (url: string, init: RequestInit) => url === `${BASE}/auth/csrf`
+    ? csrfFetchMock(url, init) : fetchMock(url, init));
   fetchMock.mockReset();
   sharedRefresh.mockReset();
   handleSessionExpired.mockReset();
@@ -127,6 +132,11 @@ describe('request — the call it makes', () => {
     await updateMe({ displayName: 'Ana' });
 
     expect(headersOf(0)['Content-Type']).toBe('application/json');
+    expect(headersOf(0)['X-XSRF-TOKEN']).toBe('csrf-current-session');
+    expect(headersOf(0).Cookie).toBeUndefined();
+    expect(csrfFetchMock).toHaveBeenCalledWith(`${BASE}/auth/csrf`, expect.objectContaining({
+      credentials: 'include', cache: 'no-store', redirect: 'error',
+    }));
     expect(initOf(0).method).toBe('PATCH');
   });
 
@@ -140,6 +150,7 @@ describe('request — the call it makes', () => {
 
     expect(headersOf(0)['Content-Type']).toBeUndefined();
     expect(initOf(0).body).toBeInstanceOf(FormData);
+    expect(headersOf(0)['X-XSRF-TOKEN']).toBe('csrf-current-session');
   });
 
   it('lets a caller-supplied header through', async () => {
@@ -151,6 +162,13 @@ describe('request — the call it makes', () => {
     // `X-NORA-Client: web` is how the backend decides to return the session only in httpOnly
     // cookies instead of in the response body. Dropping it silently downgrades an XSS defence.
     expect(headersOf(0)['X-NORA-Client']).toBe('web');
+  });
+
+  it('does not submit a mutation if the CSRF bootstrap fails', async () => {
+    csrfFetchMock.mockResolvedValue(new Response(null, { status: 503 }));
+    const { updateMe } = await loadClient();
+    await expect(updateMe({ displayName: 'Ana' })).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('preserves import identifiers and the idempotency key in multipart uploads', async () => {
@@ -405,6 +423,8 @@ describe('streamChat — the 401 interceptor on the chat path', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe('/api/chat');
     expect(initOf(0)).toMatchObject({ method: 'POST', credentials: 'include', cache: 'no-store' });
+    expect(headersOf(0)['X-XSRF-TOKEN']).toBe('csrf-current-session');
+    expect(headersOf(0).Cookie).toBeUndefined();
     expect(JSON.parse(initOf(0).body as string)).toEqual(body);
   });
 
@@ -491,6 +511,7 @@ describe('searchMeetings — the PII gate on the query', () => {
     await searchMeetings('contrato do cliente ana@example.com');
 
     const url = fetchMock.mock.calls[0][0];
+    expect(headersOf(0)['X-XSRF-TOKEN']).toBe('csrf-current-session');
     expect(url).not.toContain('ana');
     expect(decodeURIComponent(url)).toContain('[[EMAIL_1]]');
   });

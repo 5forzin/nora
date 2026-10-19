@@ -41,31 +41,33 @@ function field(value: unknown): string {
  * sends an ARRAY of `{type, body}` with camelCase keys. The policy declares both because browser
  * support is still split, so this normalises rather than picking a side.
  */
-function describe(payload: unknown): string[] {
-  const lines: string[] = [];
+type Report = { directive: string; blocked: string; document: string };
+
+function describe(payload: unknown): Report[] {
+  const reports: Report[] = [];
 
   const fromLegacy = (payload as { "csp-report"?: Record<string, unknown> })?.["csp-report"];
   if (fromLegacy) {
-    lines.push(
-      `directive=${field(fromLegacy["violated-directive"])} ` +
-        `blocked=${field(fromLegacy["blocked-uri"])} ` +
-        `document=${field(fromLegacy["document-uri"])}`,
-    );
+    reports.push({
+      directive: field(fromLegacy["violated-directive"]),
+      blocked: field(fromLegacy["blocked-uri"]),
+      document: field(fromLegacy["document-uri"]),
+    });
   }
 
   if (Array.isArray(payload)) {
     for (const entry of payload) {
       const body = (entry as { type?: string; body?: Record<string, unknown> })?.body;
       if (!body) continue;
-      lines.push(
-        `directive=${field(body.effectiveDirective)} ` +
-          `blocked=${field(body.blockedURL)} ` +
-          `document=${field(body.documentURL)}`,
-      );
+      reports.push({
+        directive: field(body.effectiveDirective),
+        blocked: field(body.blockedURL),
+        document: field(body.documentURL),
+      });
     }
   }
 
-  return lines;
+  return reports;
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -75,8 +77,14 @@ export async function POST(req: Request): Promise<Response> {
   try {
     const raw = await req.text();
     if (raw.length > MAX_REPORT_BYTES) return new Response(null, { status: 204 });
-    const lines = describe(JSON.parse(raw) as unknown);
-    for (const line of lines) console.warn(`[csp] ${line}`);
+    const reports = describe(JSON.parse(raw) as unknown);
+    for (const report of reports) {
+      // JSON escapes C0 controls; escape C1 and line separators as well for terminal/log viewers.
+      const serialized = JSON.stringify(report).replace(/[\u007f-\u009f\u2028\u2029]/g, (character) =>
+        `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`,
+      );
+      console.warn("[csp]", serialized);
+    }
   } catch {
     // Not JSON, or not a shape this understands. Nothing to log and nothing to say.
   }

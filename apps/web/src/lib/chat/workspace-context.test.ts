@@ -11,7 +11,7 @@ const ID = '12345678-9012-4012-8012-123456789012';
 const OTHER_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const API = {
   apiBaseUrl: 'https://api.test.invalid',
-  headers: { Cookie: 'nora_access=test-session', Accept: 'application/json' },
+  headers: { Cookie: 'nora_access=test-session; XSRF-TOKEN=csrf-session', Accept: 'application/json' },
   timeoutMs: 500,
 };
 

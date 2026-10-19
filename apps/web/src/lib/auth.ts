@@ -13,6 +13,8 @@
  *   refresh and the logout flow.
  */
 
+import { apiRequestHeaders } from './api/csrf';
+
 const USER_COOKIE = 'nora_user';
 
 /**
@@ -128,6 +130,7 @@ export async function clearSession(): Promise<void> {
   try {
     await fetch(`${API_BASE_URL}/auth/logout`, {
       method: 'POST',
+      headers: await apiRequestHeaders(API_BASE_URL, '/auth/logout', 'POST'),
       credentials: 'include',
       cache: 'no-store',
     });
@@ -211,6 +214,7 @@ export function sharedRefresh(): Promise<SharedRefreshResult> {
     try {
       const resp = await fetch(`${API_BASE_URL}/auth/refresh`, {
         method: 'POST',
+        headers: await apiRequestHeaders(API_BASE_URL, '/auth/refresh', 'POST'),
         credentials: 'include',
         cache: 'no-store',
       });

@@ -13,6 +13,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -49,6 +50,7 @@ public class SecurityConfig {
         "/auth/signup",
         "/auth/verify-email",
         "/auth/login",
+        "/auth/csrf",
         // Round 2 / Subphase 1.3 A: refresh has no valid JWT when it arrives (that is the point);
         // logout is idempotent — no token = no-op instead of 401.
         "/auth/refresh",
@@ -73,9 +75,18 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(
-            HttpSecurity http, JwtAuthenticationFilter jwtFilter) throws Exception {
+            HttpSecurity http,
+            JwtAuthenticationFilter jwtFilter,
+            CookieCsrfTokenRepository csrfTokens)
+            throws Exception {
         http.cors(c -> c.configurationSource(corsConfigurationSource()))
-                .csrf(csrf -> csrf.disable())
+                .csrf(
+                        csrf ->
+                                csrf.csrfTokenRepository(csrfTokens)
+                                        .csrfTokenRequestHandler(
+                                                new HeaderCsrfTokenRequestHandler())
+                                        .requireCsrfProtectionMatcher(
+                                                new CookieCsrfProtectionMatcher()))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(
                         auth ->
@@ -91,6 +102,22 @@ public class SecurityConfig {
                                         new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
+    }
+
+    @Bean
+    public CookieCsrfTokenRepository csrfTokenRepository(
+            @Value("${nora.auth.cookie-secure:false}") boolean secure,
+            @Value("${nora.auth.cookie-domain:}") String domain) {
+        CookieCsrfTokenRepository repository = new CookieCsrfTokenRepository();
+        repository.setCookiePath("/");
+        repository.setCookieCustomizer(
+                cookie -> {
+                    cookie.httpOnly(true).secure(secure).sameSite("Lax");
+                    if (!domain.isBlank()) {
+                        cookie.domain(domain);
+                    }
+                });
+        return repository;
     }
 
     @Bean

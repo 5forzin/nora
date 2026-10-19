@@ -61,8 +61,16 @@ if (!BASE || !TOKEN) {
 
 let passed = 0
 let failed = 0
-const ok = (msg, detail) => { passed++; console.log(`  PASS  ${msg}${detail ? ` — ${detail}` : ''}`) }
-const bad = (msg, detail) => { failed++; console.log(`  FAIL  ${msg}${detail ? ` — ${detail}` : ''}`) }
+// Response bodies can echo credentials or include meeting content. Diagnostics expose only
+// numeric protocol metadata, never arbitrary response strings, even after encoding.
+const metadata = (values = {}) => {
+  const fields = ['status', 'code', 'count']
+    .filter((key) => Number.isSafeInteger(values[key]))
+    .map((key) => `${key}=${values[key]}`)
+  return fields.length ? ` — ${fields.join(' ')}` : ''
+}
+const ok = (msg, values) => { passed++; console.log(`  PASS  ${msg}${metadata(values)}`) }
+const bad = (msg, values) => { failed++; console.log(`  FAIL  ${msg}${metadata(values)}`) }
 
 // EXITING AFTER A FETCH, on Windows. `process.exit()` called while undici still holds a
 // keep-alive socket aborts the process instead of exiting it:
@@ -130,21 +138,21 @@ if (init.status === 404) {
   await stop(2)
 }
 if (init.status !== 200) {
-  bad('initialize returns 200', `got ${init.status}`)
+  bad('initialize returns 200', { status: init.status })
 } else if (init.json?.error) {
-  bad('initialize succeeds', JSON.stringify(init.json.error))
+  bad('initialize succeeds', { code: init.json.error.code })
 } else {
   ok('initialize returns 200 with a result')
   const r = init.json?.result ?? {}
   r.protocolVersion === PREFERRED_VERSION
-    ? ok('server echoes the negotiated protocol version', r.protocolVersion)
-    : bad('server echoes the negotiated protocol version', `got ${r.protocolVersion}`)
+    ? ok('server echoes the negotiated protocol version')
+    : bad('server echoes the negotiated protocol version')
   r.serverInfo?.name
-    ? ok('serverInfo carries a name', r.serverInfo.name)
+    ? ok('serverInfo carries a name')
     : bad('serverInfo carries a name')
   r.capabilities?.tools
     ? ok('server advertises the tools capability')
-    : bad('server advertises the tools capability', JSON.stringify(r.capabilities))
+    : bad('server advertises the tools capability')
 }
 
 // The second supported revision has to work too, since ADR 0041's whole point is reaching the
@@ -155,8 +163,8 @@ const initOld = await rpc('initialize', {
   clientInfo: { name: 'nora-conformance', version: '1.0.0' },
 }, { version: ALSO_SUPPORTED })
 initOld.status === 200 && !initOld.json?.error
-  ? ok(`the second supported revision also negotiates`, ALSO_SUPPORTED)
-  : bad(`the second supported revision also negotiates`, `status ${initOld.status}`)
+  ? ok('the second supported revision also negotiates')
+  : bad('the second supported revision also negotiates', { status: initOld.status })
 
 // --- 2. Refusals ------------------------------------------------------------
 // These matter more than the happy path: a server that degrades quietly on an unknown version, or
@@ -169,20 +177,22 @@ if (badVersion.json?.error || badVersion.status >= 400) {
   const names = JSON.stringify(badVersion.json?.error?.data ?? badVersion.json?.error?.message ?? '')
   names.includes(PREFERRED_VERSION)
     ? ok('an unsupported protocol version is refused, and the error names what IS supported')
-    : bad('the refusal should name the supported versions so a dual-era client can fall back', names)
+    : bad('the refusal should name the supported versions so a dual-era client can fall back', {
+      status: badVersion.status, code: badVersion.json?.error?.code,
+    })
 } else {
   bad('an unsupported protocol version must be refused, not silently accepted')
 }
 
 const noAuth = await rpc('tools/list', {}, { token: null })
 noAuth.status === 401 || noAuth.status === 403
-  ? ok('a request with no credential is refused', `${noAuth.status}`)
-  : bad('a request with no credential must be refused', `got ${noAuth.status}`)
+  ? ok('a request with no credential is refused', { status: noAuth.status })
+  : bad('a request with no credential must be refused', { status: noAuth.status })
 
 const wrongAuth = await rpc('tools/list', {}, { token: 'nora_mcp_definitely_not_a_real_token' })
 wrongAuth.status === 401 || wrongAuth.status === 403
-  ? ok('a request with an invalid credential is refused', `${wrongAuth.status}`)
-  : bad('a request with an invalid credential must be refused', `got ${wrongAuth.status}`)
+  ? ok('a request with an invalid credential is refused', { status: wrongAuth.status })
+  : bad('a request with an invalid credential must be refused', { status: wrongAuth.status })
 
 // The credential is scoped to /mcp exactly (ADR 0041 §4 as a property of the token, not of which
 // tools happen to exist). If it ever authenticates the REST API, read-only stops being enforced.
@@ -190,17 +200,17 @@ const restRes = await fetch(`${BASE}/meetings`, {
   headers: { authorization: `Bearer ${TOKEN}`, accept: 'application/json' },
 })
 restRes.status === 401 || restRes.status === 403
-  ? ok('the MCP token does NOT authenticate the REST API', `GET /meetings -> ${restRes.status}`)
-  : bad('the MCP token must not authenticate the REST API', `GET /meetings -> ${restRes.status}`)
+  ? ok('the MCP token does NOT authenticate the REST API', { status: restRes.status })
+  : bad('the MCP token must not authenticate the REST API', { status: restRes.status })
 
 // --- 3. Tool catalogue ------------------------------------------------------
 console.log('\n3. tools/list')
 const list = await rpc('tools/list', {})
 const tools = list.json?.result?.tools ?? []
 if (!tools.length) {
-  bad('tools/list returns a non-empty catalogue', `status ${list.status}`)
+  bad('tools/list returns a non-empty catalogue', { status: list.status })
 } else {
-  ok('tools/list returns a catalogue', `${tools.length} tool(s)`)
+  ok('tools/list returns a catalogue', { count: tools.length })
   for (const name of EXPECTED_TOOLS) {
     const t = tools.find((x) => x.name === name)
     if (!t) { bad(`catalogue contains ${name}`); continue }
@@ -217,13 +227,13 @@ if (!tools.length) {
 console.log('\n4. tools/call')
 const called = await rpc('tools/call', { name: 'list_meetings', arguments: { limit: 1 } })
 if (called.json?.error) {
-  bad('list_meetings answers', JSON.stringify(called.json.error))
+  bad('list_meetings answers', { code: called.json.error.code })
 } else {
   const result = called.json?.result
   result ? ok('list_meetings answers with a result') : bad('list_meetings answers with a result')
   Array.isArray(result?.content)
     ? ok('the result carries a content array, as the specification requires')
-    : bad('the result carries a content array', JSON.stringify(result)?.slice(0, 120))
+    : bad('the result carries a content array')
 }
 
 const unknown = await rpc('tools/call', { name: 'definitely_not_a_tool', arguments: {} })
@@ -234,7 +244,7 @@ unknown.json?.error
 const unknownMethod = await rpc('nora/not_a_method', {})
 unknownMethod.json?.error?.code === -32601
   ? ok('an unknown method returns JSON-RPC METHOD_NOT_FOUND (-32601)')
-  : bad('an unknown method should return -32601', JSON.stringify(unknownMethod.json?.error))
+  : bad('an unknown method should return -32601', { code: unknownMethod.json?.error?.code })
 
 // --- summary ----------------------------------------------------------------
 console.log(`\n${passed} passed, ${failed} failed`)

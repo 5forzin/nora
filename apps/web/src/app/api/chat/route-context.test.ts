@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const cookieState = vi.hoisted(() => ({ includeCsrf: true }));
 vi.mock('next/headers', () => ({
-  cookies: async () => ({ getAll: () => [{ name: 'nora_access', value: 'test-session' }] }),
+  cookies: async () => ({ getAll: () => [
+    { name: 'nora_access', value: 'test-session' },
+    ...(cookieState.includeCsrf ? [{ name: 'XSRF-TOKEN', value: 'csrf-session' }] : []),
+  ] }),
 }));
 
 const ID = '12345678-9012-4012-8012-123456789012';
@@ -10,6 +14,7 @@ const fetchMock = vi.fn<typeof fetch>();
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
 beforeEach(() => {
+  cookieState.includeCsrf = true;
   vi.resetModules();
   fetchMock.mockReset();
   vi.stubGlobal('fetch', fetchMock);
@@ -45,12 +50,13 @@ describe('chat evidence sent to the provider', () => {
     const { POST } = await import('./route');
     const response = await POST(new Request('https://nora.test.invalid/api/chat', {
       method: 'POST',
+      headers: { 'X-XSRF-TOKEN': 'csrf-session' },
       body: JSON.stringify({ messages: [{ role: 'user', content: 'Summarize my meetings' }] }),
     }));
     expect(response.status).toBe(200);
     await response.text();
     expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/tenant/context'))).toBe(false);
-    const provider = fetchMock.mock.calls.find(([input]) => String(input).startsWith('https://llm.test.invalid'));
+    const provider = fetchMock.mock.calls.find(([input]) => new URL(String(input)).origin === 'https://llm.test.invalid');
     expect(provider).toBeDefined();
     expect(String(provider?.[1]?.body)).not.toContain('PRIVATE_COMPANY_CONTEXT');
   });
@@ -118,6 +124,7 @@ describe('chat evidence sent to the provider', () => {
     const response = await POST(
       new Request('https://nora.test.invalid/api/chat', {
         method: 'POST',
+      headers: { 'X-XSRF-TOKEN': 'csrf-session' },
         body: JSON.stringify({
           messages: [{ role: 'user', content: 'What are the risks for user@example.com?' }],
         }),
@@ -132,13 +139,16 @@ describe('chat evidence sent to the provider', () => {
       String(input).includes('/meetings/search'),
     )!;
     expect(decodeURIComponent(String(search[0]))).not.toContain('user@example.com');
+    expect(search[1]?.headers).toMatchObject({ 'X-XSRF-TOKEN': 'csrf-session' });
     const provider = fetchMock.mock.calls.find(([input]) =>
-      String(input).startsWith('https://llm.test.invalid'),
+      new URL(String(input)).origin === 'https://llm.test.invalid',
     )!;
     const body = JSON.parse(String(provider[1]?.body)) as {
       messages: Array<{ role: string; content: string }>;
     };
     const system = body.messages[0].content;
+    expect(provider[1]?.headers).not.toHaveProperty('Cookie');
+    expect(provider[1]?.headers).not.toHaveProperty('X-XSRF-TOKEN');
     expect(system).toContain('A supplier delay threatens renewal.');
     expect(system).toContain('Escalate to operations');
     expect(system).toContain('Renewal could be lost');
@@ -154,13 +164,14 @@ describe('chat evidence sent to the provider', () => {
     expect(JSON.stringify(body)).not.toContain('@example.com');
     expect(system).toContain('[[EMAIL_');
     for (const [input, options] of fetchMock.mock.calls) {
-      if (String(input).startsWith('https://api.test.invalid')) {
-        expect(options?.headers).toMatchObject({ Cookie: 'nora_access=test-session' });
+      if (new URL(String(input)).origin === 'https://api.test.invalid') {
+        expect(options?.headers).toMatchObject({ Cookie: 'nora_access=test-session; XSRF-TOKEN=csrf-session' });
       }
     }
 
     const overview = await POST(new Request('https://nora.test.invalid/api/chat', {
       method: 'POST',
+      headers: { 'X-XSRF-TOKEN': 'csrf-session' },
       body: JSON.stringify({ messages: [{ role: 'user', content: 'Executive overview of decisions, risks and pending tasks' }] }),
     }));
     const appendixStream = await overview.text();
@@ -169,7 +180,7 @@ describe('chat evidence sent to the provider', () => {
     expect(appendixStream).toContain(`(/meetings/${ID})`);
     expect(appendixStream).toContain('parcial');
     const overviewCall = fetchMock.mock.calls.filter(([input]) =>
-      String(input).startsWith('https://llm.test.invalid'),
+      new URL(String(input)).origin === 'https://llm.test.invalid',
     ).at(-1)!;
     const overviewSystem = JSON.parse(String(overviewCall[1]?.body)).messages[0].content;
     expect(overviewSystem).toContain('Renewal could be lost');
@@ -184,11 +195,38 @@ describe('chat evidence sent to the provider', () => {
     const response = await POST(
       new Request('https://nora.test.invalid/api/chat', {
         method: 'POST',
+      headers: { 'X-XSRF-TOKEN': 'csrf-session' },
         body: JSON.stringify({ messages: [{ role: 'user', content: 'Company risks' }] }),
       }),
     );
     expect(response.status).toBe(401);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/auth\/me$/);
+  });
+
+  it.each([undefined, 'csrf-foreign', 'csrf-different-length'])(
+    'rejects a missing or mismatched CSRF header before contacting the backend or model (%s)',
+    async (token) => {
+      const { POST } = await import('./route');
+      const response = await POST(new Request('https://nora.test.invalid/api/chat', {
+        method: 'POST',
+        headers: token ? { 'X-XSRF-TOKEN': token } : {},
+        body: JSON.stringify({ messages: [{ role: 'user', content: 'Company risks' }] }),
+      }));
+      expect(response.status).toBe(403);
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects a supplied CSRF header without its session cookie', async () => {
+    cookieState.includeCsrf = false;
+    const { POST } = await import('./route');
+    const response = await POST(new Request('https://nora.test.invalid/api/chat', {
+      method: 'POST',
+      headers: { 'X-XSRF-TOKEN': 'csrf-session' },
+      body: JSON.stringify({ messages: [{ role: 'user', content: 'Company risks' }] }),
+    }));
+    expect(response.status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

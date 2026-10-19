@@ -2,11 +2,16 @@ package br.com.nora.api.api.controllers;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import br.com.nora.api.application.ports.McpTokenRepository;
+import br.com.nora.api.application.ports.SecureTokenGenerator;
+import br.com.nora.api.domain.identity.McpToken;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,6 +65,8 @@ class McpServerIntegrationTest {
 
     @Autowired TestRestTemplate rest;
     @Autowired ObjectMapper mapper;
+    @Autowired McpTokenRepository tokens;
+    @Autowired SecureTokenGenerator tokenGenerator;
 
     @BeforeEach
     void useJdkHttpClient() {
@@ -244,6 +251,38 @@ class McpServerIntegrationTest {
         ResponseEntity<String> again =
                 rest.exchange(path, HttpMethod.DELETE, jwtEntity(jwt), String.class);
         assertThat(again.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+    }
+
+    @Test
+    void usageUpdatesAreOwnerScopedMonotonicAndCannotUndoRevocation() throws Exception {
+        String jwt = signupAndLogin("mcp-usage@nora.dev", "Usage");
+        JsonNode created = mint(jwt, "desktop");
+        String hash = tokenGenerator.hash(created.get("token").asText());
+        McpToken token = tokens.findByTokenHash(hash).orElseThrow();
+        Instant usedAt = Instant.parse("2030-01-01T12:00:00Z");
+
+        tokens.updateLastUsedAt(token.id(), UUID.randomUUID(), token.userId(), usedAt);
+        tokens.updateLastUsedAt(token.id(), token.tenantId(), UUID.randomUUID(), usedAt);
+        assertThat(tokens.findByTokenHash(hash).orElseThrow().lastUsedAt()).isNull();
+
+        tokens.updateLastUsedAt(token.id(), token.tenantId(), token.userId(), usedAt);
+        tokens.updateLastUsedAt(
+                token.id(), token.tenantId(), token.userId(), usedAt.minusSeconds(1));
+        assertThat(tokens.findByTokenHash(hash).orElseThrow().lastUsedAt()).isEqualTo(usedAt);
+
+        ResponseEntity<String> revoked =
+                rest.exchange(
+                        "/mcp/tokens/" + token.id(),
+                        HttpMethod.DELETE,
+                        jwtEntity(jwt),
+                        String.class);
+        assertThat(revoked.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+
+        tokens.updateLastUsedAt(
+                token.id(), token.tenantId(), token.userId(), usedAt.plusSeconds(1));
+        McpToken afterStamp = tokens.findByTokenHash(hash).orElseThrow();
+        assertThat(afterStamp.isRevoked()).isTrue();
+        assertThat(afterStamp.lastUsedAt()).isEqualTo(usedAt);
     }
 
     /** The plaintext exists in exactly one response and is never recoverable afterwards. */

@@ -1,6 +1,7 @@
 import type { TaskListItemDto, TaskListResponse } from '@/lib/api/client';
 import type { MeetingDetail } from '@/lib/api/types';
 import { redactPii } from '@/lib/pii/redact';
+import { apiRequestHeaders } from '@/lib/api/csrf';
 
 interface ContextApi {
   apiBaseUrl: string;
@@ -41,8 +42,9 @@ export function clampContextValue(value: string, max: number): string {
 
 async function readContext<T>(api: ContextApi, path: string): Promise<T | null> {
   try {
+    const headers = await apiRequestHeaders(api.apiBaseUrl, path, 'GET', api.headers, api.timeoutMs);
     const response = await fetch(`${api.apiBaseUrl}${path}`, {
-      headers: api.headers,
+      headers,
       cache: 'no-store',
       signal: AbortSignal.timeout(api.timeoutMs),
     });
